@@ -1,0 +1,514 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function hasUserRole(role) {
+      return signedIn() && (
+        request.auth.token.role == role ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && userDoc().data.role == role)
+      );
+    }
+
+    function hasAnyUserRole(roles) {
+      return signedIn() && (
+        request.auth.token.role in roles ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && userDoc().data.role in roles)
+      );
+    }
+
+    function isOwnEmailRecord() {
+      return signedIn() && resource.data.email == request.auth.token.email;
+    }
+
+    function isCentralAdmin() {
+      return signedIn() && (
+        request.auth.token.role in ["central_admin", "admin"] ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && userDoc().data.role in ["central_admin", "admin"])
+      );
+    }
+
+    function isExamAdmin() {
+      return isCentralAdmin() || hasAnyUserRole(["pariksha_board_convener"]);
+    }
+
+    function isStaff() {
+      return isCentralAdmin() || hasAnyUserRole([
+        "madarsa_admin",
+        "teacher",
+        "inspector",
+        "mekhala_admin",
+        "convener_admin",
+        "pariksha_board_convener",
+        "manager"
+      ]);
+    }
+
+    function isSelf(docId) {
+      return signedIn() && request.auth.uid == docId;
+    }
+
+    function isOwnLoginLog() {
+      return signedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    function isSafeLoginSessionUpdate() {
+      return isOwnLoginLog()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["durationSeconds", "lastSeenAt", "lastSeenAtClient", "status"])
+        && request.resource.data.durationSeconds is int
+        && request.resource.data.durationSeconds >= 0
+        && request.resource.data.durationSeconds <= 604800
+        && request.resource.data.lastSeenAt == request.time
+        && request.resource.data.lastSeenAtClient is string
+        && request.resource.data.status in ["active", "closed"];
+    }
+
+    function roleUnchanged() {
+      return !("role" in request.resource.data) || request.resource.data.role == resource.data.role;
+    }
+
+    function selfCreatableUserRole() {
+      return request.resource.data.role == "student";
+    }
+
+    function selfCreateSafeUserDoc() {
+      return selfCreatableUserRole()
+        && request.resource.data.uid == request.auth.uid
+        && !("central_admin" in request.resource.data)
+        && !("admin" in request.resource.data)
+        && !("customClaims" in request.resource.data)
+        && !("permissions" in request.resource.data);
+    }
+
+    function isSafeOwnMekhalaProfileUpdate() {
+      return signedIn()
+        && hasAnyUserRole(["convener_admin", "mekhala_admin"])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "name",
+          "email",
+          "loginId",
+          "phone",
+          "address",
+          "district",
+          "state",
+          "password",
+          "status",
+          "updatedAt"
+        ]);
+    }
+
+    function isSafeOwnConvenerProfileUpdate() {
+      return signedIn()
+        && hasAnyUserRole(["convener_admin"])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "name",
+          "fullName",
+          "email",
+          "loginId",
+          "phone",
+          "address",
+          "district",
+          "state",
+          "password",
+          "status",
+          "updatedAt"
+        ]);
+    }
+
+    function isSafeOwnStudentUpdate() {
+      return signedIn()
+        && resource.data.email == request.auth.token.email
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "fullName",
+          "address",
+          "dateOfBirth",
+          "guardianName",
+          "profileEdited",
+          "profileEditedAt",
+          "profilePicture",
+          "profilePictureUrl",
+          "profilePicChanged",
+          "profilePicChangedAt",
+          "updatedAt"
+        ]);
+    }
+
+    function staffCreateSafeUserDoc() {
+      return request.resource.data.role == "student"
+        && !("central_admin" in request.resource.data)
+        && !("admin" in request.resource.data)
+        && !("customClaims" in request.resource.data)
+        && !("permissions" in request.resource.data);
+    }
+
+    match /users/{docId} {
+      allow read: if isSelf(docId) || isStaff();
+      allow create: if isCentralAdmin() || (isSelf(docId) && selfCreateSafeUserDoc()) || (isStaff() && staffCreateSafeUserDoc());
+      allow update: if isCentralAdmin() || (isSelf(docId) && roleUnchanged());
+      allow delete: if isCentralAdmin();
+    }
+
+    match /LoginLogs/{docId} {
+      allow create: if signedIn();
+      allow read, delete: if isCentralAdmin();
+      allow update: if isCentralAdmin() || isSafeLoginSessionUpdate();
+    }
+
+    match /students/{docId} {
+      allow read: if isStaff() || isSelf(docId) || isOwnEmailRecord() || (signedIn() && resource.data.uid == request.auth.uid);
+      allow create: if isStaff();
+      allow update: if isStaff() || isSelf(docId) || isSafeOwnStudentUpdate();
+      allow delete: if isCentralAdmin();
+    }
+
+    match /teachers/{docId} {
+      allow read: if isStaff() || isSelf(docId) || isOwnEmailRecord();
+      allow create, update: if isStaff();
+      allow delete: if isCentralAdmin();
+    }
+
+    match /madarsas/{docId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isCentralAdmin();
+    }
+
+    match /managers/{docId} {
+      allow read: if isStaff();
+      allow create, update, delete: if isCentralAdmin() || hasUserRole("madarsa_admin");
+    }
+
+    match /manager_documents/{docId} {
+      allow read: if isStaff();
+      allow create, update, delete: if isStaff();
+    }
+
+    match /managerReportDocuments/{docId} {
+      allow read: if isStaff();
+      allow create, update, delete: if isStaff();
+    }
+
+    match /inspections/{docId} {
+      allow read: if isStaff();
+      allow create, update: if isStaff();
+      allow delete: if isCentralAdmin();
+    }
+
+    match /inventory/{docId} {
+      allow read: if isStaff();
+      allow create, update: if isStaff();
+      allow delete: if isCentralAdmin();
+    }
+
+    match /exammarks/{docId} {
+      allow read: if isExamAdmin();
+      allow create, update, delete: if isExamAdmin();
+    }
+
+    match /publishedresults/{docId} {
+      allow read: if true;
+      allow create, update, delete: if isExamAdmin();
+    }
+
+    match /hallTickets/{examId} {
+      allow read: if true;
+      allow create, update, delete: if isExamAdmin();
+    }
+
+    match /hallTickets/{examId}/students/{studentId} {
+      allow read: if true;
+      allow create, update, delete: if isExamAdmin();
+    }
+
+    match /{path=**}/students/{studentId} {
+      allow read: if signedIn();
+    }
+
+    match /brand_assets/{assetId} {
+      allow read: if true;
+      allow create, update, delete: if isCentralAdmin();
+    }
+
+    match /settings/{docId} {
+      allow read: if true;
+      allow create, update, delete: if isCentralAdmin();
+    }
+
+    match /exams/{docId} {
+      allow read: if true;
+      allow create, update, delete: if isExamAdmin();
+    }
+
+    match /results/{docId} {
+      allow read: if true;
+      allow create, update, delete: if isExamAdmin();
+    }
+
+    match /pariksha_board_convener/{docId} {
+      allow read: if isCentralAdmin() ||
+        hasUserRole("pariksha_board_convener") ||
+        isOwnEmailRecord();
+      allow create, update, delete: if isCentralAdmin();
+    }
+
+    match /examRegistrations/{docId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isExamAdmin();
+    }
+
+    match /hallTicketCounters/{examId} {
+      allow read: if isExamAdmin();
+      allow create, update, delete: if isExamAdmin();
+    }
+
+    match /examNotices/{docId} {
+      allow read: if true;
+      allow create, update, delete: if isExamAdmin();
+    }
+
+    match /examTimetables/{docId} {
+      allow read: if true;
+      allow create, update, delete: if isExamAdmin();
+    }
+
+    match /resultSubjectTemp/{docId} {
+      allow read: if isExamAdmin();
+      allow create, update, delete: if isExamAdmin();
+    }
+
+    match /districts/{docId} {
+      allow read: if isStaff();
+      allow create, update, delete: if isCentralAdmin();
+    }
+
+    match /mekhala/{docId} {
+      allow read: if signedIn() || isStaff();
+      allow create, delete: if isCentralAdmin();
+      allow update: if isCentralAdmin() || (isSelf(docId) && isSafeOwnMekhalaProfileUpdate());
+    }
+
+    match /smartClassSyllabus/{docId} {
+      allow read: if true;
+      allow create, update, delete: if isStaff();
+    }
+
+    match /smartClassContents/{docId} {
+      allow read: if true;
+      allow create, update, delete: if isStaff();
+    }
+
+    match /admissions/{docId} {
+      allow create: if true;
+      allow read, list: if isStaff() ||
+        (signedIn() && (
+          resource.data.studentId == request.auth.uid ||
+          resource.data.uid == request.auth.uid ||
+          resource.data.email == request.auth.token.email
+        ));
+      allow update: if isStaff();
+      allow delete: if isCentralAdmin();
+    }
+
+    match /counters/{docId} {
+      allow read: if true;
+      // Allow unauthenticated users to update admission counters specifically
+      allow create, update: if docId.matches('admission_.*') || isStaff();
+      allow delete: if isCentralAdmin();
+    }
+
+    match /counters/{counterId}/{subcollection=**} {
+      allow read: if true;
+      allow create, update: if isStaff();
+      allow delete: if isCentralAdmin();
+    }
+
+    match /notices/{docId} {
+      allow read: if true;
+      allow create, update, delete: if isCentralAdmin() || hasAnyUserRole([
+        "madarsa_admin",
+        "mekhala_admin",
+        "convener_admin",
+        "pariksha_board_convener",
+        "manager"
+      ]);
+    }
+
+    match /centralNotices/{docId} {
+      allow read: if true;
+      allow create, update, delete: if isCentralAdmin();
+    }
+
+    match /marqueeTexts/{docId} {
+      allow read: if true;
+      allow create, update, delete: if isCentralAdmin() || hasUserRole("home_admin");
+    }
+
+    match /homepageConfig/{docId} {
+      allow read: if true;
+      allow create, update, delete: if isCentralAdmin() || hasUserRole("home_admin");
+    }
+
+    match /marquee/{docId} {
+      allow read: if true;
+      allow create, update, delete: if isCentralAdmin() || hasUserRole("home_admin");
+    }
+
+    match /carousel/{docId} {
+      allow read: if true;
+      allow create, update, delete: if isCentralAdmin() || hasUserRole("home_admin");
+    }
+
+    match /news/{docId} {
+      allow read: if true;
+      allow create, update, delete: if isCentralAdmin() || hasUserRole("home_admin");
+    }
+
+    match /events/{docId} {
+      allow read: if true;
+      allow create, update, delete: if isCentralAdmin() || hasUserRole("home_admin");
+    }
+
+    match /attendances/{docId} {
+      allow read: if isStaff();
+      allow create, update: if isStaff();
+      allow delete: if isCentralAdmin();
+    }
+
+    match /attendance_audit_logs/{docId} {
+      allow read: if isStaff();
+      allow create: if isStaff();
+      allow delete: if isCentralAdmin();
+    }
+
+    match /assignments/{docId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isStaff();
+    }
+
+    match /sadarReviews/{docId} {
+      allow read: if isStaff();
+      allow create, update, delete: if isStaff();
+    }
+
+    match /noticeAdmin/{docId} {
+      allow read: if true;
+      allow create, update, delete: if isCentralAdmin();
+    }
+
+    match /conveners/{docId} {
+      allow read: if isStaff();
+      allow create, delete: if isCentralAdmin();
+      allow update: if isCentralAdmin() || (isSelf(docId) && isSafeOwnConvenerProfileUpdate());
+    }
+
+    match /directory_contacts/{docId} {
+      allow read, create, update, delete: if isCentralAdmin();
+    }
+
+    match /mobileUploadSessions/{sessionId} {
+      allow read: if true;
+      allow create: if hasUserRole("inspector") || isCentralAdmin();
+      allow update: if resource.data.expiresAt > request.time
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "files",
+          "status",
+          "updatedAt",
+          "lastUploadAt"
+        ]);
+      allow delete: if hasUserRole("inspector") || isCentralAdmin();
+    }
+
+    match /tc_requests/{docId} {
+      allow read: if signedIn();
+      allow create: if signedIn();
+      allow update: if signedIn();
+      allow delete: if isCentralAdmin();
+    }
+
+    // Competition feature collections
+    match /competition/{docId} {
+      allow read: if true;
+      allow write: if isCentralAdmin();
+    }
+
+    match /competition_events/{docId} {
+      allow read: if isStaff();
+      allow write: if isCentralAdmin();
+    }
+
+    match /competition_registrations/{docId} {
+      allow read: if isStaff();
+      allow create, update, delete: if hasAnyUserRole(["madarsa_admin", "mekhala_admin", "convener_admin"]) || isCentralAdmin();
+    }
+
+    match /competition_mekhala_marks/{docId} {
+      allow read: if isStaff();
+      allow create, update, delete: if hasAnyUserRole(["mekhala_admin"]) || isCentralAdmin();
+    }
+
+    match /competition_district_marks/{docId} {
+      allow read: if isStaff();
+      allow create, update, delete: if hasAnyUserRole(["mekhala_admin"]) || isCentralAdmin();
+    }
+
+    match /competition_state_marks/{docId} {
+      allow read: if isStaff();
+      allow create, update, delete: if hasAnyUserRole(["convener_admin"]) || isCentralAdmin();
+    }
+
+    match /competition_results/{docId} {
+      allow read: if true;
+      allow create, update, delete: if hasAnyUserRole(["convener_admin"]) || isCentralAdmin();
+    }
+
+    // Phone OTP sessions and rate-limit records — admin-SDK-only, never from client
+    match /phone_otps/{docId} {
+      allow read, write: if false;
+    }
+
+    match /phone_otp_rate_limits/{docId} {
+      allow read, write: if false;
+    }
+
+    // Email OTP sessions — admin-SDK-only, never from client
+    match /email_otps/{docId} {
+      allow read, write: if false;
+    }
+
+
+    match /hallTicketMadrasaSequence/{docId} {
+      allow read: if isExamAdmin();
+      allow create, update, delete: if isExamAdmin();
+    }
+    match /heroSliderImages/{docId} {
+      allow read: if true;
+      allow create, update, delete: if isCentralAdmin() || hasUserRole('home_admin');
+    }
+    match /inspectionReports/{docId} {
+      allow read: if isStaff();
+      allow create, update: if isStaff();
+      allow delete: if isCentralAdmin();
+    }
+    match /madrasas/{docId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isCentralAdmin();
+    }
+    match /mahals/{docId} {
+      allow read: if isStaff();
+      allow create, update, delete: if isCentralAdmin();
+    }
+    match /materials/{docId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isStaff();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

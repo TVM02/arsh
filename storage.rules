@@ -1,0 +1,40 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    match /{allPaths=**} {
+      allow read: if request.auth != null;
+    }
+
+    // Admission form profile pictures: unauthenticated applicants upload their
+    // own photo before an account exists. Limit to 5 MB images only.
+    match /students/profile-picture/{fileName} {
+      allow read: if true; // Allow unauthenticated users to read their uploaded photos
+      allow write: if request.resource != null
+                   && request.resource.size < 5 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    // Signed-in users may only upload expected media/document types, never
+    // arbitrary executables or oversized payloads.
+    match /{allPaths=**} {
+      allow write: if request.auth != null
+                   && request.resource != null
+                   && request.resource.size < 25 * 1024 * 1024
+                   && request.resource.contentType.matches(
+                        'image/(jpeg|jpg|png|webp)|application/pdf|application/vnd.openxmlformats-officedocument.*|application/vnd.ms-excel|application/msword|application/vnd.ms-powerpoint'
+                      );
+    }
+
+    // Mobile QR uploads: unauthenticated phones can write ONLY to this specific
+    // sub-tree, with type + size guards.
+    match /inspections/{path=**} {
+      allow write: if request.resource != null
+                   && request.resource.size < 10 * 1024 * 1024
+                   && request.resource.contentType.matches(
+                        'image/(jpeg|jpg|png|webp|heic|heif)|application/pdf'
+                      );
+    }
+
+  }
+}

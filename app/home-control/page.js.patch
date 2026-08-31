@@ -1,0 +1,10 @@
+--- app/home-control/page.js
++++ app/home-control/page.js
+@@ -154,6 +154,7 @@
+     const file = e.target.files?.[0];
+     if (!file) return;
+ 
++    // Note: We can add dimension checks here without blocking
+     toast.info("Uploading image...");
+     try {
+       const fileRef = ref(storage, `homepage/${section}/${Date.now()}_${file.name}`);
