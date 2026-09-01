@@ -1910,105 +1910,121 @@ export default function CentralAdminMadrassasPage() {
     // GET APPROVED + PENDING COUNT FOR EXPORT
     // =========================================
 
-    const exportData = [];
+    const exportData = await Promise.all(
+      dataToExport.map(async (madrasa) => {
+        const madrassaKey =
+          madrasa.madarsaId || madrasa.id;
 
-const batchSize = 10; // safer: 5–10
+        try {
+          // Approved students
+          const studentsQuery = query(
+            collection(db, "students"),
+            where(
+              "madarsaId",
+              "==",
+              madrassaKey
+            )
+          );
 
-for (let i = 0; i < dataToExport.length; i += batchSize) {
-  const batch = dataToExport.slice(i, i + batchSize);
+          // Pending students/applications
+          const pendingQuery = query(
+            collection(db, "admissions"),
+            where(
+              "madarsa",
+              "==",
+              madrassaKey
+            ),
+            where(
+              "status",
+              "==",
+              "pending"
+            )
+          );
 
-  const batchResults = await Promise.all(
-    batch.map(async (madrasa) => {
-      const madrassaKey =
-        madrasa.madarsaId || madrasa.id;
+          // Teachers
+          const teachersQuery = query(
+            collection(db, "teachers"),
+            where(
+              "madarsaId",
+              "==",
+              madrassaKey
+            )
+          );
 
-      try {
-        const studentsQuery = query(
-          collection(db, "students"),
-          where("madarsaId", "==", madrassaKey)
-        );
+          const [
+            studentsSnapshot,
+            pendingSnapshot,
+            teachersSnapshot,
+          ] = await Promise.all([
+            getDocs(studentsQuery),
+            getDocs(pendingQuery),
+            getDocs(teachersQuery),
+          ]);
 
-        const pendingQuery = query(
-          collection(db, "admissions"),
-          where("madarsa", "==", madrassaKey),
-          where("status", "==", "pending")
-        );
+          // Active students = Approved
+          const approvedStudents =
+            studentsSnapshot.docs.filter(
+              (docSnap) => {
+                const data = docSnap.data();
 
-        const teachersQuery = query(
-          collection(db, "teachers"),
-          where("madarsaId", "==", madrassaKey)
-        );
-
-        const [
-          studentsSnapshot,
-          pendingSnapshot,
-          teachersSnapshot,
-        ] = await Promise.all([
-          getDocs(studentsQuery),
-          getDocs(pendingQuery),
-          getDocs(teachersQuery),
-        ]);
-
-        const approvedStudents =
-          studentsSnapshot.docs.filter((docSnap) => {
-            const data = docSnap.data();
-
-            return (
-              !data.deleted &&
-              data.status === "active"
+                return (
+                  !data.deleted &&
+                  data.status === "active"
+                );
+              }
             );
-          });
 
-        const pendingStudents =
-          pendingSnapshot.docs.filter((docSnap) => {
-            const data = docSnap.data();
+          // Pending admissions
+          const pendingStudents =
+            pendingSnapshot.docs.filter(
+              (docSnap) => {
+                const data = docSnap.data();
 
-            return !data.deleted;
-          });
-
-        const activeTeachers =
-          teachersSnapshot.docs.filter((docSnap) => {
-            const data = docSnap.data();
-
-            return (
-              !data.deleted &&
-              data.status !== "suspended" &&
-              data.status !== "deleted"
+                return !data.deleted;
+              }
             );
-          });
 
-        return {
-          ...madrasa,
-          approvedStudentCount:
-            approvedStudents.length,
-          pendingStudentCount:
-            pendingStudents.length,
-          teacherCount:
-            activeTeachers.length,
-        };
-      } catch (error) {
-        console.error(
-          `Count error for ${madrassaKey}:`,
-          error
-        );
+          // Active teachers
+          const activeTeachers =
+            teachersSnapshot.docs.filter(
+              (docSnap) => {
+                const data = docSnap.data();
 
-        return {
-          ...madrasa,
-          approvedStudentCount: 0,
-          pendingStudentCount: 0,
-          teacherCount: 0,
-        };
-      }
-    })
-  );
+                return (
+                  !data.deleted &&
+                  data.status !== "suspended" &&
+                  data.status !== "deleted"
+                );
+              }
+            );
 
-  exportData.push(...batchResults);
+          return {
+            ...madrasa,
 
-  // Small pause between batches
-  await new Promise((resolve) =>
-    setTimeout(resolve, 250)
-  );
-}
+            approvedStudentCount:
+              approvedStudents.length,
+
+            pendingStudentCount:
+              pendingStudents.length,
+
+            teacherCount:
+              activeTeachers.length,
+          };
+        } catch (error) {
+          console.error(
+            `Count error for ${madrassaKey}:`,
+            error
+          );
+
+          return {
+            ...madrasa,
+            approvedStudentCount: 0,
+            pendingStudentCount: 0,
+            teacherCount: 0,
+          };
+        }
+      })
+    );
 
     // =========================================
     // CREATE CSV
