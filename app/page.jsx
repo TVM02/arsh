@@ -24,14 +24,13 @@ export default function Home() {
       <Navbar />
       <HeroSection />
       <HijriCalendar />
-
-      <AboutSection />
-      
+   
       <UpdatesSection />
       <LatestEvents />
       
       <MushawaraSection />
       <Quotes /> 
+      <AboutSection />
       <OrganizationsSection />
       <Footer />
     </main>

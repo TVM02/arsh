@@ -1,35 +1,35 @@
 export const organizations = [
-  {
+  { id:1,
     short: "DKJU",
     name: "Dakshina Kerala Jem-Iyyathul Ulama",
     logo: "/images/orgs/dkju.png",
   },
-  {
+  {id:2,
     short: "DKLMVB",
     name: "Dakshina Kerala Lajnathul Muallimeen Vidyabhyasa Board",
     logo: "/images/dklmvb.png",
   },
-  {
+  {id:3,
     short: "DKLM",
     name: "Dakshina Kerala Lajnathul Muallimeen",
     logo: "/images/orgs/dklm.png",
   },
-  {
+  {id:4,
     short: "KMYF",
     name: "Kerala Muslim Yuvajana Federation",
     logo: "/images/orgs/kmyf.png",
   },
-  {
+  {id:5,
     short: "DKISF",
     name: "Dakshina Kerala Islamic Students Federation",
     logo: "/images/orgs/dkisf.png",
   },
-  {
+  {id:6,
     short: "DKICC",
     name: "Dakshina Kerala Islamic Cultural Centre",
     logo: "/images/orgs/dkicc.png",
   },
-  {
+  {id:7,
     short: "KMJF",
     name: "Kerala Muslim Jamath Federation",
     logo: "/images/orgs/kmjf.png",
