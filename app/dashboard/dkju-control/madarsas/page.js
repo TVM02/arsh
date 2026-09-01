@@ -303,102 +303,246 @@ export default function CentralAdminMadrassasPage() {
 
   // Fetch functions and other hooks must be before early return
   const loadCountsInBatches = useCallback(async (madrassasData) => {
-    const batchSize = 5; // Process 5 madrasas at a time
-    // Start from the latest snapshot of countsCache stored in a ref
-    const workingCache = new Map(countsCacheRef.current);
+  const batchSize = 5;
+  const workingCache = new Map(countsCacheRef.current);
 
-    for (let i = 0; i < madrassasData.length; i += batchSize) {
-      const batch = madrassasData.slice(i, i + batchSize);
+  for (let i = 0; i < madrassasData.length; i += batchSize) {
+    const batch = madrassasData.slice(i, i + batchSize);
 
-      await Promise.all(
-        batch.map(async (madrassaData) => {
-          const madrassaKey = madrassaData.madarsaId || madrassaData.id;
+    await Promise.all(
+      batch.map(async (madrassaData) => {
+        const madrassaKey =
+          madrassaData.madarsaId || madrassaData.id;
 
-          // Skip if already cached
-          if (workingCache.has(madrassaKey)) {
-            return;
-          }
+        if (workingCache.has(madrassaKey)) {
+          return;
+        }
 
-          try {
-            // Get student and teacher counts in parallel
-            const [studentsSnapshot, teachersSnapshot] = await Promise.all([
-              getDocs(
-                query(
-                  collection(db, "students"),
-                  where("madarsaId", "==", madrassaKey),
-                ),
-              ),
-              getDocs(
-                query(
-                  collection(db, "teachers"),
-                  where("madarsaId", "==", madrassaKey),
-                ),
-              ),
-            ]);
+        try {
+          // 1. Approved / active students
+          const studentsQuery = query(
+            collection(db, "students"),
+            where("madarsaId", "==", madrassaKey)
+          );
 
-            // Filter out deleted or suspended students
-            const activeStudents = studentsSnapshot.docs.filter(d => {
-              const data = d.data();
-              return !data.deleted && data.status !== "suspended" && data.status !== "deleted";
+          // 2. Pending admission applications
+          const pendingQuery = query(
+            collection(db, "admissions"),
+            where("madarsa", "==", madrassaKey),
+            where("status", "==", "pending")
+          );
+
+          // 3. Teachers
+          const teachersQuery = query(
+            collection(db, "teachers"),
+            where("madarsaId", "==", madrassaKey)
+          );
+
+          const [
+            studentsSnapshot,
+            pendingSnapshot,
+            teachersSnapshot,
+          ] = await Promise.all([
+            getDocs(studentsQuery),
+            getDocs(pendingQuery),
+            getDocs(teachersQuery),
+          ]);
+
+          // Approved students are stored as active students
+          const approvedStudents =
+            studentsSnapshot.docs.filter((doc) => {
+              const data = doc.data();
+
+              return (
+                !data.deleted &&
+                data.status === "active"
+              );
             });
 
-            // Filter out deleted or suspended teachers
-            const activeTeachers = teachersSnapshot.docs.filter(d => {
-              const data = d.data();
-              return !data.deleted && data.status !== "suspended" && data.status !== "deleted";
+          // Pending applications
+          const pendingStudents =
+            pendingSnapshot.docs.filter((doc) => {
+              const data = doc.data();
+
+              return !data.deleted;
             });
 
-            workingCache.set(madrassaKey, {
-              studentCount: activeStudents.length,
-              teacherCount: activeTeachers.length,
-            });
-          } catch (error) {
-            console.error(`Error fetching counts for ${madrassaKey}:`, error);
-            // Set default counts on error
-            workingCache.set(madrassaKey, {
-              studentCount: 0,
-              teacherCount: 0,
-            });
-          }
-        }),
-      );
+          const activeTeachers =
+            teachersSnapshot.docs.filter((doc) => {
+              const data = doc.data();
 
-      // Update cache after each batch - use functional set to avoid race conditions
-      setCountsCache((prev) => {
-        const merged = new Map(prev);
-        for (const [k, v] of workingCache.entries()) merged.set(k, v);
-        return merged;
-      });
+              return (
+                !data.deleted &&
+                data.status !== "suspended" &&
+                data.status !== "deleted"
+              );
+            });
 
-      // Small delay to prevent overwhelming Firebase
-      if (i + batchSize < madrassasData.length) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
+          workingCache.set(madrassaKey, {
+            studentCount: approvedStudents.length,
+            approvedStudentCount: approvedStudents.length,
+            pendingStudentCount: pendingStudents.length,
+            teacherCount: activeTeachers.length,
+          });
+        } catch (error) {
+          console.error(
+            `Error fetching counts for ${madrassaKey}:`,
+            error
+          );
+
+          workingCache.set(madrassaKey, {
+            studentCount: 0,
+            approvedStudentCount: 0,
+            pendingStudentCount: 0,
+            teacherCount: 0,
+          });
+        }
+      })
+    );
+
+    setCountsCache((prev) => {
+      const merged = new Map(prev);
+
+      for (const [key, value] of workingCache.entries()) {
+        merged.set(key, value);
       }
+
+      return merged;
+    });
+
+    if (i + batchSize < madrassasData.length) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, 100)
+      );
     }
-  }, []);
+  }
+}, []);
+
+  const isMadrasaStatusFilter = (value) =>
+    ["active", "inactive", "suspended"].includes(value);
+
+  const fetchPendingStudentMadrassas = useCallback(
+    async (page = 1) => {
+      try {
+        setLoading(true);
+
+        // 1) Find all madrasas that currently have pending admission applications
+        const pendingQuery = query(
+          collection(db, "admissions"),
+          where("status", "==", "pending"),
+        );
+
+        const pendingSnapshot = await getDocs(pendingQuery);
+        const pendingMadrasaIds = new Set();
+
+        pendingSnapshot.docs.forEach((docSnap) => {
+          const data = docSnap.data();
+          if (data.madarsa && !data.deleted) {
+            pendingMadrasaIds.add(String(data.madarsa).trim());
+          }
+        });
+
+        if (pendingMadrasaIds.size === 0) {
+          setMadrassas([]);
+          setTotalItems(0);
+          setTotalPages(0);
+          setCurrentPage(1);
+          return;
+        }
+
+        // 2) Load madrasas and keep only those whose MID occurs in pending admissions
+        const madrasaSnapshot = await getDocs(
+          query(collection(db, "madarsas"), orderBy("createdAt", "desc")),
+        );
+
+        let filteredMadrasas = madrasaSnapshot.docs
+          .map((docSnap) => ({
+            ...docSnap.data(),
+            id: docSnap.id,
+            _doc: docSnap,
+          }))
+          .filter((madrasa) =>
+            pendingMadrasaIds.has(String(madrasa.madarsaId || "").trim()),
+          );
+
+        // 3) Keep the existing search box working while Pending Students is selected
+        const search = (searchTerm || "").trim().toLowerCase();
+        if (search) {
+          filteredMadrasas = filteredMadrasas.filter((madrasa) => {
+            const haystack = [
+              madrasa.name,
+              madrasa.madarsaId,
+              madrasa.email,
+              madrasa.phone,
+              madrasa.district,
+              madrasa.mekhala,
+              madrasa.address,
+            ]
+              .filter(Boolean)
+              .join(" ")
+              .toLowerCase();
+
+            return haystack.includes(search);
+          });
+        }
+
+        // 4) Client-side pagination over the complete filtered result
+        const total = filteredMadrasas.length;
+        const pages = Math.ceil(total / itemsPerPage);
+        const safePage = Math.max(1, Math.min(page, pages || 1));
+        const startIndex = (safePage - 1) * itemsPerPage;
+        const pageData = filteredMadrasas.slice(
+          startIndex,
+          startIndex + itemsPerPage,
+        );
+
+        setTotalItems(total);
+        setTotalPages(pages);
+        setCurrentPage(safePage);
+        setMadrassas(pageData);
+
+        await loadCountsInBatches(pageData);
+      } catch (error) {
+        console.error("Error fetching pending-student madrasas:", error);
+        toast.error("Failed to fetch pending student madrasas");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [itemsPerPage, loadCountsInBatches, searchTerm],
+  );
 
   const getTotalCount = useCallback(async () => {
-    try {
-      let countQuery = query(collection(db, "madarsas"));
-      if (filterStatus !== "all") {
-        countQuery = query(countQuery, where("status", "==", filterStatus));
-      }
-      const countSnapshot = await getCountFromServer(countQuery);
-      const total = countSnapshot.data().count;
-      setTotalItems(total);
-      setTotalPages(Math.ceil(total / itemsPerPage));
-    } catch (error) {
-      console.error("Error getting total count:", error);
-      // Fallback: estimate based on current page from ref
-      const estimatedTotal = currentPageRef.current * itemsPerPage + 50; // Add buffer
-      setTotalItems(estimatedTotal);
-      setTotalPages(Math.ceil(estimatedTotal / itemsPerPage));
+  try {
+    let countQuery = query(collection(db, "madarsas"));
+
+    if (isMadrasaStatusFilter(filterStatus)) {
+      countQuery = query(
+        countQuery,
+        where("status", "==", filterStatus)
+      );
     }
-  }, [itemsPerPage, filterStatus]);
+
+    const countSnapshot =
+      await getCountFromServer(countQuery);
+
+    const total = countSnapshot.data().count;
+
+    setTotalItems(total);
+    setTotalPages(Math.ceil(total / itemsPerPage));
+  } catch (error) {
+    console.error("Error getting total count:", error);
+  }
+}, [filterStatus, itemsPerPage]);
 
   const fetchMadrassas = useCallback(
     async (page = 1, reset = false) => {
       try {
+        if (filterStatus === "students-pending") {
+          await fetchPendingStudentMadrassas(reset ? 1 : page);
+          return;
+        }
+
         setLoading(true);
 
         let madrassasQuery;
@@ -431,7 +575,7 @@ export default function CentralAdminMadrassasPage() {
             ) {
               // tokenIndex corresponds to: last doc of page tokenIndex
               const qParts = [collection(db, "madarsas")];
-              if (filterStatus !== "all") {
+              if (isMadrasaStatusFilter(filterStatus)) {
                 qParts.push(where("status", "==", filterStatus));
               }
               qParts.push(orderBy("createdAt", "desc"));
@@ -463,7 +607,7 @@ export default function CentralAdminMadrassasPage() {
             limit(itemsPerPage),
           ];
 
-          if (filterStatus !== "all") {
+          if (isMadrasaStatusFilter(filterStatus)) {
             qParts.splice(1, 0, where("status", "==", filterStatus));
           }
 
@@ -478,7 +622,7 @@ export default function CentralAdminMadrassasPage() {
               limit(itemsPerPage),
             ];
 
-            if (filterStatus !== "all") {
+            if (isMadrasaStatusFilter(filterStatus)) {
               qParts.splice(1, 0, where("status", "==", filterStatus));
             }
 
@@ -530,13 +674,32 @@ export default function CentralAdminMadrassasPage() {
         setLoading(false);
       }
     },
-    [itemsPerPage, getTotalCount, loadCountsInBatches, filterStatus],
+    [
+      itemsPerPage,
+      getTotalCount,
+      loadCountsInBatches,
+      filterStatus,
+      fetchPendingStudentMadrassas,
+    ],
   ); // Removed pageTokens from deps
 
   // Real-time debounced search: primary = array-contains on `searchKeywords`, fallback = client-side filtering
   const searchMadrassas = useCallback(
     async (term) => {
       const q = (term || "").trim();
+
+      if (filterStatus === "students-pending") {
+        setIsSearching(true);
+        setHasSearched(false);
+        setSearchResults([]);
+        setActiveSearchSummary(q);
+        try {
+          await fetchPendingStudentMadrassas(1);
+        } finally {
+          setIsSearching(false);
+        }
+        return;
+      }
 
       if (!q) {
         // Reset search and go back to paginated list
@@ -710,7 +873,7 @@ export default function CentralAdminMadrassasPage() {
         let finalResults = Array.from(unique.values());
 
         // Apply status filter to search results
-        if (filterStatus !== "all") {
+        if (isMadrasaStatusFilter(filterStatus)) {
           finalResults = finalResults.filter((r) => r.status === filterStatus);
         }
 
@@ -740,7 +903,12 @@ export default function CentralAdminMadrassasPage() {
         setIsSearching(false);
       }
     },
-    [fetchMadrassas, loadCountsInBatches, filterStatus],
+    [
+      fetchMadrassas,
+      fetchPendingStudentMadrassas,
+      loadCountsInBatches,
+      filterStatus,
+    ],
   );
 
   // Debounced real-time search: trigger searchMadrassas 300ms after typing stops
@@ -798,17 +966,31 @@ export default function CentralAdminMadrassasPage() {
 
   // Get counts for a madrasa with fallback
   const getCounts = useCallback(
-    (madrasa) => {
-      const madrassaKey = madrasa.madarsaId || madrasa.id;
-      const cached = countsCache.get(madrassaKey);
-      return {
-        studentCount: cached?.studentCount ?? madrasa.studentCount ?? 0,
-        teacherCount: cached?.teacherCount ?? madrasa.teacherCount ?? 0,
-        isLoading: !cached,
-      };
-    },
-    [countsCache],
-  );
+  (madrasa) => {
+    const madrassaKey =
+      madrasa.madarsaId || madrasa.id;
+
+    const cached =
+      countsCache.get(madrassaKey);
+
+    return {
+      studentCount:
+        cached?.studentCount ?? 0,
+
+      approvedStudentCount:
+        cached?.approvedStudentCount ?? 0,
+
+      pendingStudentCount:
+        cached?.pendingStudentCount ?? 0,
+
+      teacherCount:
+        cached?.teacherCount ?? 0,
+
+      isLoading: !cached,
+    };
+  },
+  [countsCache]
+);
 
   const fetchDistricts = useCallback(async () => {
     try {
@@ -1686,30 +1868,151 @@ export default function CentralAdminMadrassasPage() {
   };
 
   const downloadMadrassaData = async () => {
-    // If search box is empty, fetch all madrasas from Firestore for export.
-    // Otherwise export the currently loaded items (search results or current page).
-    let dataToExport = hasSearched ? searchResults : madrasas;
+  let dataToExport = hasSearched
+    ? searchResults
+    : madrasas;
 
-    if ((searchTerm || "").trim() === "") {
-      try {
-        const allQuery = query(
-          collection(db, "madarsas"),
-          orderBy("createdAt", "desc"),
-        );
-        const allSnap = await getDocs(allQuery);
-        dataToExport = allSnap.docs.map((docSnap) => ({
-          id: docSnap.id,
-          ...docSnap.data(),
-          _doc: docSnap,
-        }));
-      } catch (error) {
-        console.error("Error fetching all madrasas for export:", error);
-        toast.error(
-          "Failed to fetch all madrasas for export. Please try again.",
-        );
-        return;
-      }
+  // Get all madrasas when search is empty
+  if ((searchTerm || "").trim() === "") {
+    try {
+      const allQuery = query(
+        collection(db, "madarsas"),
+        orderBy("createdAt", "desc")
+      );
+
+      const allSnap = await getDocs(allQuery);
+
+      dataToExport = allSnap.docs.map((docSnap) => ({
+        id: docSnap.id,
+        ...docSnap.data(),
+        _doc: docSnap,
+      }));
+    } catch (error) {
+      console.error(
+        "Error fetching all madrasas for export:",
+        error
+      );
+
+      toast.error(
+        "Failed to fetch all madrasas for export."
+      );
+
+      return;
     }
+  }
+
+  try {
+    toast.loading("Preparing export...", {
+      id: "madrasa-export",
+    });
+
+    // =========================================
+    // GET APPROVED + PENDING COUNT FOR EXPORT
+    // =========================================
+
+    const exportData = [];
+
+const batchSize = 10; // safer: 5–10
+
+for (let i = 0; i < dataToExport.length; i += batchSize) {
+  const batch = dataToExport.slice(i, i + batchSize);
+
+  const batchResults = await Promise.all(
+    batch.map(async (madrasa) => {
+      const madrassaKey =
+        madrasa.madarsaId || madrasa.id;
+
+      try {
+        const studentsQuery = query(
+          collection(db, "students"),
+          where("madarsaId", "==", madrassaKey)
+        );
+
+        const pendingQuery = query(
+          collection(db, "admissions"),
+          where("madarsa", "==", madrassaKey),
+          where("status", "==", "pending")
+        );
+
+        const teachersQuery = query(
+          collection(db, "teachers"),
+          where("madarsaId", "==", madrassaKey)
+        );
+
+        const [
+          studentsSnapshot,
+          pendingSnapshot,
+          teachersSnapshot,
+        ] = await Promise.all([
+          getDocs(studentsQuery),
+          getDocs(pendingQuery),
+          getDocs(teachersQuery),
+        ]);
+
+        const approvedStudents =
+          studentsSnapshot.docs.filter((docSnap) => {
+            const data = docSnap.data();
+
+            return (
+              !data.deleted &&
+              data.status === "active"
+            );
+          });
+
+        const pendingStudents =
+          pendingSnapshot.docs.filter((docSnap) => {
+            const data = docSnap.data();
+
+            return !data.deleted;
+          });
+
+        const activeTeachers =
+          teachersSnapshot.docs.filter((docSnap) => {
+            const data = docSnap.data();
+
+            return (
+              !data.deleted &&
+              data.status !== "suspended" &&
+              data.status !== "deleted"
+            );
+          });
+
+        return {
+          ...madrasa,
+          approvedStudentCount:
+            approvedStudents.length,
+          pendingStudentCount:
+            pendingStudents.length,
+          teacherCount:
+            activeTeachers.length,
+        };
+      } catch (error) {
+        console.error(
+          `Count error for ${madrassaKey}:`,
+          error
+        );
+
+        return {
+          ...madrasa,
+          approvedStudentCount: 0,
+          pendingStudentCount: 0,
+          teacherCount: 0,
+        };
+      }
+    })
+  );
+
+  exportData.push(...batchResults);
+
+  // Small pause between batches
+  await new Promise((resolve) =>
+    setTimeout(resolve, 250)
+  );
+}
+
+    // =========================================
+    // CREATE CSV
+    // =========================================
 
     const csvContent = [
       [
@@ -1725,7 +2028,8 @@ export default function CentralAdminMadrassasPage() {
         "Admin Phone",
         "Admin Password",
         "Capacity",
-        "Students",
+        "Approved Students",
+        "Pending Students",
         "Teachers",
         "Status",
         "Established",
@@ -1733,47 +2037,111 @@ export default function CentralAdminMadrassasPage() {
         "Created Date",
         "Updated Date",
       ].join(","),
-      ...dataToExport.map((madrasa) =>
+
+      ...exportData.map((madrasa) =>
         [
           `"${madrasa.name || ""}"`,
+
           `"${madrasa.madarsaId || ""}"`,
-          `"${(madrasa.address || "").replace(/"/g, '""')}"`, // Handle commas in address
+
+          `"${(madrasa.address || "")
+            .replace(/"/g, '""')}"`,
+
           `"${madrasa.phone || ""}"`,
+
           `"${madrasa.email || ""}"`,
+
           `"${madrasa.managerName || ""}"`,
+
           `"${madrasa.managerPosition || "Others"}"`,
+
           `"${madrasa.adminName || ""}"`,
+
           `"${madrasa.adminEmail || ""}"`,
+
           `"${madrasa.adminPhone || ""}"`,
+
           `"${madrasa.adminPassword || ""}"`,
+
           madrasa.capacity || "",
-          getCounts(madrasa).studentCount, // Use getCounts
-          getCounts(madrasa).teacherCount, // Use getCounts
+
+          // APPROVED
+          madrasa.approvedStudentCount,
+
+          // PENDING
+          madrasa.pendingStudentCount,
+
+          // TEACHERS
+          madrasa.teacherCount,
+
           `"${madrasa.status || ""}"`,
+
           `"${madrasa.established || ""}"`,
-          `"${(madrasa.description || "").replace(/"/g, '""')}"`,
+
+          `"${(madrasa.description || "")
+            .replace(/"/g, '""')}"`,
+
           madrasa.createdAt
             ? new Date(
-                madrasa.createdAt?.seconds * 1000 || madrasa.createdAt,
+                madrasa.createdAt?.seconds
+                  ? madrasa.createdAt.seconds * 1000
+                  : madrasa.createdAt
               ).toLocaleDateString()
             : "",
+
           madrasa.updatedAt
             ? new Date(
-                madrasa.updatedAt?.seconds * 1000 || madrasa.updatedAt,
+                madrasa.updatedAt?.seconds
+                  ? madrasa.updatedAt.seconds * 1000
+                  : madrasa.updatedAt
               ).toLocaleDateString()
             : "",
-        ].join(","),
+        ].join(",")
       ),
     ].join("\n");
 
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
+    const blob = new Blob(
+      [csvContent],
+      {
+        type: "text/csv;charset=utf-8;",
+      }
+    );
+
+    const url =
+      window.URL.createObjectURL(blob);
+
+    const a =
+      document.createElement("a");
+
     a.href = url;
-    a.download = "madrassas_data.csv";
+
+    a.download =
+      "madrassas_data.csv";
+
     a.click();
+
     window.URL.revokeObjectURL(url);
-  };
+
+    toast.success(
+      "Madrasa data exported successfully",
+      {
+        id: "madrasa-export",
+      }
+    );
+  } catch (error) {
+    console.error(
+      "Export error:",
+      error
+    );
+
+    toast.error(
+      "Failed to export data",
+      {
+        id: "madrasa-export",
+      }
+    );
+  }
+};
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -2777,7 +3145,15 @@ export default function CentralAdminMadrassasPage() {
               </div>
 
               <div className="w-full md:w-48">
-                <Select value={filterStatus} onValueChange={setFilterStatus}>
+                <Select
+                  value={filterStatus}
+                  onValueChange={(value) => {
+                    setFilterStatus(value);
+                    setCurrentPage(1);
+                    setPageTokens([null]);
+                    pageTokensRef.current = [null];
+                  }}
+                >
                   <SelectTrigger className="h-10">
                     <SelectValue placeholder="Filter by Status" />
                   </SelectTrigger>
@@ -2786,6 +3162,9 @@ export default function CentralAdminMadrassasPage() {
                     <SelectItem value="active">Active</SelectItem>
                     <SelectItem value="inactive">Inactive</SelectItem>
                     <SelectItem value="suspended">Suspended</SelectItem>
+                    <SelectItem value="students-pending">
+        Pending Students
+      </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -2947,16 +3326,33 @@ export default function CentralAdminMadrassasPage() {
                                 </div>
                               </div>
                             </TableCell>
-                            <TableCell>
-                              <Badge
-                                variant="outline"
-                                className={
-                                  counts.isLoading ? "animate-pulse" : ""
-                                }
-                              >
-                                {counts.isLoading ? "..." : counts.studentCount}
-                              </Badge>
-                            </TableCell>
+                           <TableCell>
+  <div className="flex flex-col gap-2 min-w-[110px]">
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-sm text-gray-600">
+        Approved
+      </span>
+
+      <span className="min-w-[30px] h-6 px-2 flex items-center justify-center rounded-full bg-green-100 text-green-700 text-sm font-semibold">
+        {counts.isLoading
+          ? "..."
+          : counts.approvedStudentCount}
+      </span>
+    </div>
+
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-sm text-gray-600">
+        Pending
+      </span>
+
+      <span className="min-w-[30px] h-6 px-2 flex items-center justify-center rounded-full bg-yellow-100 text-yellow-700 text-sm font-semibold">
+        {counts.isLoading
+          ? "..."
+          : counts.pendingStudentCount}
+      </span>
+    </div>
+  </div>
+</TableCell>
                             <TableCell>
                               <Badge
                                 variant="outline"
