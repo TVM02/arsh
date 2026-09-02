@@ -1868,235 +1868,204 @@ export default function CentralAdminMadrassasPage() {
   };
 
   const downloadMadrassaData = async () => {
-  let dataToExport = hasSearched
-    ? searchResults
-    : madrasas;
-
-  // Get all madrasas when search is empty
-  if ((searchTerm || "").trim() === "") {
-    try {
-      const allQuery = query(
-        collection(db, "madarsas"),
-        orderBy("createdAt", "desc")
-      );
-
-      const allSnap = await getDocs(allQuery);
-
-      dataToExport = allSnap.docs.map((docSnap) => ({
-        id: docSnap.id,
-        ...docSnap.data(),
-        _doc: docSnap,
-      }));
-    } catch (error) {
-      console.error(
-        "Error fetching all madrasas for export:",
-        error
-      );
-
-      toast.error(
-        "Failed to fetch all madrasas for export."
-      );
-
-      return;
-    }
-  }
-
   try {
     toast.loading("Preparing export...", {
       id: "madrasa-export",
     });
 
-    // =========================================
-    // GET APPROVED + PENDING COUNT FOR EXPORT
-    // =========================================
+    // =====================================================
+    // 1. GET MADRASA DATA
+    // =====================================================
 
-    const exportData = await Promise.all(
-      dataToExport.map(async (madrasa) => {
-        const madrassaKey =
-          madrasa.madarsaId || madrasa.id;
+    let dataToExport = hasSearched
+      ? searchResults
+      : madrasas;
 
-        try {
-          // Approved students
-          const studentsQuery = query(
-            collection(db, "students"),
-            where(
-              "madarsaId",
-              "==",
-              madrassaKey
-            )
-          );
+    // If search is empty, export all madrasas
+    if ((searchTerm || "").trim() === "") {
+      const madrasaQuery = query(
+        collection(db, "madarsas"),
+        orderBy("createdAt", "desc")
+      );
 
-          // Pending students/applications
-          const pendingQuery = query(
-            collection(db, "admissions"),
-            where(
-              "madarsa",
-              "==",
-              madrassaKey
-            ),
-            where(
-              "status",
-              "==",
-              "pending"
-            )
-          );
+      const madrasaSnapshot =
+        await getDocs(madrasaQuery);
 
-          // Teachers
-          const teachersQuery = query(
-            collection(db, "teachers"),
-            where(
-              "madarsaId",
-              "==",
-              madrassaKey
-            )
-          );
+      dataToExport =
+        madrasaSnapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...docSnap.data(),
+        }));
+    }
 
-          const [
-            studentsSnapshot,
-            pendingSnapshot,
-            teachersSnapshot,
-          ] = await Promise.all([
-            getDocs(studentsQuery),
-            getDocs(pendingQuery),
-            getDocs(teachersQuery),
-          ]);
+    // =====================================================
+    // 2. FETCH COUNTS ONLY ONCE
+    // =====================================================
 
-          // Active students = Approved
-          const approvedStudents =
-            studentsSnapshot.docs.filter(
-              (docSnap) => {
-                const data = docSnap.data();
+    const [
+      studentsSnapshot,
+      pendingSnapshot,
+      teachersSnapshot,
+    ] = await Promise.all([
+      // Approved students
+      getDocs(
+        query(
+          collection(db, "students"),
+          where("status", "==", "active")
+        )
+      ),
 
-                return (
-                  !data.deleted &&
-                  data.status === "active"
-                );
-              }
-            );
+      // Pending students/applications
+      getDocs(
+        query(
+          collection(db, "admissions"),
+          where("status", "==", "pending")
+        )
+      ),
 
-          // Pending admissions
-          const pendingStudents =
-            pendingSnapshot.docs.filter(
-              (docSnap) => {
-                const data = docSnap.data();
+      // Teachers
+      getDocs(collection(db, "teachers")),
+    ]);
 
-                return !data.deleted;
-              }
-            );
+    // =====================================================
+    // 3. CREATE COUNT MAPS
+    // =====================================================
 
-          // Active teachers
-          const activeTeachers =
-            teachersSnapshot.docs.filter(
-              (docSnap) => {
-                const data = docSnap.data();
+    const approvedCountMap = {};
+    const pendingCountMap = {};
+    const teacherCountMap = {};
 
-                return (
-                  !data.deleted &&
-                  data.status !== "suspended" &&
-                  data.status !== "deleted"
-                );
-              }
-            );
+    // -----------------------------------------------------
+    // APPROVED STUDENTS
+    // students collection -> madarsaId
+    // -----------------------------------------------------
 
-          return {
-            ...madrasa,
+    studentsSnapshot.docs.forEach((docSnap) => {
+      const data = docSnap.data();
 
-            approvedStudentCount:
-              approvedStudents.length,
+      if (data.deleted) return;
 
-            pendingStudentCount:
-              pendingStudents.length,
+      const madrasaId = String(
+        data.madarsaId || ""
+      ).trim();
 
-            teacherCount:
-              activeTeachers.length,
-          };
-        } catch (error) {
-          console.error(
-            `Count error for ${madrassaKey}:`,
-            error
-          );
+      if (!madrasaId) return;
 
-          return {
-            ...madrasa,
-            approvedStudentCount: 0,
-            pendingStudentCount: 0,
-            teacherCount: 0,
-          };
-        }
-      })
-    );
+      approvedCountMap[madrasaId] =
+        (approvedCountMap[madrasaId] || 0) + 1;
+    });
 
-    // =========================================
-    // CREATE CSV
-    // =========================================
+    // -----------------------------------------------------
+    // PENDING STUDENTS
+    // admissions collection -> madarsa
+    // -----------------------------------------------------
 
-    const csvContent = [
-      [
-        "Name",
-        "Madrasa ID",
-        "Address",
-        "Phone",
-        "Email",
-        "Manager Name",
-        "Manager Position",
-        "Admin Name",
-        "Admin Email",
-        "Admin Phone",
-        "Admin Password",
-        "Capacity",
-        "Approved Students",
-        "Pending Students",
-        "Teachers",
-        "Status",
-        "Established",
-        "Description",
-        "Created Date",
-        "Updated Date",
-      ].join(","),
+    pendingSnapshot.docs.forEach((docSnap) => {
+      const data = docSnap.data();
 
-      ...exportData.map((madrasa) =>
-        [
-          `"${madrasa.name || ""}"`,
+      if (data.deleted) return;
 
-          `"${madrasa.madarsaId || ""}"`,
+      const madrasaId = String(
+        data.madarsa || ""
+      ).trim();
 
-          `"${(madrasa.address || "")
-            .replace(/"/g, '""')}"`,
+      if (!madrasaId) return;
 
-          `"${madrasa.phone || ""}"`,
+      pendingCountMap[madrasaId] =
+        (pendingCountMap[madrasaId] || 0) + 1;
+    });
 
-          `"${madrasa.email || ""}"`,
+    // -----------------------------------------------------
+    // TEACHERS
+    // teachers collection -> madarsaId
+    // -----------------------------------------------------
 
-          `"${madrasa.managerName || ""}"`,
+    teachersSnapshot.docs.forEach((docSnap) => {
+      const data = docSnap.data();
 
-          `"${madrasa.managerPosition || "Others"}"`,
+      if (data.deleted) return;
 
-          `"${madrasa.adminName || ""}"`,
+      if (
+        data.status === "deleted" ||
+        data.status === "suspended"
+      ) {
+        return;
+      }
 
-          `"${madrasa.adminEmail || ""}"`,
+      const madrasaId = String(
+        data.madarsaId || ""
+      ).trim();
 
-          `"${madrasa.adminPhone || ""}"`,
+      if (!madrasaId) return;
 
-          `"${madrasa.adminPassword || ""}"`,
+      teacherCountMap[madrasaId] =
+        (teacherCountMap[madrasaId] || 0) + 1;
+    });
 
+    // =====================================================
+    // 4. CREATE EXCEL DATA
+    // =====================================================
+
+    const excelData = dataToExport.map((madrasa) => {
+      const madrasaId = String(
+        madrasa.madarsaId || madrasa.id || ""
+      ).trim();
+
+      return {
+        Name: madrasa.name || "",
+
+        "Madrasa ID":
+          madrasa.madarsaId || "",
+
+        Address:
+          madrasa.address || "",
+
+        Phone:
+          madrasa.phone || "",
+
+        Email:
+          madrasa.email || "",
+
+        "Manager Name":
+          madrasa.managerName || "",
+
+        "Manager Position":
+          madrasa.managerPosition || "Others",
+
+        "Admin Name":
+          madrasa.adminName || "",
+
+        "Admin Email":
+          madrasa.adminEmail || "",
+
+        "Admin Phone":
+          madrasa.adminPhone || "",
+
+        "Admin Password":
+          madrasa.adminPassword || "",
+
+        Capacity:
           madrasa.capacity || "",
 
-          // APPROVED
-          madrasa.approvedStudentCount,
+        "Approved Students":
+          approvedCountMap[madrasaId] || 0,
 
-          // PENDING
-          madrasa.pendingStudentCount,
+        "Pending Students":
+          pendingCountMap[madrasaId] || 0,
 
-          // TEACHERS
-          madrasa.teacherCount,
+        Teachers:
+          teacherCountMap[madrasaId] || 0,
 
-          `"${madrasa.status || ""}"`,
+        Status:
+          madrasa.status || "",
 
-          `"${madrasa.established || ""}"`,
+        Established:
+          madrasa.established || "",
 
-          `"${(madrasa.description || "")
-            .replace(/"/g, '""')}"`,
+        Description:
+          madrasa.description || "",
 
+        "Created Date":
           madrasa.createdAt
             ? new Date(
                 madrasa.createdAt?.seconds
@@ -2105,6 +2074,7 @@ export default function CentralAdminMadrassasPage() {
               ).toLocaleDateString()
             : "",
 
+        "Updated Date":
           madrasa.updatedAt
             ? new Date(
                 madrasa.updatedAt?.seconds
@@ -2112,46 +2082,88 @@ export default function CentralAdminMadrassasPage() {
                   : madrasa.updatedAt
               ).toLocaleDateString()
             : "",
-        ].join(",")
-      ),
-    ].join("\n");
+      };
+    });
 
-    const blob = new Blob(
-      [csvContent],
-      {
-        type: "text/csv;charset=utf-8;",
-      }
+    // =====================================================
+    // 5. CREATE WORKSHEET
+    // =====================================================
+
+    const worksheet =
+      XLSX.utils.json_to_sheet(excelData);
+
+    // =====================================================
+    // 6. AUTO ADJUST COLUMN WIDTH
+    // =====================================================
+
+    if (excelData.length > 0) {
+      const columnKeys =
+        Object.keys(excelData[0]);
+
+      worksheet["!cols"] =
+        columnKeys.map((key) => {
+          let maxLength =
+            String(key).length;
+
+          excelData.forEach((row) => {
+            const value =
+              row[key] === null ||
+              row[key] === undefined
+                ? ""
+                : String(row[key]);
+
+            if (value.length > maxLength) {
+              maxLength = value.length;
+            }
+          });
+
+          return {
+            // Minimum width = 10
+            // Maximum width = 45
+            wch: Math.min(
+              Math.max(maxLength + 2, 10),
+              45
+            ),
+          };
+        });
+    }
+
+    // =====================================================
+    // 7. CREATE WORKBOOK
+    // =====================================================
+
+    const workbook =
+      XLSX.utils.book_new();
+
+    XLSX.utils.book_append_sheet(
+      workbook,
+      worksheet,
+      "Madrasas"
     );
 
-    const url =
-      window.URL.createObjectURL(blob);
+    // =====================================================
+    // 8. DOWNLOAD EXCEL
+    // =====================================================
 
-    const a =
-      document.createElement("a");
-
-    a.href = url;
-
-    a.download =
-      "madrassas_data.csv";
-
-    a.click();
-
-    window.URL.revokeObjectURL(url);
+    XLSX.writeFile(
+      workbook,
+      "madrassas_data.xlsx"
+    );
 
     toast.success(
-      "Madrasa data exported successfully",
+      `Exported ${dataToExport.length} madrasas successfully`,
       {
         id: "madrasa-export",
       }
     );
   } catch (error) {
     console.error(
-      "Export error:",
+      "Madrasa export error:",
       error
     );
 
     toast.error(
-      "Failed to export data",
+      "Failed to export madrasa data",
       {
         id: "madrasa-export",
       }
