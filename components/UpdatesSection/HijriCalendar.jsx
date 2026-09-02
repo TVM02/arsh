@@ -34,6 +34,8 @@ function formatGregorianDate(dateStr) {
     year: "numeric",
   });
 }
+const KAABA_LAT = 21.422487;
+const KAABA_LNG = 39.826206;
 
 export default function HijriCalendar() {
   const [calendar, setCalendar] = useState(null);
@@ -44,12 +46,18 @@ export default function HijriCalendar() {
   const [modalUrl, setModalUrl] = useState("");
   const [quthbaData, setQuthbaData] = useState(null);
   const [quthbaModalOpen, setQuthbaModalOpen] = useState(false);
+  const [qiblafinder, setQiblafinder] = useState(false);
   const [selectedQuthbaIndex, setSelectedQuthbaIndex] = useState(0);
   const [holidaysData, setHolidaysData] = useState([]);
   const [holidayModalOpen, setHolidayModalOpen] = useState(false);
   const [holidayFilterMonth, setHolidayFilterMonth] = useState("");
   const [holidayFilterYear, setHolidayFilterYear] = useState("");
   const [quthbaSearchTerm, setQuthbaSearchTerm] = useState("");
+    const [location, setLocation] = useState(null);
+  const [qibla, setQibla] = useState(null);
+  const [heading, setHeading] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     const fetchCalendar = async () => {
@@ -102,6 +110,192 @@ export default function HijriCalendar() {
 
     fetchPrayerTimes();
   }, [city]);
+  const getQibla = async (lat, lng) => {
+    try {
+      const response = await fetch(
+        `https://api.aladhan.com/v1/qibla/${lat}/${lng}`
+      );
+
+      if (!response.ok) {
+        throw new Error("Qibla API failed");
+      }
+
+      const result = await response.json();
+
+      if (!result?.data?.direction) {
+        throw new Error("Invalid Qibla response");
+      }
+
+      setQibla(result.data.direction);
+    } catch (err) {
+      console.error(err);
+      setError("Unable to calculate Qibla direction.");
+    }
+  };
+
+  // --------------------------------------------------
+  // Get user location
+  // --------------------------------------------------
+  const getLocation = () => {
+    setLoading(true);
+    setError("");
+
+    if (!navigator.geolocation) {
+      setError("Geolocation is not supported by this browser.");
+      setLoading(false);
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+
+        setLocation({
+          lat,
+          lng,
+        });
+
+        await getQibla(lat, lng);
+
+        setLoading(false);
+      },
+      (err) => {
+        console.error(err);
+
+        setError(
+          "Location permission denied. Please allow location access."
+        );
+
+        setLoading(false);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 0,
+      }
+    );
+  };
+
+  // --------------------------------------------------
+  // Request compass permission
+  // --------------------------------------------------
+  const enableCompass = async () => {
+    try {
+      if (
+        typeof DeviceOrientationEvent !== "undefined" &&
+        typeof DeviceOrientationEvent.requestPermission === "function"
+      ) {
+        const permission =
+          await DeviceOrientationEvent.requestPermission();
+
+        if (permission !== "granted") {
+          setError("Compass permission was denied.");
+          return;
+        }
+      }
+
+      window.addEventListener(
+        "deviceorientationabsolute",
+        handleOrientation,
+        true
+      );
+
+      window.addEventListener(
+        "deviceorientation",
+        handleOrientation,
+        true
+      );
+    } catch (err) {
+      console.error(err);
+      setError("Unable to access compass.");
+    }
+  };
+
+  // --------------------------------------------------
+  // Device compass
+  // --------------------------------------------------
+  const handleOrientation = (event) => {
+    let currentHeading = null;
+
+    // iPhone / iPad
+    if (typeof event.webkitCompassHeading === "number") {
+      currentHeading = event.webkitCompassHeading;
+    }
+
+    // Android / other browsers
+    else if (typeof event.alpha === "number") {
+      currentHeading = 360 - event.alpha;
+    }
+
+    if (currentHeading !== null) {
+      setHeading(normalizeDegrees(currentHeading));
+    }
+  };
+
+  // --------------------------------------------------
+  // Start
+  // --------------------------------------------------
+  const startQibla = async () => {
+    await enableCompass();
+    getLocation();
+  };
+
+  // --------------------------------------------------
+  // Normalize angle
+  // --------------------------------------------------
+  const normalizeDegrees = (degree) => {
+    return ((degree % 360) + 360) % 360;
+  };
+
+  // --------------------------------------------------
+  // Distance to Kaaba
+  // --------------------------------------------------
+  const calculateDistance = () => {
+    if (!location) return null;
+
+    const R = 6371;
+
+    const lat1 = toRadians(location.lat);
+    const lat2 = toRadians(KAABA_LAT);
+
+    const deltaLat = toRadians(
+      KAABA_LAT - location.lat
+    );
+
+    const deltaLng = toRadians(
+      KAABA_LNG - location.lng
+    );
+
+    const a =
+      Math.sin(deltaLat / 2) ** 2 +
+      Math.cos(lat1) *
+        Math.cos(lat2) *
+        Math.sin(deltaLng / 2) ** 2;
+
+    const c =
+      2 *
+      Math.atan2(
+        Math.sqrt(a),
+        Math.sqrt(1 - a)
+      );
+
+    return R * c;
+  };
+
+  const toRadians = (degree) => {
+    return (degree * Math.PI) / 180;
+  };
+
+  const distance = calculateDistance();
+
+  // --------------------------------------------------
+  // Qibla arrow rotation
+  // --------------------------------------------------
+  const arrowRotation =
+    qibla !== null
+      ? normalizeDegrees(qibla - heading)
+      : 0;
 
   useEffect(() => {
     if (!prayerData || !prayerData.timings) return;
@@ -390,8 +584,8 @@ export default function HijriCalendar() {
             >
               AI Digital University
             </a>
-            <a
-              href="/qibla"
+            <button
+              onClick={() => setQiblafinder(true)}
               style={{ transition: "all 0.2s ease" }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.transform = "translateY(-3px)";
@@ -410,7 +604,7 @@ export default function HijriCalendar() {
               className="flex items-center justify-center min-h-[64px] bg-white border border-[#c9b37e]/45 border-t-2 border-t-[#c9b37e] rounded text-[#274629] no-underline text-[0.95rem] font-medium cursor-pointer"
             >
               Qibla Finder
-            </a>
+            </button>
             <button
               onClick={() => setQuthbaModalOpen(true)}
               style={{ transition: "all 0.2s ease" }}
@@ -674,7 +868,438 @@ export default function HijriCalendar() {
           </div>
         </div>
       )}
+{qiblafinder && (
+  <div
+    className="
+      fixed inset-0 z-[9999]
+      bg-black/80
+      overflow-y-auto
+      px-4 py-6
+      md:px-8
+    "
+  >
+    {/* Top Close Button */}
+    <div className="flex justify-end mb-3">
+      <button
+        onClick={() => setQiblafinder(false)}
+        className="
+          bg-[#cbb47b]
+          hover:bg-[#bda66d]
+          text-white
+          font-semibold
+          px-6 py-3
+          rounded-md
+          shadow
+          transition
+        "
+      >
+        Close Window
+      </button>
+    </div>
 
+    {/* Main White Popup */}
+    <div
+      className="
+        w-full
+        min-h-[90vh]
+        bg-white
+        rounded-xl
+        shadow-2xl
+        px-5 py-6
+        md:px-8 md:py-8
+      "
+    >
+      {/* Popup Header */}
+      <div
+        className="
+          flex flex-col
+          md:flex-row
+          md:items-center
+          md:justify-between
+          gap-4
+          border-b
+          border-[#d5b66f]
+          pb-4
+          mb-7
+        "
+      >
+        <div>
+          <h1
+            className="
+              text-3xl
+              font-semibold
+              text-[#244a2d]
+            "
+          >
+            Qibla Finder
+          </h1>
+
+          <p className="text-gray-500 mt-1 text-sm">
+            Find the direction of the Holy Kaaba
+          </p>
+        </div>
+
+        <div className="text-sm text-gray-500">
+          📍 Location based Qibla direction
+        </div>
+      </div>
+
+      {/* Finder Section */}
+      <div
+        className="
+          border
+          border-[#d9bd7a]
+          rounded-xl
+          p-5
+          md:p-8
+          bg-[#fffefa]
+        "
+      >
+        <div
+          className="
+            mx-auto
+            max-w-5xl
+            grid
+            grid-cols-1
+            lg:grid-cols-[1fr_420px]
+            gap-8
+            items-center
+          "
+        >
+          {/* LEFT SIDE - Compass */}
+          <div className="flex flex-col items-center justify-center">
+            {/* Status */}
+            <div className="mb-6 text-center">
+              {loading ? (
+                <p className="text-amber-600 font-medium">
+                  📍 Getting your location...
+                </p>
+              ) : qibla !== null ? (
+                <p className="text-green-700 font-medium">
+                  ✓ Qibla direction detected
+                </p>
+              ) : (
+                <p className="text-gray-500">
+                  Tap the button to find your Qibla
+                </p>
+              )}
+            </div>
+
+            {/* Compass */}
+            <div
+              className="
+                relative
+                w-[260px]
+                h-[260px]
+                sm:w-[320px]
+                sm:h-[320px]
+                rounded-full
+                bg-[#163528]
+                shadow-2xl
+                border-[10px]
+                border-[#e0c98f]
+              "
+            >
+              {/* Inner Circle */}
+              <div
+                className="
+                  absolute inset-3
+                  rounded-full
+                  border
+                  border-white/20
+                  bg-gradient-to-br
+                  from-[#27583f]
+                  to-[#071b15]
+                "
+              >
+                {/* Directions */}
+                <span
+                  className="
+                    absolute top-4 left-1/2
+                    -translate-x-1/2
+                    font-bold
+                    text-red-400
+                    text-lg
+                  "
+                >
+                  N
+                </span>
+
+                <span
+                  className="
+                    absolute right-4 top-1/2
+                    -translate-y-1/2
+                    font-semibold
+                    text-white
+                  "
+                >
+                  E
+                </span>
+
+                <span
+                  className="
+                    absolute bottom-4 left-1/2
+                    -translate-x-1/2
+                    font-semibold
+                    text-white
+                  "
+                >
+                  S
+                </span>
+
+                <span
+                  className="
+                    absolute left-4 top-1/2
+                    -translate-y-1/2
+                    font-semibold
+                    text-white
+                  "
+                >
+                  W
+                </span>
+
+                {/* Arrow + Center */}
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div
+                    className="
+                      absolute
+                      w-2
+                      h-[120px]
+                      sm:h-[145px]
+                      origin-bottom
+                      transition-transform
+                      duration-300
+                    "
+                    style={{
+                      transform: `translateY(-50%) rotate(${arrowRotation}deg)`,
+                    }}
+                  >
+                    <div
+                      className="
+                        absolute
+                        bottom-0
+                        left-1/2
+                        -translate-x-1/2
+                        w-2
+                        h-[105px]
+                        sm:h-[125px]
+                        bg-[#e4c16c]
+                        rounded-full
+                        shadow-[0_0_15px_rgba(228,193,108,.8)]
+                      "
+                    />
+
+                    <div
+                      className="
+                        absolute
+                        top-0
+                        left-1/2
+                        -translate-x-1/2
+                        border-l-[14px]
+                        border-r-[14px]
+                        border-b-[28px]
+                        border-l-transparent
+                        border-r-transparent
+                        border-b-[#e4c16c]
+                      "
+                    />
+                  </div>
+
+                  <div
+                    className="
+                      relative z-10
+                      w-16 h-16
+                      rounded-full
+                      bg-black
+                      border-4
+                      border-[#e4c16c]
+                      flex
+                      items-center
+                      justify-center
+                      text-2xl
+                      shadow-xl
+                    "
+                  >
+                    🕋
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Bearing */}
+            <div className="mt-6 text-center">
+              <div className="text-4xl font-bold text-[#8d6f2b]">
+                {qibla !== null
+                  ? `${qibla.toFixed(1)}°`
+                  : "--"}
+              </div>
+
+              <p className="text-sm text-gray-500 mt-1">
+                Qibla bearing from North
+              </p>
+            </div>
+          </div>
+
+          {/* RIGHT SIDE */}
+          <div>
+            <div
+              className="
+                bg-white
+                border
+                border-gray-200
+                rounded-xl
+                shadow-sm
+                p-6
+              "
+            >
+              <h2 className="text-xl font-semibold text-[#244a2d] mb-5">
+                Location Information
+              </h2>
+
+              <div className="space-y-3">
+                {/* Latitude */}
+                <div
+                  className="
+                    flex
+                    justify-between
+                    items-center
+                    bg-gray-50
+                    rounded-lg
+                    px-4 py-3
+                  "
+                >
+                  <span className="text-gray-500">
+                    Latitude
+                  </span>
+
+                  <span className="font-semibold text-gray-800">
+                    {location
+                      ? location.lat.toFixed(5)
+                      : "--"}
+                  </span>
+                </div>
+
+                {/* Longitude */}
+                <div
+                  className="
+                    flex
+                    justify-between
+                    items-center
+                    bg-gray-50
+                    rounded-lg
+                    px-4 py-3
+                  "
+                >
+                  <span className="text-gray-500">
+                    Longitude
+                  </span>
+
+                  <span className="font-semibold text-gray-800">
+                    {location
+                      ? location.lng.toFixed(5)
+                      : "--"}
+                  </span>
+                </div>
+
+                {/* Qibla */}
+                <div
+                  className="
+                    flex
+                    justify-between
+                    items-center
+                    bg-gray-50
+                    rounded-lg
+                    px-4 py-3
+                  "
+                >
+                  <span className="text-gray-500">
+                    Qibla
+                  </span>
+
+                  <span className="font-semibold text-[#8d6f2b]">
+                    {qibla !== null
+                      ? `${qibla.toFixed(1)}°`
+                      : "--"}
+                  </span>
+                </div>
+
+                {/* Distance */}
+                <div
+                  className="
+                    flex
+                    justify-between
+                    items-center
+                    bg-gray-50
+                    rounded-lg
+                    px-4 py-3
+                  "
+                >
+                  <span className="text-gray-500">
+                    Distance
+                  </span>
+
+                  <span className="font-semibold text-gray-800">
+                    {distance !== null &&
+                    distance !== undefined
+                      ? `${distance.toFixed(0)} km`
+                      : "--"}
+                  </span>
+                </div>
+              </div>
+
+              {/* Button */}
+              <button
+                onClick={startQibla}
+                disabled={loading}
+                className="
+                  mt-6
+                  w-full
+                  rounded-lg
+                  bg-[#cbb47b]
+                  hover:bg-[#bca56a]
+                  disabled:opacity-50
+                  text-white
+                  font-semibold
+                  py-3.5
+                  transition
+                  shadow
+                "
+              >
+                {loading
+                  ? "Finding Qibla..."
+                  : "📍 Find My Qibla"}
+              </button>
+
+              {/* Error */}
+              {error && (
+                <div
+                  className="
+                    mt-4
+                    bg-red-50
+                    border
+                    border-red-200
+                    text-red-600
+                    rounded-lg
+                    px-4 py-3
+                    text-sm
+                  "
+                >
+                  {error}
+                </div>
+              )}
+
+              {/* Help */}
+              <p className="mt-5 text-xs text-gray-400 text-center leading-relaxed">
+                Allow location and compass permissions for
+                accurate Qibla direction.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+)}
       {modalUrl && (
         <div
           style={{
@@ -878,4 +1503,19 @@ export default function HijriCalendar() {
       )}
     </section>
   );
+  function InfoBox({ title, value }) {
+  return (
+    <div className="rounded-2xl bg-white/5 border border-white/10 p-4">
+
+      <p className="text-xs text-emerald-200/50 mb-1">
+        {title}
+      </p>
+
+      <p className="font-semibold">
+        {value}
+      </p>
+
+    </div>
+  );
+}
 }

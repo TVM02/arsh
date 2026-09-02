@@ -43,6 +43,7 @@ import {
   Hash,
   Trophy,
   FolderOpen,
+  Youtube
 } from "lucide-react";
 import useAuthStore from "@/lib/authStore";
 import Image from "next/image";
@@ -960,6 +961,7 @@ const Sidebar = ({ isOpen, onClose }) => {
           { name: "Marquee Announcements", href: "/home-control?tab=marquee", icon: Bell, group: "home-control" },
           { name: "Latest News", href: "/home-control?tab=news", icon: FileText, group: "home-control" },
           { name: "Upcoming Events", href: "/home-control?tab=events", icon: Calendar, group: "home-control" },
+          { name: "YouTube Videos", href: "/home-control?tab=youtube-videos", icon: Youtube, group: "home-control" },
           { name: "Friday Quthba", href: "/home-control?tab=friday-quthba", icon: BookOpen, group: "home-control" },
           { name: "About Us", href: "/home-control?tab=about", icon: Users, group: "home-control" },
           { name: "Madrasa Holidays", href: "/home-control?tab=madrasa-holidays", icon: Calendar, group: "home-control" },

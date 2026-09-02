@@ -10,7 +10,16 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Trash2, Plus, Save, Upload } from "lucide-react";
+import {
+  Trash2,
+  Plus,
+  Save,
+  Upload,
+  Youtube,
+  Eye,
+  ExternalLink,
+  Play,
+} from "lucide-react";
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "@/lib/firebase";
@@ -19,6 +28,12 @@ import Image from "next/image";
 import HijriDatePicker from "@/components/HijriDatePicker";
 import { useRouter } from "next/navigation";
 import useAuthStore from "@/lib/authStore";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 const INITIAL_STATE = {
   marquee: [
@@ -26,11 +41,6 @@ const INITIAL_STATE = {
     { text: "New Face of DKJU ലൈവ് അപ്ഡേഷൻ പ്രൊസസ്സിങ് നടന്നുകൊണ്ടിരിക്കുകയാണ്. പുതിയ മാറ്റങ്ങളോടെ വെബ്സൈറ്റ് 2 ദിവസത്തിനകം ലഭ്യമാകും." },
   ],
   carousel: [
-    { image: "/buildings/three.jpg", title: "DKJU Building 1" },
-    { image: "/buildings/five.jpg", title: "DKJU Building 2" },
-    { image: "/buildings/seven.jpg", title: "DKJU Building 3" },
-  ],
-  gallery: [
     { image: "/buildings/three.jpg", title: "DKJU Building 1" },
     { image: "/buildings/five.jpg", title: "DKJU Building 2" },
     { image: "/buildings/seven.jpg", title: "DKJU Building 3" },
@@ -73,6 +83,12 @@ const INITIAL_STATE = {
     text: "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
     link: "#"
   },
+  youtubeVideos: [{
+        id: "123456",
+        title: "DKJU Conference 2026",
+        url: "https://www.youtube.com/watch?v=cPm-H5Xxxl4"
+      },
+    ],
 };
 
 function HomeControlContent() {
@@ -92,6 +108,11 @@ function HomeControlContent() {
   // Madrasa Holidays state
   const [holidayEntries, setHolidayEntries] = useState([]);
   const [holidaySaving, setHolidaySaving] = useState(false);
+
+   
+
+const [videoViewOpen, setVideoViewOpen] = useState(false);
+const [selectedVideo, setSelectedVideo] = useState(null);
 
   useEffect(() => {
     const fetchConfig = async () => {
@@ -356,7 +377,126 @@ function HomeControlContent() {
     newItems[index] = { ...newItems[index], [field]: value };
     setConfig({ ...config, [section]: newItems });
   };
+const getYouTubeEmbedUrl = (url) => {
+  if (!url) return "";
 
+  try {
+    // youtube.com/watch?v=VIDEO_ID
+    if (url.includes("youtube.com/watch")) {
+      const urlObj = new URL(url);
+      const videoId = urlObj.searchParams.get("v");
+
+      if (videoId) {
+        return `https://www.youtube.com/embed/${videoId}`;
+      }
+    }
+
+    // youtu.be/VIDEO_ID
+    if (url.includes("youtu.be/")) {
+      const videoId = url
+        .split("youtu.be/")[1]
+        ?.split("?")[0];
+
+      if (videoId) {
+        return `https://www.youtube.com/embed/${videoId}`;
+      }
+    }
+
+    // youtube.com/shorts/VIDEO_ID
+    if (url.includes("youtube.com/shorts/")) {
+      const videoId = url
+        .split("youtube.com/shorts/")[1]
+        ?.split("?")[0];
+
+      if (videoId) {
+        return `https://www.youtube.com/embed/${videoId}`;
+      }
+    }
+
+    // youtube.com/embed/VIDEO_ID
+    if (url.includes("youtube.com/embed/")) {
+      return url;
+    }
+
+    return "";
+  } catch (error) {
+    console.error("Invalid YouTube URL:", error);
+    return "";
+  }
+};
+const addYouTubeVideo = () => {
+  setConfig((prev) => ({
+    ...prev,
+    youtubeVideos: [
+      {
+        id: Date.now().toString(),
+        title: "",
+        url: "",
+      },
+      ...(prev.youtubeVideos || []),
+    ],
+  }));
+};
+
+const updateYouTubeVideo = (
+  index,
+  field,
+  value
+) => {
+  setConfig((prev) => {
+    const videos = [
+      ...(prev.youtubeVideos || []),
+    ];
+
+    videos[index] = {
+      ...videos[index],
+      [field]: value,
+    };
+
+    return {
+      ...prev,
+      youtubeVideos: videos,
+    };
+  });
+};
+
+const removeYouTubeVideo = (index) => {
+  if (
+    !confirm(
+      "Are you sure you want to remove this video?"
+    )
+  ) {
+    return;
+  }
+
+  setConfig((prev) => {
+    const videos = [
+      ...(prev.youtubeVideos || []),
+    ];
+
+    videos.splice(index, 1);
+
+    return {
+      ...prev,
+      youtubeVideos: videos,
+    };
+  });
+};
+
+const viewYouTubeVideo = (video) => {
+  const embedUrl =
+    getYouTubeEmbedUrl(video.url);
+
+  if (!embedUrl) {
+    toast.error(
+      "Please enter a valid YouTube link"
+    );
+    return;
+  }
+
+  setSelectedVideo(video);
+  setVideoViewOpen(true);
+};
   return (
     <ProtectedRoute allowedRoles={["home_admin", "central_admin"]} redirectTo="/home-control/login">
       <Layout>
@@ -722,6 +862,226 @@ function HomeControlContent() {
               <Plus className="h-4 w-4 mr-2" /> Add Quote Item
             </Button>
             </TabsContent>
+            <TabsContent
+  value="youtube-videos"
+  className="mt-0 space-y-5"
+>
+  {/* Header */}
+  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+    <div>
+      <h2 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
+        <Youtube className="h-6 w-6 text-red-600" />
+
+        YouTube Videos
+      </h2>
+
+      <p className="text-sm text-gray-500 mt-1">
+        Add YouTube videos to display on the
+        website.
+      </p>
+    </div>
+
+    <Button
+      type="button"
+      onClick={addYouTubeVideo}
+      className="bg-red-600 hover:bg-red-700 text-white"
+    >
+      <Plus className="h-4 w-4 mr-2" />
+      Add Video
+    </Button>
+  </div>
+
+  {/* Empty */}
+  {(!config.youtubeVideos ||
+    config.youtubeVideos.length === 0) && (
+    <Card>
+      <CardContent className="py-14 text-center">
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-red-50">
+          <Youtube className="h-7 w-7 text-red-500" />
+        </div>
+
+        <h3 className="font-semibold text-gray-900">
+          No YouTube videos added
+        </h3>
+
+        <p className="text-sm text-gray-500 mt-1">
+          Click Add Video to add your first
+          YouTube video.
+        </p>
+
+        <Button
+          type="button"
+          variant="outline"
+          onClick={addYouTubeVideo}
+          className="mt-4"
+        >
+          <Plus className="h-4 w-4 mr-2" />
+          Add Video
+        </Button>
+      </CardContent>
+    </Card>
+  )}
+
+  {/* Video Cards */}
+  {(config.youtubeVideos || []).map(
+    (item, index) => {
+      const embedUrl =
+        getYouTubeEmbedUrl(item.url);
+
+      return (
+        <Card
+          key={item.id || index}
+          className="overflow-hidden"
+        >
+          <CardContent className="p-5">
+            <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-5">
+
+              {/* Preview */}
+              <div>
+                <Label className="mb-2 block">
+                  Preview
+                </Label>
+
+                <div className="relative aspect-video overflow-hidden rounded-lg border bg-gray-100">
+                  {embedUrl ? (
+                    <iframe
+                      src={embedUrl}
+                      title={
+                        item.title ||
+                        "YouTube Video"
+                      }
+                      className="absolute inset-0 h-full w-full"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      allowFullScreen
+                    />
+                  ) : (
+                    <div className="flex h-full flex-col items-center justify-center text-gray-400">
+                      <Youtube className="h-10 w-10 mb-2" />
+
+                      <span className="text-sm">
+                        YouTube Preview
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Form */}
+              <div className="space-y-4">
+                {/* Title */}
+                <div className="space-y-2">
+                  <Label>
+                    Video Title
+                    <span className="text-red-500">
+                      {" "}*
+                    </span>
+                  </Label>
+
+                  <Input
+                    value={item.title || ""}
+                    onChange={(e) =>
+                      updateYouTubeVideo(
+                        index,
+                        "title",
+                        e.target.value
+                      )
+                    }
+                    placeholder="Enter video title"
+                  />
+                </div>
+
+                {/* URL */}
+                <div className="space-y-2">
+                  <Label>
+                    YouTube Link
+                    <span className="text-red-500">
+                      {" "}*
+                    </span>
+                  </Label>
+
+                  <Input
+                    value={item.url || ""}
+                    onChange={(e) =>
+                      updateYouTubeVideo(
+                        index,
+                        "url",
+                        e.target.value
+                      )
+                    }
+                    placeholder="https://www.youtube.com/watch?v=..."
+                  />
+
+                  {item.url && !embedUrl && (
+                    <p className="text-xs text-red-500">
+                      Please enter a valid
+                      YouTube URL.
+                    </p>
+                  )}
+                </div>
+
+                {/* Actions */}
+                <div className="flex flex-wrap items-center gap-2 pt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() =>
+                      viewYouTubeVideo(item)
+                    }
+                    disabled={!embedUrl}
+                  >
+                    <Eye className="h-4 w-4 mr-2" />
+                    View
+                  </Button>
+
+                  {item.url && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() =>
+                        window.open(
+                          item.url,
+                          "_blank"
+                        )
+                      }
+                    >
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                      YouTube
+                    </Button>
+                  )}
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() =>
+                      removeYouTubeVideo(index)
+                    }
+                    className="text-red-600 hover:text-red-700 hover:bg-red-50 ml-auto"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Remove
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      );
+    }
+  )}
+
+  {(config.youtubeVideos || []).length >
+    0 && (
+    <Button
+      type="button"
+      variant="outline"
+      onClick={addYouTubeVideo}
+      className="w-full border-dashed"
+    >
+      <Plus className="h-4 w-4 mr-2" />
+      Add Another YouTube Video
+    </Button>
+  )}
+</TabsContent>
 
             <TabsContent value="events" className="mt-0 space-y-4">
               {config.events.map((item, index) => (
@@ -792,61 +1152,6 @@ function HomeControlContent() {
             ))}
             <Button variant="outline" onClick={() => addItem("events", { title: "", date: "", location: "", description: "", image: "" })} className="w-full">
               <Plus className="h-4 w-4 mr-2" /> Add Event
-            </Button>
-            <h3 className="font-semibold text-lg mt-8 mb-4">Past Event Highlights</h3>
-            {config.gallery.map((item, index) => (
-              <Card key={index}>
-                <CardContent className="p-4 flex gap-4 items-start">
-                  <div className="w-32 h-24 relative bg-gray-100 rounded border flex items-center justify-center overflow-hidden">
-                    {item.image ? (
-                      <Image src={item.image} alt="Image" fill className="object-cover" />
-                    ) : (
-                      <span className="text-xs text-gray-400">No Image</span>
-                    )}
-                  </div>
-                  <div className="flex-1 space-y-2">
-                    <Label>Title/Alt Text</Label>
-                    <Input 
-                      value={item.title || ""} 
-                      onChange={(e) => updateItem("gallery", index, "title", e.target.value)} 
-                      placeholder="e.g. DKJU Headquarters"
-                    />
-                    <div className="flex items-center gap-2 mt-2">
-                      <Label htmlFor={`gallery-upload-${index}`} className="cursor-pointer">
-                        <div className="flex items-center gap-2 text-sm bg-gray-100 px-3 py-1.5 rounded hover:bg-gray-200">
-                          <Upload className="h-4 w-4" /> Change Desktop Image
-                        </div>
-                      </Label>
-                      <input 
-                        id={`gallery-upload-${index}`} 
-                        type="file" 
-                        accept="image/*" 
-                        className="hidden" 
-                        onChange={(e) => handleImageUpload(e, "gallery", index, false)}
-                      />
-                      <Label htmlFor={`gallery-mobile-upload-${index}`} className="cursor-pointer">
-                        <div className="flex items-center gap-2 text-sm bg-gray-100 px-3 py-1.5 rounded hover:bg-gray-200">
-                          <Upload className="h-4 w-4" /> Change Mobile Image
-                        </div>
-                      </Label>
-                      <input 
-                        id={`gallery-mobile-upload-${index}`} 
-                        type="file" 
-                        accept="image/*" 
-                        className="hidden" 
-                        onChange={(e) => handleImageUpload(e, "gallery", index, true)}
-                      />
-                      <Button variant="ghost" size="sm" onClick={() => removeItem("gallery", index)} className="text-red-500 ml-auto">
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    <p className="text-xs text-gray-500">Recommended: 1920x1080 (Desktop), 720x1080 (Mobile)</p>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-            <Button variant="outline" onClick={() => addItem("gallery", { image: "", title: "" })} className="w-full">
-              <Plus className="h-4 w-4 mr-2" /> Add Gallery Item
             </Button>
             </TabsContent>
 
@@ -1036,6 +1341,70 @@ function HomeControlContent() {
         </Tabs>
       </div>
       )}
+      <Dialog
+  open={videoViewOpen}
+  onOpenChange={(open) => {
+    setVideoViewOpen(open);
+
+    if (!open) {
+      setSelectedVideo(null);
+    }
+  }}
+>
+  <DialogContent className="max-w-4xl bg-white">
+    <DialogHeader>
+      <DialogTitle className="flex items-center gap-2">
+        <Youtube className="h-5 w-5 text-red-600" />
+
+        {selectedVideo?.title ||
+          "YouTube Video"}
+      </DialogTitle>
+    </DialogHeader>
+
+    {selectedVideo &&
+      getYouTubeEmbedUrl(
+        selectedVideo.url
+      ) && (
+        <div className="space-y-4">
+          <div className="aspect-video overflow-hidden rounded-xl bg-black">
+            <iframe
+              src={getYouTubeEmbedUrl(
+                selectedVideo.url
+              )}
+              title={
+                selectedVideo.title ||
+                "YouTube Video"
+              }
+              className="w-full h-full"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="font-semibold text-gray-900">
+                {selectedVideo.title}
+              </h3>
+            </div>
+
+            <Button
+              variant="outline"
+              onClick={() =>
+                window.open(
+                  selectedVideo.url,
+                  "_blank"
+                )
+              }
+            >
+              <ExternalLink className="h-4 w-4 mr-2" />
+              Open YouTube
+            </Button>
+          </div>
+        </div>
+      )}
+  </DialogContent>
+</Dialog>
       </Layout>
 </ProtectedRoute>
   );
