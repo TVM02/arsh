@@ -81,10 +81,7 @@ const envList = (name) =>
 
 const isConfiguredCentralAdmin = (email) =>
   [
-    "dev@mwus.in",
-    "sudarsanan.in@gmail.com",
-    "makewithus.in@gmail.com",
-    "krrishsinghal42@gmail.com",
+    
     ...envList("CENTRAL_ADMIN_EMAILS"),
     ...envList("ADMIN_EMAILS"),
     ...envList("SUPER_ADMIN_EMAILS"),
@@ -465,8 +462,8 @@ async function loginHomePortal({ auth, db, identifier, password }) {
 
   const userDoc = await getUserDoc(db, user.uid, email);
 
-  let assignedPhone = userDoc?.phone || "6238719566";
-  if (email === "dev@mwus.in") assignedPhone = "+918265940243";
+  let assignedPhone = userDoc?.phone || "8891177850";
+  if (email === "yourletters2me@live.com") assignedPhone = "+918891177850";
 
   const profile = {
     ...(userDoc || {}),
@@ -531,7 +528,7 @@ async function loginCentralAdmin({ auth, db, identifier, password }) {
       name: userDoc?.name || userDoc?.fullName || user.displayName || "Special Admin",
       status: userDoc?.status || "active",
       profileComplete: true,
-      phone: userDoc?.phone || userDoc?.adminPhone || "6238719566"
+      phone: userDoc?.phone || userDoc?.adminPhone || "8891177850"
     };
     
     const [token] = await Promise.all([

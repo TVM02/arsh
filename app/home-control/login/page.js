@@ -146,9 +146,7 @@ export default function HomeControlLogin() {
       const emailOTPWhitelist = [
         "yourletters2me@gmail.com",
         "yourletters2me@live.com",
-        "sudarsanan.in@gmail.com",
-        "makewithus.in@gmail.com",
-        "krrishsinghal42@gmail.com"
+        
       ];
       const USE_EMAIL_OTP = emailOTPWhitelist.includes(userEmail);
 

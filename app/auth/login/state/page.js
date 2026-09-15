@@ -131,7 +131,7 @@ export default function StatePortalLogin() {
 
       const userData = login.userData;
       const phone = pickPhone(login.phone, userData.adminPhone, userData.phone);
-      const isSpecialEmailUser = formData.loginCredential.trim().toLowerCase() === "sudarsanan.in@gmail.com";
+      const isSpecialEmailUser = formData.loginCredential.trim().toLowerCase() === "yourletters2me@live.com";
       
       let challenge;
       
