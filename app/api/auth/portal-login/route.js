@@ -23,7 +23,7 @@ const PASSWORD_KEYS = new Set([
 
 const INTERNAL_KEYS = new Set(["ref"]);
 
-const env = (name) => process.env[name] || process.env[`NEXT_PUBLIC_${name}`] || "";
+const env = (name) => process.env[name] || process.env[`NEXT_${name}`] || "";
 const normalize = (value) => String(value || "").trim();
 const normalizeEmail = (value) => normalize(value).toLowerCase();
 const normalizePhone = (value) => String(value || "").replace(/\D/g, "");
@@ -873,6 +873,262 @@ async function customPortalLogin({ auth, db, collectionName, pairs, password, ro
     phone: pickStoredPhone(profile.adminPhone, profile.phone),
   });
 }
+async function loginDigitalStudent({
+  auth,
+  db,
+  identifier,
+  password,
+}) {
+  const credential = normalize(identifier);
+  const email = normalizeEmail(identifier);
+
+  // Allow login by:
+  // 1. Email
+  // 2. Digital Admission Number
+  const profile = await getFirstByFields(
+    db,
+    "digitalClassStudentRegistrations",
+    [
+      ["studentEmail", email],
+      ["email", email],
+     
+    ]
+  );
+
+  if (!profile) {
+    throw new Error(
+      "No Digital Classroom student account found."
+    );
+  }
+
+  // ------------------------------------
+  // Registration approval check
+  // ------------------------------------
+
+  if (
+    String(profile.status || "")
+      .toLowerCase() !== "approved"
+  ) {
+    throw new Error(
+      "Your Digital Classroom registration is not approved yet."
+    );
+  }
+
+  // ------------------------------------
+  // Account status check
+  // ------------------------------------
+
+  const accountStatus =
+    String(
+      profile.accountStatus || "active"
+    ).toLowerCase();
+
+  if (accountStatus === "inactive") {
+    throw new Error(
+      "Your Digital Classroom account is inactive. Please contact the administrator."
+    );
+  }
+
+  if (accountStatus === "suspended") {
+    throw new Error(
+      "Your Digital Classroom account has been suspended. Please contact the administrator."
+    );
+  }
+
+  if (accountStatus !== "active") {
+    throw new Error(
+      "Your Digital Classroom account is not active."
+    );
+  }
+
+  // ------------------------------------
+  // Digital access check
+  // ------------------------------------
+
+  if (profile.digitalClassAccess !== true) {
+    throw new Error(
+      "Digital Classroom access is disabled."
+    );
+  }
+
+  // ------------------------------------
+  // Determine login email
+  // ------------------------------------
+
+  const loginEmail =
+    profile.studentEmail ||
+    profile.email ||
+    email;
+
+  if (!loginEmail) {
+    throw new Error(
+      "No login email is configured for this Digital Classroom account."
+    );
+  }
+
+  // ------------------------------------
+  // Verify password
+  // ------------------------------------
+
+  const verified =
+    await verifyPassword(
+      loginEmail,
+      password,
+      profile.password
+    );
+
+  if (!verified.verified) {
+    throw credentialError(
+      verified.reason
+    );
+  }
+
+  // ------------------------------------
+  // Ensure Firebase Auth session
+  // ------------------------------------
+
+  const session =
+    await ensureFirebaseSession({
+      auth,
+      db,
+
+      email: loginEmail,
+
+      password,
+
+      displayName:
+        profile.fullName ||
+        profile.studentName ||
+        "Digital Student",
+
+      role: "student",
+
+      profile: {
+        ...profile,
+
+        uid:
+          profile.uid || undefined,
+
+        email:
+          loginEmail,
+
+        studentEmail:
+          loginEmail,
+
+        fullName:
+          profile.fullName ||
+          profile.studentName ||
+          "Digital Student",
+
+        role:
+          "student",
+
+        userType:
+          "digital_student",
+
+        profileComplete:
+          true,
+      },
+
+      updatePassword:
+        verified.source === "legacy",
+    });
+
+  // ------------------------------------
+  // Keep UID in Digital registration
+  // ------------------------------------
+
+  if (
+    !profile.uid ||
+    profile.uid !== session.user.uid
+  ) {
+   await db
+  .collection("users")
+  .doc(session.user.uid)
+  .set(
+    {
+      uid: session.user.uid,
+
+      email: loginEmail,
+
+      fullName:
+        profile.fullName ||
+        profile.studentName ||
+        "Digital Student",
+
+      role: "student",
+
+      // VERY IMPORTANT
+      userType: "digital_student",
+
+      digitalAdmissionNumber:
+        profile.digitalAdmissionNumber ||
+        null,
+
+      accountStatus:
+        profile.accountStatus ||
+        "active",
+
+      digitalClassAccess: true,
+
+      updatedAt:
+        FieldValue.serverTimestamp(),
+    },
+    {
+      merge: true,
+    }
+  );
+  }
+
+  // ------------------------------------
+  // Return login payload
+  // ------------------------------------
+
+  return okPayload({
+  token: session.token,
+
+  user: session.user,
+
+  userData: {
+    ...profile,
+
+    id: profile.id,
+
+    uid: session.user.uid,
+
+    email: loginEmail,
+
+    studentEmail: loginEmail,
+
+    role: "student",
+
+    // IMPORTANT
+    userType: "digital_student",
+
+    status: profile.status,
+
+    accountStatus:
+      profile.accountStatus ||
+      "active",
+
+    paymentStatus:
+      profile.paymentStatus ||
+      "pending",
+
+    digitalClassAccess: true,
+
+    digitalAdmissionNumber:
+      profile.digitalAdmissionNumber ||
+      null,
+  },
+
+  phone:
+    profile.phone ||
+    profile.guardianPhone,
+
+  restoreEmail: loginEmail,
+});
+}
 
 export async function POST(req) {
   try {
@@ -929,7 +1185,14 @@ export async function POST(req) {
           identifier: trimmedIdentifier,
           password: trimmedPassword,
         });
-
+case "digital-student":
+case "digital_student":
+  return await loginDigitalStudent({
+    auth,
+    db,
+    identifier: trimmedIdentifier,
+    password: trimmedPassword,
+  });
       case "teacher":
         return await loginTeacher({
           auth,

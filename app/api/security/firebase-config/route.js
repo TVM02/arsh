@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const env = (name) => process.env[name] || process.env[`NEXT_PUBLIC_${name}`] || "";
+const env = (name) => process.env[name] || process.env[`NEXT_${name}`] || "";
 
 export async function GET() {
   const config = {

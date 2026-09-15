@@ -458,7 +458,7 @@ export default function StudentExamPage() {
         addRazorpayStyles();
 
         const options = {
-          key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
+          key: process.env.NEXT_RAZORPAY_KEY_ID,
           amount: order.amount,
           currency: order.currency,
           name: "DKJU - Exam Registration",

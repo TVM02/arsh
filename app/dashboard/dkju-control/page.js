@@ -295,6 +295,16 @@ export default function AdminDashboard() {
                   <Globe className="h-4 w-4 mr-2" />
                   Unpublished Results
                 </Button>
+                <Button
+                  className="w-full justify-start"
+                  variant="outline"
+                  onClick={() =>
+                    (window.location.href = "/dashboard/dkju-control/digital-student")
+                  }
+                >
+                  <Globe className="h-4 w-4 mr-2" />
+                  Digital Class
+                </Button>
               </CardContent>
             </Card>
 

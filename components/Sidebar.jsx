@@ -43,7 +43,8 @@ import {
   Hash,
   Trophy,
   FolderOpen,
-  Youtube
+  Youtube,
+  UserPlus
 } from "lucide-react";
 import useAuthStore from "@/lib/authStore";
 import Image from "next/image";
@@ -52,6 +53,7 @@ import { getCompetitionConfig } from "@/lib/competitionService";
 
 const Sidebar = ({ isOpen, onClose }) => {
   const { user, userData, clearAuth, initializeAuth } = useAuthStore();
+  const userRole = userData?.role;
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -137,7 +139,6 @@ const Sidebar = ({ isOpen, onClose }) => {
     return user?.role || null;
   };
 
-  const userRole = getUserRole();
 
   // Fetch competition portal visibility — must be after userRole is defined
   useEffect(() => {
@@ -146,7 +147,14 @@ const Sidebar = ({ isOpen, onClose }) => {
     getCompetitionConfig()
       .then((cfg) => { if (cfg?.portalVisibility) setCompVis(cfg.portalVisibility); })
       .catch(() => {});
-  }, [userRole]);
+getSomething()
+    .then((cfg) => {
+      if (cfg?.portalVisibility) {
+        setCompVis(cfg.portalVisibility);
+      }
+    })
+    .catch(() => {});
+}, [userRole]);
 
   // Update collapsed groups based on current path
   useEffect(() => {
@@ -206,7 +214,15 @@ const Sidebar = ({ isOpen, onClose }) => {
         ) {
           return "settings";
         }
-
+// Digtal class room control pages
+        if (
+          centralPath.includes("/dashboard/dkju-control/digital-student") ||
+          centralPath.includes("/dashboard/dkju-control/digital-student/application") ||
+          centralPath.includes("/dashboard/dkju-control/digital-teacher") ||
+          centralPath.includes("/dashboard/dkju-control/digital-teacher/application")
+        ) {
+          return "digital";
+        }
         // Competition pages
         if (centralPath.includes("/dashboard/dkju-control/competition")) {
           return "competition";
@@ -224,6 +240,7 @@ const Sidebar = ({ isOpen, onClose }) => {
           reports: activeGroup !== "reports",
           settings: activeGroup !== "settings",
           exams: activeGroup !== "exams",
+          digital: activeGroup !== "digital",
         });
       }
     }
@@ -270,75 +287,169 @@ const Sidebar = ({ isOpen, onClose }) => {
   };
 
   const getNavigationItems = () => {
-    const baseItems = [
+   const baseItems = [
+  {
+    name: "Dashboard",
+    href:
+      userRole === "student" &&
+      userData?.userType === "digital_student"
+        ? "/dashboard/digital-student"
+        : `/dashboard/${userRole}`,
+    icon: Home,
+    matchExact: true,
+  },
+];
+
+    switch (userRole) {
+      case "student": {
+  // ==========================================
+  // DIGITAL CLASSROOM STUDENT
+  // role = student
+  // userType = digital_student
+  // ==========================================
+  if (userData?.userType === "digital_student") {
+    return [
       {
         name: "Dashboard",
-        href: `/dashboard/${userRole}`,
+        href: "/dashboard/digital-student",
         icon: Home,
         matchExact: true,
       },
+      {
+        name: "Classes",
+        href: "/dashboard/digital-student/classes",
+        icon: BookOpen,
+      },
+      {
+        name: "Assignments",
+        href: "/dashboard/digital-student/assignments",
+        icon: FileCheck,
+      },
+      {
+        name: "Study Materials",
+        href: "/dashboard/digital-student/materials",
+        icon: FolderOpen,
+      },
+      {
+        name: "Exams",
+        href: "/dashboard/digital-student/exams",
+        icon: GraduationCap,
+      },
+      {
+        name: "Progress",
+        href: "/dashboard/digital-student/progress",
+        icon: BarChart3,
+      },
+      {
+        name: "Messages",
+        href: "/dashboard/digital-student/messages",
+        icon: Bell,
+      },
+      {
+        name: "Profile",
+        href: "/dashboard/digital-student/profile",
+        icon: User,
+      },
     ];
+  }
 
-    switch (userRole) {
-      case "student":
-        return [
-          ...baseItems,
-          { name: "Profile", href: "/dashboard/student/profile", icon: User },
-          {
-            name: "Smart Class",
-            href: "/dashboard/student/smart-class",
-            icon: Monitor,
-          },
-          {
-            name: "Assignments",
-            href: "/dashboard/student/assignments",
-            icon: BookOpen,
-          },
+  // ==========================================
+  // NORMAL STUDENT
+  // ==========================================
+  return [
+    ...baseItems,
 
-          // Exam Group
-          { type: "separator", label: "Exam Portal", groupKey: "exams" },
-          {
-            name: "Available Exams",
-            href: "/dashboard/student/exam",
-            icon: FileCheck,
-            group: "exams",
-          },
-          {
-            name: "Exam Notices",
-            href: "/dashboard/student/exam/notices",
-            icon: Bell,
-            group: "exams",
-          },
-          {
-            name: "Exam Timetables",
-            href: "/dashboard/student/exam/timetables",
-            icon: Calendar,
-            group: "exams",
-          },
-          {
-            name: "My Registrations",
-            href: "/dashboard/student/exam/registrations",
-            icon: UserCheck,
-            group: "exams",
-          },
-          {
-            name: "Results & Certificates",
-            href: "/dashboard/student/results",
-            icon: Award,
-            group: "exams",
-          },
+    {
+      name: "Profile",
+      href: "/dashboard/student/profile",
+      icon: User,
+    },
 
-          {
-            name: "TC Request",
-            href: "/dashboard/student/tc-request",
-            icon: ArrowRightLeft,
-          },
-          {
-            name: "Notices",
-            href: "/dashboard/student/notices",
-            icon: Bell,
-          },
-        ];
+    {
+      name: "Smart Class",
+      href: "/dashboard/student/smart-class",
+      icon: Monitor,
+    },
+
+    {
+      name: "Assignments",
+      href: "/dashboard/student/assignments",
+      icon: BookOpen,
+    },
+
+    // Exam Group
+    {
+      type: "separator",
+      label: "Exam Portal",
+      groupKey: "exams",
+    },
+
+    {
+      name: "Available Exams",
+      href: "/dashboard/student/exam",
+      icon: FileCheck,
+      group: "exams",
+    },
+
+    {
+      name: "Exam Notices",
+      href: "/dashboard/student/exam/notices",
+      icon: Bell,
+      group: "exams",
+    },
+
+    {
+      name: "Exam Timetables",
+      href: "/dashboard/student/exam/timetables",
+      icon: Calendar,
+      group: "exams",
+    },
+
+    {
+      name: "My Registrations",
+      href: "/dashboard/student/exam/registrations",
+      icon: UserCheck,
+      group: "exams",
+    },
+
+    {
+      name: "Results & Certificates",
+      href: "/dashboard/student/results",
+      icon: Award,
+      group: "exams",
+    },
+
+    {
+      name: "TC Request",
+      href: "/dashboard/student/tc-request",
+      icon: ArrowRightLeft,
+    },
+
+    {
+      name: "Notices",
+      href: "/dashboard/student/notices",
+      icon: Bell,
+    },
+
+    ...(
+      ["inactive", "suspended"].includes(
+        (
+          userData?.status ||
+          userData?.studentStatus ||
+          ""
+        ).toLowerCase()
+      )
+        ? [
+            {
+              name: "Digital Classroom Registration",
+              href: "/dashboard/student/digital-class-registration",
+              icon: Digital,
+            },
+          ]
+        : []
+    ),
+  ];
+}
 
       case "teacher":
         return [
@@ -374,6 +485,13 @@ const Sidebar = ({ isOpen, onClose }) => {
             href: "/dashboard/teacher/tc-requests",
             icon: Award,
           },
+          
+          {
+            name: "Digital Class Registration",
+            href: "/dashboard/teacher/digital-registration",
+            icon: UserPlus,
+          },
+
         ];
 
       case "manager":
@@ -732,6 +850,38 @@ const Sidebar = ({ isOpen, onClose }) => {
             icon: Palette,
             group: "settings",
           },
+          // Digtal class room control pages
+          {
+            type: "separator",
+            label: "Digital Classroom",
+            groupKey: "digital",
+          },
+          {
+            name: "Digital Student",
+            href: "/dashboard/dkju-control/digital-student",
+            icon: Users,
+            group: "digital",
+          },
+          {
+            name: "Student Application",
+            href: "/dashboard/dkju-control/digital-student/application",
+            icon: ClipboardList,
+            group: "digital",
+          },
+          {
+            name: "Digital Teacher",
+            href: "/dashboard/dkju-control/digital-teacher",
+            icon: UserCheck,
+            group: "digital",
+          },
+          {
+            name: "Teacher Application",
+            href: "/dashboard/dkju-control/digital-teacher/application",
+            icon: ClipboardList,
+            group: "digital",
+          },
+
+
         ];
 
       case "mekhala_admin":

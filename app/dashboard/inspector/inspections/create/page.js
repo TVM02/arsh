@@ -858,14 +858,14 @@ function CreateInspectionContent() {
     if (!id) return;
 
     const baseUrl =
-      process.env.NEXT_PUBLIC_QR_BASE_URL ||
-      process.env.NEXT_PUBLIC_SITE_URL ||
+      process.env.NEXT_QR_BASE_URL ||
+      process.env.NEXT_SITE_URL ||
       "";
     const origin = String(baseUrl || "").replace(/\/+$/, "");
 
     if (!origin || /localhost|127\.0\.0\.1/i.test(origin)) {
       toast.error(
-        "QR base URL is not configured. Set NEXT_PUBLIC_QR_BASE_URL to a public domain/tunnel (no localhost).",
+        "QR base URL is not configured. Set NEXT_QR_BASE_URL to a public domain/tunnel (no localhost).",
       );
       return;
     }

@@ -618,7 +618,7 @@ export default function AdmissionForm() {
         // console.log("Order created:", order);
 
         const options = {
-          key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID, // loaded from .env
+          key: process.env.NEXT_RAZORPAY_KEY_ID, // loaded from .env
           amount: order.amount, // from backend
           currency: order.currency,
           name: "DKJU - Admission Fee",

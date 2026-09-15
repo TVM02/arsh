@@ -6,42 +6,7 @@ import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
 const defaultEvents = [
-  {
-    id: 1,
-    image: "/buildings/eight.jpg",
-    title: "Annual Madrasa Conference",
-    date: "15 June 2026",
-    location: "Jonakappuram",
-    description:
-      "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod temporincididunt ut labore et dolore magn.",
-  },
-  {
-    id: 2,
-    image: "/buildings/five.jpg",
-    title: "Qur'an Recitation Competition",
-    date: "22 June 2026",
-    location: "Kollam",
-    description:
-      "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
-  },
-  {
-    id: 3,
-    image: "/buildings/nine.jpg",
-    title: "Teachers' Training Workshop",
-    date: "5 July 2026",
-    location: "Convention Center, Kochi",
-    description:
-      "Lorem ipsum dolor sit ametconadipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
-  },
-  {
-    id: 4,
-    image: "/buildings/seven.jpg",
-    title: "Parent Teacher Mushawara",
-    date: "12 July 2026",
-    location: "Regional Centre",
-    description:
-      "Lorem ipsum dolor sit amet, consectetur adipiscingelitte elit. Sed do eiusmod tempor incididunt ut labore et dolorealiqua.",
-  },
+  
 ];
 
 const EventCard = ({ event }) => {

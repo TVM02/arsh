@@ -5,7 +5,10 @@ import { usePathname, useRouter } from "next/navigation";
 import useAuthStore from "@/lib/authStore";
 import { auth } from "@/lib/firebase";
 
-const CUSTOM_PORTAL_ROLES = ["convener_admin", "mekhala_admin"];
+const CUSTOM_PORTAL_ROLES = [
+  "convener_admin",
+  "mekhala_admin",
+];
 
 const DASHBOARD_RULES = [
   {
@@ -39,20 +42,38 @@ const DASHBOARD_RULES = [
     loginPath: "/auth/login/convener",
   },
   {
-    basePath: "/dashboard/pariksha-board-convener",
+    basePath:
+      "/dashboard/pariksha-board-convener",
     role: "pariksha_board_convener",
-    loginPath: "/auth/login/pariksha-board-convener",
+    loginPath:
+      "/auth/login/pariksha-board-convener",
   },
   {
     basePath: "/dashboard/teacher",
     role: "teacher",
     loginPath: "/auth/login/teacher",
   },
+
+  // ==========================================
+  // DIGITAL STUDENT
+  // ==========================================
+  {
+    basePath: "/dashboard/digital-student",
+    role: "student",
+    userType: "digital_student",
+    loginPath: "/auth/login/digital-student",
+  },
+
+  // ==========================================
+  // NORMAL STUDENT
+  // ==========================================
   {
     basePath: "/dashboard/student",
     role: "student",
+    normalStudent: true,
     loginPath: "/auth/login/student",
   },
+
   {
     basePath: "/dashboard/manager",
     role: "manager",
@@ -60,34 +81,74 @@ const DASHBOARD_RULES = [
   },
 ];
 
-const ROLE_HOME = DASHBOARD_RULES.reduce((acc, rule) => {
-  if (!acc[rule.role]) acc[rule.role] = rule.basePath;
-  return acc;
-}, {});
+const ROLE_HOME = DASHBOARD_RULES.reduce(
+  (acc, rule) => {
+    // Do not use Digital Student rule
+    // as generic "student" home
+    if (
+      rule.userType === "digital_student"
+    ) {
+      return acc;
+    }
 
-function matchesBase(pathname, basePath) {
-  return pathname === basePath || pathname.startsWith(`${basePath}/`);
+    if (!acc[rule.role]) {
+      acc[rule.role] = rule.basePath;
+    }
+
+    return acc;
+  },
+  {},
+);
+
+function matchesBase(
+  pathname,
+  basePath,
+) {
+  return (
+    pathname === basePath ||
+    pathname.startsWith(
+      `${basePath}/`,
+    )
+  );
 }
 
 function getRule(pathname) {
-  return DASHBOARD_RULES.find((rule) => matchesBase(pathname, rule.basePath));
+  return DASHBOARD_RULES.find(
+    (rule) =>
+      matchesBase(
+        pathname,
+        rule.basePath,
+      ),
+  );
 }
 
-function LoadingScreen({ message = "Verifying access..." }) {
+function LoadingScreen({
+  message = "Verifying access...",
+}) {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-teal-50 to-blue-50">
       <div className="text-center space-y-4">
         <div className="animate-spin rounded-full h-16 w-16 border-4 border-teal-600 border-t-transparent mx-auto" />
-        <p className="text-teal-600 font-medium">{message}</p>
+
+        <p className="text-teal-600 font-medium">
+          {message}
+        </p>
       </div>
     </div>
   );
 }
 
-export default function DashboardAuthGate({ children }) {
+export default function DashboardAuthGate({
+  children,
+}) {
   const pathname = usePathname();
   const router = useRouter();
-  const [authReady, setAuthReady] = useState(false);
+
+  const [
+    authReady,
+    setAuthReady,
+  ] = useState(false);
+
   const {
     user,
     userData,
@@ -99,68 +160,259 @@ export default function DashboardAuthGate({ children }) {
     isSessionValid,
   } = useAuthStore();
 
-  const rule = useMemo(() => getRule(pathname), [pathname]);
-  const isCustomPortalUser = CUSTOM_PORTAL_ROLES.includes(userData?.role);
-  const hasFirebaseSession = Boolean(
-    auth.currentUser && user && auth.currentUser.uid === user.uid,
-  );
-  const sessionValid = authReady && isSessionValid();
-  const roleMatches = useMemo(() => {
-    if (!rule) return true;
-    if (userData?.role !== rule.role) return false;
-    if (rule.type && userData?.mekhalaDocType !== rule.type) return false;
-    return true;
-  }, [rule, userData]);
+  // ==========================================
+  // FIND CURRENT DASHBOARD RULE
+  // ==========================================
 
-  const userHome = useMemo(() => {
-    if (!userData?.role) return null;
-    if (userData.role === "mekhala_admin") {
-      if (userData.portalType) {
-        return userData.portalType === "mekhala_portal" ? "/dashboard/mekhala-portal" : "/dashboard/district";
+  const rule = useMemo(
+    () => getRule(pathname),
+    [pathname],
+  );
+
+  // ==========================================
+  // CUSTOM PORTAL USER
+  // ==========================================
+
+  const isCustomPortalUser =
+    CUSTOM_PORTAL_ROLES.includes(
+      userData?.role,
+    );
+
+  // ==========================================
+  // FIREBASE SESSION CHECK
+  // ==========================================
+
+  const hasFirebaseSession =
+    Boolean(
+      auth.currentUser &&
+        user &&
+        auth.currentUser.uid ===
+          user.uid,
+    );
+
+  const sessionValid =
+    authReady &&
+    isSessionValid();
+
+  // ==========================================
+  // ROLE + USER TYPE VALIDATION
+  // ==========================================
+
+  const roleMatches =
+    useMemo(() => {
+      if (!rule) {
+        return true;
       }
-      return userData.mekhalaDocType === "sub_mekhala"
-        ? "/dashboard/district"
-        : "/dashboard/mekhala-portal";
-    }
-    return ROLE_HOME[userData.role] || null;
-  }, [userData]);
+
+      // Role must match
+      if (
+        userData?.role !==
+        rule.role
+      ) {
+        return false;
+      }
+
+      // ======================================
+      // DIGITAL STUDENT
+      // ======================================
+
+      if (
+        rule.userType ===
+        "digital_student"
+      ) {
+        return (
+          userData?.role ===
+            "student" &&
+          userData?.userType ===
+            "digital_student"
+        );
+      }
+
+      // ======================================
+      // NORMAL STUDENT
+      // ======================================
+
+      if (
+        rule.normalStudent ===
+        true
+      ) {
+        return (
+          userData?.role ===
+            "student" &&
+          userData?.userType !==
+            "digital_student"
+        );
+      }
+
+      // Existing Mekhala type check
+      if (
+        rule.type &&
+        userData?.mekhalaDocType !==
+          rule.type
+      ) {
+        return false;
+      }
+
+      return true;
+    }, [
+      rule,
+      userData,
+    ]);
+
+  // ==========================================
+  // GET CORRECT USER HOME
+  // ==========================================
+
+  const userHome =
+    useMemo(() => {
+      if (!userData?.role) {
+        return null;
+      }
+
+      // ======================================
+      // STUDENT
+      // ======================================
+
+      if (
+        userData.role ===
+        "student"
+      ) {
+        if (
+          userData.userType ===
+          "digital_student"
+        ) {
+          return "/dashboard/digital-student";
+        }
+
+        return "/dashboard/student";
+      }
+
+      // ======================================
+      // MEKHALA
+      // ======================================
+
+      if (
+        userData.role ===
+        "mekhala_admin"
+      ) {
+        if (
+          userData.portalType
+        ) {
+          return userData.portalType ===
+            "mekhala_portal"
+            ? "/dashboard/mekhala-portal"
+            : "/dashboard/district";
+        }
+
+        return userData.mekhalaDocType ===
+          "sub_mekhala"
+          ? "/dashboard/district"
+          : "/dashboard/mekhala-portal";
+      }
+
+      // ======================================
+      // STATE PORTAL
+      // ======================================
+
+      if (
+        userData.role ===
+          "convener_admin" &&
+        userData.portalType ===
+          "state_portal"
+      ) {
+        return "/dashboard/state";
+      }
+
+      return (
+        ROLE_HOME[
+          userData.role
+        ] || null
+      );
+    }, [userData]);
+
+  // ==========================================
+  // INITIALIZE AUTH STORE
+  // ==========================================
 
   useEffect(() => {
-    const unsubscribe = initializeAuth();
+    const unsubscribe =
+      initializeAuth();
+
     return () => {
-      if (typeof unsubscribe === "function") unsubscribe();
+      if (
+        typeof unsubscribe ===
+        "function"
+      ) {
+        unsubscribe();
+      }
     };
   }, [initializeAuth]);
 
+  // ==========================================
+  // WAIT FIREBASE AUTH READY
+  // ==========================================
+
   useEffect(() => {
     let cancelled = false;
-    const waitForAuth = async () => {
-      try {
-        if (typeof auth.authStateReady === "function") {
-          await auth.authStateReady();
+
+    const waitForAuth =
+      async () => {
+        try {
+          if (
+            typeof auth.authStateReady ===
+            "function"
+          ) {
+            await auth.authStateReady();
+          }
+        } finally {
+          if (!cancelled) {
+            setAuthReady(true);
+          }
         }
-      } finally {
-        if (!cancelled) setAuthReady(true);
-      }
-    };
+      };
 
     waitForAuth();
+
     return () => {
       cancelled = true;
     };
   }, []);
 
-  useEffect(() => {
-    if (!_hasHydrated || !authReady || loading || !rule) return;
+  // ==========================================
+  // AUTH + ROLE REDIRECT
+  // ==========================================
 
-    if (!sessionValid) {
-      clearAuth();
-      router.replace(rule.loginPath);
+  useEffect(() => {
+    if (
+      !_hasHydrated ||
+      !authReady ||
+      loading ||
+      !rule
+    ) {
       return;
     }
 
-    if (!roleMatches && userHome) {
-      router.replace(userHome);
+    // Not logged in
+    if (!sessionValid) {
+      clearAuth();
+
+      router.replace(
+        rule.loginPath,
+      );
+
+      return;
+    }
+
+    // Logged in but wrong dashboard
+    if (
+      !roleMatches &&
+      userHome
+    ) {
+      router.replace(
+        userHome,
+      );
+
+      return;
     }
   }, [
     _hasHydrated,
@@ -174,52 +426,113 @@ export default function DashboardAuthGate({ children }) {
     router,
   ]);
 
-  // Idle Timeout Mechanism
+  // ==========================================
+  // IDLE TIMEOUT
+  // ==========================================
+
   useEffect(() => {
-    if (!sessionValid) return;
+    if (!sessionValid) {
+      return;
+    }
 
     let timeoutId;
-    const IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+
+    const IDLE_TIMEOUT_MS =
+      15 * 60 * 1000;
 
     const resetTimer = () => {
       clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => {
-        console.log("Session expired due to inactivity.");
-        logout();
-      }, IDLE_TIMEOUT_MS);
+
+      timeoutId = setTimeout(
+        () => {
+          console.log(
+            "Session expired due to inactivity.",
+          );
+
+          logout();
+        },
+        IDLE_TIMEOUT_MS,
+      );
     };
 
-    // Listen to standard activity events
-    const events = ["mousemove", "keydown", "wheel", "touchstart", "click"];
-    events.forEach((event) => window.addEventListener(event, resetTimer, { passive: true }));
-    
-    // Initialize timer
+    const events = [
+      "mousemove",
+      "keydown",
+      "wheel",
+      "touchstart",
+      "click",
+    ];
+
+    events.forEach(
+      (event) =>
+        window.addEventListener(
+          event,
+          resetTimer,
+          {
+            passive: true,
+          },
+        ),
+    );
+
     resetTimer();
 
     return () => {
-      clearTimeout(timeoutId);
-      events.forEach((event) => window.removeEventListener(event, resetTimer));
-    };
-  }, [sessionValid, logout]);
+      clearTimeout(
+        timeoutId,
+      );
 
-  if (!_hasHydrated || !authReady || loading) {
+      events.forEach(
+        (event) =>
+          window.removeEventListener(
+            event,
+            resetTimer,
+          ),
+      );
+    };
+  }, [
+    sessionValid,
+    logout,
+  ]);
+
+  // ==========================================
+  // LOADING
+  // ==========================================
+
+  if (
+    !_hasHydrated ||
+    !authReady ||
+    loading
+  ) {
     return <LoadingScreen />;
   }
 
+  // Dashboard path without rule
   if (!rule) {
     return children;
   }
 
+  // Invalid session
   if (!sessionValid) {
-    return <LoadingScreen message="Redirecting to login..." />;
+    return (
+      <LoadingScreen message="Redirecting to login..." />
+    );
   }
 
-  if (!isCustomPortalUser && !hasFirebaseSession) {
-    return <LoadingScreen message="Redirecting to login..." />;
+  // Firebase session missing
+  if (
+    !isCustomPortalUser &&
+    !hasFirebaseSession
+  ) {
+    return (
+      <LoadingScreen message="Redirecting to login..." />
+    );
   }
 
+  // Wrong dashboard
   if (!roleMatches) {
-    return <LoadingScreen message="Redirecting..." />;
+    return (
+      <LoadingScreen message="Redirecting..." />
+    );
   }
 
   return children;

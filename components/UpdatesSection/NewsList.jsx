@@ -5,10 +5,7 @@ import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
 const defaultNews = [
-    { month: "May", startDate: "2023-05-01", endDate: "2023-05-31", title: "Test content random text describing the latest news update 1.", createdAt: "2023-05-01" },
-    { month: "May", startDate: "2023-05-01", endDate: "2023-05-31", title: "Test content random text describing the latest news update 2.", createdAt: "2023-05-01" },
-    { month: "April", startDate: "2023-04-01", endDate: "2023-04-30", title: "Test content random text describing the latest news update 3.", createdAt: "2023-04-01" },
-    { month: "April", startDate: "2023-04-01", endDate: "2023-04-30", title: "Test content random text describing the latest news update 4.", createdAt: "2023-04-01" },
+   
   ];
 
 export default function NewsList() {

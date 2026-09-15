@@ -161,12 +161,43 @@ export default function StudentLogin() {
         password: formData.password,
       });
 
-      await startOtpChallenge({
-        user: login.user,
-        userData: login.userData,
-        studentData: login.userData,
-        restoreCustomToken: login.restoreCustomToken,
-      });
+      // await startOtpChallenge({
+      //   user: login.user,
+      //   userData: login.userData,
+      //   studentData: login.userData,
+      //   restoreCustomToken: login.restoreCustomToken,
+      // });
+      // TEMPORARY DEVELOPMENT MODE - SKIP OTP
+if (process.env.NODE_ENV === "development") {
+  let sessionUser = login.user;
+
+  if (login.restoreCustomToken) {
+    sessionUser =
+      (await restorePortalFirebaseSession(login.restoreCustomToken)) ||
+      sessionUser;
+  }
+
+  setUser(sessionUser);
+
+  // TEMP: bypass OTP verification for localhost development
+  setUserData(login.userData);
+
+  resetLoginFailures(PORTAL_KEY, formData.email);
+
+  toast.success("Development login successful");
+
+  router.push("/dashboard/student");
+
+  return;
+}
+
+// PRODUCTION - NORMAL OTP LOGIN
+await startOtpChallenge({
+  user: login.user,
+  userData: login.userData,
+  studentData: login.userData,
+  restoreCustomToken: login.restoreCustomToken,
+});
     } catch (error) {
       console.error("Login error:", error);
       if (error.message?.includes("Invalid")) {
@@ -306,13 +337,19 @@ export default function StudentLogin() {
                 disabled={loading}
               >
                 {loading ? (
-                  <div className="flex items-center space-x-2">
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    <span>Sending OTP...</span>
-                  </div>
-                ) : (
-                  "Send OTP"
-                )}
+  <div className="flex items-center space-x-2">
+    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+    <span>
+      {process.env.NODE_ENV === "development"
+        ? "Logging in..."
+        : "Sending OTP..."}
+    </span>
+  </div>
+) : (
+  process.env.NODE_ENV === "development"
+    ? "Login"
+    : "Send OTP"
+)}
               </Button>
             </form>
             ) : (
@@ -396,5 +433,6 @@ export default function StudentLogin() {
         </div>
       </div>
     </div>
+    
   );
 }

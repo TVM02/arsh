@@ -8,7 +8,7 @@ export async function POST(request) {
       return NextResponse.json({ valid: false }, { status: 400 });
     }
 
-    const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
+    const apiKey = process.env.NEXT_FIREBASE_API_KEY;
     if (!apiKey) {
       return NextResponse.json({ valid: false }, { status: 500 });
     }

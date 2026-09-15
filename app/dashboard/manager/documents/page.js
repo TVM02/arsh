@@ -97,11 +97,11 @@ export default function ManagerDocumentsPage() {
     if (typeof window !== "undefined") {
       return (
         localStorage.getItem("devQrBaseUrl") ||
-        process.env.NEXT_PUBLIC_QR_BASE_URL ||
+        process.env.NEXT_QR_BASE_URL ||
         ""
       );
     }
-    return process.env.NEXT_PUBLIC_QR_BASE_URL || "";
+    return process.env.NEXT_QR_BASE_URL || "";
   });
   const [qrUrlDraft, setQrUrlDraft] = useState("");
   const [editingQrUrl, setEditingQrUrl] = useState(false);
@@ -233,14 +233,14 @@ export default function ManagerDocumentsPage() {
 
   // ── QR Upload ─────────────────────────────────────────────────────────────
   const openQrUpload = async () => {
-    const origin = (process.env.NEXT_PUBLIC_QR_BASE_URL || "").replace(
+    const origin = (process.env.NEXT_QR_BASE_URL || "").replace(
       /\/+$/,
       "",
     );
 
     if (!origin || /localhost|127\.0\.0\.1/i.test(origin)) {
       toast.error(
-        "QR base URL is not configured. Set NEXT_PUBLIC_QR_BASE_URL in your .env to a public domain/tunnel (no localhost).",
+        "QR base URL is not configured. Set NEXT_QR_BASE_URL in your .env to a public domain/tunnel (no localhost).",
       );
       return;
     }
@@ -709,7 +709,7 @@ export default function ManagerDocumentsPage() {
                       ⏱ Session expires in 10 minutes
                     </p>
                     <p className="text-xs text-gray-400 truncate mt-1">
-                      {process.env.NEXT_PUBLIC_QR_BASE_URL}
+                      {process.env.NEXT_QR_BASE_URL}
                     </p>
                   </div>
                   <Button

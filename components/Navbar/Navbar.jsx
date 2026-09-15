@@ -133,7 +133,7 @@ export default function Navbar() {
 
             {/* Digital E-Learning button */}
             <Link
-              href="/coming-soon"
+              href="/digital-class"
               onClick={closeMenu}
               className="px-3 py-1.5 bg-[#355a2c]/10 border border-[#355a2c]/30 rounded text-[#355a2c] text-[0.82rem] font-medium whitespace-nowrap hover:bg-[#355a2c]/20 transition-colors duration-200 max-[900px]:block max-[900px]:w-full max-[900px]:px-4 max-[900px]:py-[0.85rem] max-[900px]:rounded-none max-[900px]:border-x-0 max-[900px]:border-t-0 max-[900px]:hover:bg-[#c9b37e]/[0.08]"
             >

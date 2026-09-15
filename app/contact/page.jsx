@@ -57,7 +57,7 @@ export default function Contact() {
   }, [logout, clearAuth]);
 
   useEffect(() => {
-    const publicKey = process.env.NEXT_PUBLIC_EMAILJS_PUBLIC_KEY;
+    const publicKey = process.env.NEXT_EMAILJS_PUBLIC_KEY;
     if (publicKey && publicKey !== "your_public_key") {
       emailjs.init(publicKey);
     }
@@ -112,9 +112,9 @@ export default function Contact() {
 
     try {
       // Check if EmailJS is properly configured
-      const serviceId = process.env.NEXT_PUBLIC_EMAILJS_SERVICE_ID;
-      const templateId = process.env.NEXT_PUBLIC_EMAILJS_TEMPLATE_ID;
-      const publicKey = process.env.NEXT_PUBLIC_EMAILJS_PUBLIC_KEY;
+      const serviceId = process.env.NEXT_EMAILJS_SERVICE_ID;
+      const templateId = process.env.NEXT_EMAILJS_TEMPLATE_ID;
+      const publicKey = process.env.NEXT_EMAILJS_PUBLIC_KEY;
 
       if (
         !serviceId ||

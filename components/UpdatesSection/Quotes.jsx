@@ -7,14 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { name } from "@cloudinary/url-gen/actions/namedTransformation";
 const quotesdemo = [
   
-    { name: "Jasim", specialized:"He is mandan" ,quotes: "Test content random text describing the latest news update 1." },
-    { name: "Jasim", specialized:"He is mandan" ,quotes: "Test content random text describing the latest news update 1." },
-    { name: "Jasim", specialized:"He is mandan" ,quotes: "Test content random text describing the latest news update 1." },
-    { name: "Jasim", specialized:"He is mandan" ,quotes: "Test content random text describing the latest news update 1." },
-    { name: "Jasim", specialized:"He is mandan" ,quotes: "Test content random text describing the latest news update 1." },
-    { name: "Jasim", specialized:"He is mandan" ,quotes: "Test content random text describing the latest news update 1." },
-    { name: "Jasim", specialized:"He is mandan" ,quotes: "Test content random text describing the latest news update 1." },
-    { name: "Jasim", specialized:"He is mandan" ,quotes: "Test content random text describing the latest news update 1." },
+    
   
 ];
 

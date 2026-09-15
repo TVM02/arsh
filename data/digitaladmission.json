@@ -1,0 +1,129 @@
+{
+  "title": "Student Admission Form",
+  "description": "Complete all required fields to submit your admission application",
+  "sections": [
+    {
+      "id": "personal_info",
+      "title": "Personal Information",
+      "fields": [
+        {
+          "id": "fullName",
+          "label": "Full Name",
+          "type": "text",
+          "required": true,
+          "placeholder": "Enter student's full name",
+          "validation": {
+            "minLength": 2,
+            "maxLength": 100
+          }
+        },
+        {
+          "id": "dateOfBirth",
+          "label": "Date of Birth",
+          "type": "date",
+          "required": true,
+          "validation": {
+            "maxDate": "today"
+          }
+        },
+        {
+          "id": "gender",
+          "label": "Gender",
+          "type": "radio",
+          "required": true,
+          "options": [
+            { "value": "male", "label": "Male" },
+            { "value": "female", "label": "Female" }
+          ]
+        },
+        {
+          "id": "email",
+          "label": "Email Address",
+          "type": "email",
+          "placeholder":"example@gmail.com",
+          "required": false,
+          "validation": {
+            "pattern": "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$",
+            "errorMessage": "Please enter a valid email address"
+          }
+        }
+      ]
+    },
+   {
+  "id": "academic_info",
+  "title": "Academic Information",
+  "fields": [
+    {
+      "id": "applyingclass",
+      "label": "Class Applying For",
+      "type": "select",
+      "required": true,
+      "options": "classes",
+      "placeholder": "Select class"
+    },
+    
+    {
+      "id": "oldRegistrationNumber",
+      "label": "Old Registration Number",
+      "type": "text",
+      "required": true,
+      "conditional": {
+        "field": "hasOldRegistration",
+        "value": "yes"
+      },
+      "placeholder": "Enter old registration number"
+    },
+    {
+      "id": "previousmadarsa",
+      "label": "Previous Madrasa",
+      "type": "select",
+      "required": false,
+      "options": "madarsas",
+      "placeholder": "Select madarsa"
+    }
+    
+  ]
+},
+    {
+      "id": "contact_info",
+      "title": "Contact Information",
+      "fields": [
+        {
+          "id": "phone",
+          "label": "Phone Number",
+          "type": "tel",
+          "required": true,
+          "placeholder": "+91 98XXXXXXXX",
+          "validation": {
+            "pattern": "^[+]?[0-9]{10,15}$"
+          }
+        },
+        {
+          "id": "guardianName",
+          "label": "Guardian Name",
+          "type": "text",
+          "required": true,
+          "placeholder": "Enter guardian's full name"
+        },
+        {
+          "id": "guardianPhone",
+          "label": "Guardian Phone",
+          "type": "tel",
+          "required": false,
+          "placeholder": "+91 91XXXXXXXX",
+          "validation": {
+            "pattern": "^[+]?[0-9]{10,15}$"
+          }
+        },
+        {
+          "id": "address",
+          "label": "Address",
+          "type": "textarea",
+          "required": true,
+          "placeholder": "Enter complete address",
+          "rows": 3
+        }
+      ]
+    }
+  ]
+}
