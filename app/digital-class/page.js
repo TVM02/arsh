@@ -109,9 +109,27 @@ export default function PortalsPage() {
       <header className="relative z-20 mx-auto flex w-full max-w-7xl items-center justify-between px-6 py-6 md:px-10">
         {/* Brand */}
         <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-500 to-emerald-600 shadow-lg shadow-teal-100">
-            <BookOpen className="h-6 w-6 text-white" />
-          </div>
+          <div
+  className="
+    flex
+    h-10
+    w-10
+    shrink-0
+    items-center
+    justify-center
+    rounded-xl
+    bg-gradient-to-br
+    from-teal-500
+    to-emerald-600
+    shadow-lg
+    shadow-teal-100
+    sm:h-12
+    sm:w-12
+    sm:rounded-2xl
+  "
+>
+  <BookOpen className="h-5 w-5 text-white sm:h-6 sm:w-6" />
+</div>
 
           <div>
             <h2 className="text-lg font-bold leading-tight text-slate-900 sm:text-xl">
@@ -126,7 +144,7 @@ export default function PortalsPage() {
         </div>
 
         {/* Access badge */}
-        <div className="hidden items-center  px-5 py-2.5 text-teal-700 sm:flex">
+       <div className="flex items-center px-3 py-2.5 text-teal-700 sm:px-5">
           <a
   href="/digital-admission/form"
   className="

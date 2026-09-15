@@ -64,7 +64,7 @@ export default function NewsList() {
           border-[#c9b37e]/35
         "
       >
-        Latest Government Updates
+        Latest News Updates
       </h3>
 
 

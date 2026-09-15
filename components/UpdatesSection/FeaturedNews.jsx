@@ -407,7 +407,7 @@ export default function FeaturedEventSlider() {
             <Youtube className="w-7 h-7 text-red-600" />
 
             <h2 className="text-2xl md:text-3xl font-bold text-gray-900">
-              YouTube Videos
+              Guidance for Life
             </h2>
 
           </div>
@@ -577,40 +577,7 @@ export default function FeaturedEventSlider() {
                 "YouTube Video"}
             </p>
 
-            <button
-              type="button"
-              onClick={() =>
-                window.open(
-                  currentVideo.url,
-                  "_blank",
-                  "noopener,noreferrer"
-                )
-              }
-              className="
-                inline-flex
-                items-center
-                justify-center
-                gap-2
-
-                border
-                border-teal-500
-
-                text-teal-600
-
-                px-3
-                py-2
-
-                font-medium
-
-                hover:bg-teal-50
-
-                transition-colors
-              "
-            >
-              <ExternalLink className="w-4 h-4" />
-
-              Open
-            </button>
+            
 
           </div>
 
