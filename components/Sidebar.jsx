@@ -43,7 +43,7 @@ import {
   Hash,
   Trophy,
   FolderOpen,
-  Youtube,
+   Youtube, 
   UserPlus
 } from "lucide-react";
 import useAuthStore from "@/lib/authStore";
@@ -53,7 +53,6 @@ import { getCompetitionConfig } from "@/lib/competitionService";
 
 const Sidebar = ({ isOpen, onClose }) => {
   const { user, userData, clearAuth, initializeAuth } = useAuthStore();
-  const userRole = userData?.role;
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -139,6 +138,7 @@ const Sidebar = ({ isOpen, onClose }) => {
     return user?.role || null;
   };
 
+  const userRole = getUserRole();
 
   // Fetch competition portal visibility — must be after userRole is defined
   useEffect(() => {
@@ -147,14 +147,7 @@ const Sidebar = ({ isOpen, onClose }) => {
     getCompetitionConfig()
       .then((cfg) => { if (cfg?.portalVisibility) setCompVis(cfg.portalVisibility); })
       .catch(() => {});
-getSomething()
-    .then((cfg) => {
-      if (cfg?.portalVisibility) {
-        setCompVis(cfg.portalVisibility);
-      }
-    })
-    .catch(() => {});
-}, [userRole]);
+  }, [userRole]);
 
   // Update collapsed groups based on current path
   useEffect(() => {
@@ -222,7 +215,8 @@ getSomething()
           centralPath.includes("/dashboard/dkju-control/digital-teacher/application")
         ) {
           return "digital";
-        }
+        }        
+
         // Competition pages
         if (centralPath.includes("/dashboard/dkju-control/competition")) {
           return "competition";
@@ -240,7 +234,6 @@ getSomething()
           reports: activeGroup !== "reports",
           settings: activeGroup !== "settings",
           exams: activeGroup !== "exams",
-          digital: activeGroup !== "digital",
         });
       }
     }
@@ -287,169 +280,75 @@ getSomething()
   };
 
   const getNavigationItems = () => {
-   const baseItems = [
-  {
-    name: "Dashboard",
-    href:
-      userRole === "student" &&
-      userData?.userType === "digital_student"
-        ? "/dashboard/digital-student"
-        : `/dashboard/${userRole}`,
-    icon: Home,
-    matchExact: true,
-  },
-];
-
-    switch (userRole) {
-      case "student": {
-  // ==========================================
-  // DIGITAL CLASSROOM STUDENT
-  // role = student
-  // userType = digital_student
-  // ==========================================
-  if (userData?.userType === "digital_student") {
-    return [
+    const baseItems = [
       {
         name: "Dashboard",
-        href: "/dashboard/digital-student",
+        href: `/dashboard/${userRole}`,
         icon: Home,
         matchExact: true,
       },
-      {
-        name: "Classes",
-        href: "/dashboard/digital-student/classes",
-        icon: BookOpen,
-      },
-      {
-        name: "Assignments",
-        href: "/dashboard/digital-student/assignments",
-        icon: FileCheck,
-      },
-      {
-        name: "Study Materials",
-        href: "/dashboard/digital-student/materials",
-        icon: FolderOpen,
-      },
-      {
-        name: "Exams",
-        href: "/dashboard/digital-student/exams",
-        icon: GraduationCap,
-      },
-      {
-        name: "Progress",
-        href: "/dashboard/digital-student/progress",
-        icon: BarChart3,
-      },
-      {
-        name: "Messages",
-        href: "/dashboard/digital-student/messages",
-        icon: Bell,
-      },
-      {
-        name: "Profile",
-        href: "/dashboard/digital-student/profile",
-        icon: User,
-      },
     ];
-  }
 
-  // ==========================================
-  // NORMAL STUDENT
-  // ==========================================
-  return [
-    ...baseItems,
+    switch (userRole) {
+      case "student":
+        return [
+          ...baseItems,
+          { name: "Profile", href: "/dashboard/student/profile", icon: User },
+          {
+            name: "Smart Class",
+            href: "/dashboard/student/smart-class",
+            icon: Monitor,
+          },
+          {
+            name: "Assignments",
+            href: "/dashboard/student/assignments",
+            icon: BookOpen,
+          },
 
-    {
-      name: "Profile",
-      href: "/dashboard/student/profile",
-      icon: User,
-    },
+          // Exam Group
+          { type: "separator", label: "Exam Portal", groupKey: "exams" },
+          {
+            name: "Available Exams",
+            href: "/dashboard/student/exam",
+            icon: FileCheck,
+            group: "exams",
+          },
+          {
+            name: "Exam Notices",
+            href: "/dashboard/student/exam/notices",
+            icon: Bell,
+            group: "exams",
+          },
+          {
+            name: "Exam Timetables",
+            href: "/dashboard/student/exam/timetables",
+            icon: Calendar,
+            group: "exams",
+          },
+          {
+            name: "My Registrations",
+            href: "/dashboard/student/exam/registrations",
+            icon: UserCheck,
+            group: "exams",
+          },
+          {
+            name: "Results & Certificates",
+            href: "/dashboard/student/results",
+            icon: Award,
+            group: "exams",
+          },
 
-    {
-      name: "Smart Class",
-      href: "/dashboard/student/smart-class",
-      icon: Monitor,
-    },
-
-    {
-      name: "Assignments",
-      href: "/dashboard/student/assignments",
-      icon: BookOpen,
-    },
-
-    // Exam Group
-    {
-      type: "separator",
-      label: "Exam Portal",
-      groupKey: "exams",
-    },
-
-    {
-      name: "Available Exams",
-      href: "/dashboard/student/exam",
-      icon: FileCheck,
-      group: "exams",
-    },
-
-    {
-      name: "Exam Notices",
-      href: "/dashboard/student/exam/notices",
-      icon: Bell,
-      group: "exams",
-    },
-
-    {
-      name: "Exam Timetables",
-      href: "/dashboard/student/exam/timetables",
-      icon: Calendar,
-      group: "exams",
-    },
-
-    {
-      name: "My Registrations",
-      href: "/dashboard/student/exam/registrations",
-      icon: UserCheck,
-      group: "exams",
-    },
-
-    {
-      name: "Results & Certificates",
-      href: "/dashboard/student/results",
-      icon: Award,
-      group: "exams",
-    },
-
-    {
-      name: "TC Request",
-      href: "/dashboard/student/tc-request",
-      icon: ArrowRightLeft,
-    },
-
-    {
-      name: "Notices",
-      href: "/dashboard/student/notices",
-      icon: Bell,
-    },
-
-    ...(
-      ["inactive", "suspended"].includes(
-        (
-          userData?.status ||
-          userData?.studentStatus ||
-          ""
-        ).toLowerCase()
-      )
-        ? [
-            {
-              name: "Digital Classroom Registration",
-              href: "/dashboard/student/digital-class-registration",
-              icon: Digital,
-            },
-          ]
-        : []
-    ),
-  ];
-}
+          {
+            name: "TC Request",
+            href: "/dashboard/student/tc-request",
+            icon: ArrowRightLeft,
+          },
+          {
+            name: "Notices",
+            href: "/dashboard/student/notices",
+            icon: Bell,
+          },
+        ];
 
       case "teacher":
         return [
@@ -485,13 +384,11 @@ getSomething()
             href: "/dashboard/teacher/tc-requests",
             icon: Award,
           },
-          
           {
             name: "Digital Class Registration",
             href: "/dashboard/teacher/digital-registration",
             icon: UserPlus,
           },
-
         ];
 
       case "manager":
@@ -850,7 +747,7 @@ getSomething()
             icon: Palette,
             group: "settings",
           },
-          // Digtal class room control pages
+           // Digtal class room control pages
           {
             type: "separator",
             label: "Digital Classroom",
@@ -880,7 +777,6 @@ getSomething()
             icon: ClipboardList,
             group: "digital",
           },
-
 
         ];
 

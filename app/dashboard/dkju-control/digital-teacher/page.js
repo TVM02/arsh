@@ -25,6 +25,7 @@ import {
   Dialog,
   DialogContent,
   DialogHeader,
+  DialogDescription,
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
@@ -41,7 +42,8 @@ import {
   Eye,
   Edit,
   UserX,
-
+UserPlus,
+Loader2,
   FileText,
   User,
   Trash2,
@@ -55,6 +57,7 @@ import {
   Building2,
   Landmark,
   ShieldCheck,
+ 
 
 } from "lucide-react";
 import {
@@ -68,6 +71,9 @@ import {
   getDigitalTeachers,
   updateDigitalTeacher,
   deleteDigitalTeacher,
+  getEligibleDigitalStudents,
+assignDigitalStudents,
+unassignDigitalStudent,
 } from "@/lib/digitalClassTeacherService";
 import useAuthStore from "@/lib/authStore";
 import Layout from "@/components/Layout";
@@ -129,7 +135,50 @@ export default function CentralAdminTeachersPage() {
   const itemsPerPage = 20;
 
   // Lazy Secondary Data: Maps for O(1) lookup of madarsa and mekhala names
-  
+  const [
+  eligibleDigitalStudents,
+  setEligibleDigitalStudents,
+] = useState([]);
+
+const [
+  assignedDigitalStudents,
+  setAssignedDigitalStudents,
+] = useState([]);
+
+const [
+  digitalStudentsLoading,
+  setDigitalStudentsLoading,
+] = useState(false);
+
+const [
+  assignStudentsOpen,
+  setAssignStudentsOpen,
+] = useState(false);
+
+const [
+  assignTeacher,
+  setAssignTeacher,
+] = useState(null);
+
+const [
+  selectedAssignStudent,
+  setSelectedAssignStudent,
+] = useState(null);
+
+const [
+  studentViewOpen,
+  setStudentViewOpen,
+] = useState(false);
+
+const [
+  assigningStudentUid,
+  setAssigningStudentUid,
+] = useState(null);
+const [
+  removingStudentUid,
+  setRemovingStudentUid,
+] = useState(null);
+
  
 
   // Stats counts
@@ -444,9 +493,171 @@ export default function CentralAdminTeachersPage() {
       setEditSubmitting(false);
     }
   };
+const handleViewAssignStudent = (student) => {
+  setSelectedAssignStudent(student);
+  setStudentViewOpen(true);
+};
 
 
-  
+const handleAddDigitalStudent = async (student) => {
+  if (!assignTeacher?.id) {
+    toast.error("Digital Teacher not found.");
+    return;
+  }
+
+  const studentUid =
+    student?.uid ||
+    student?.id;
+
+  if (!studentUid) {
+    toast.error("Digital Student UID not found.");
+    return;
+  }
+
+  try {
+    setAssigningStudentUid(studentUid);
+
+    const result =
+      await assignDigitalStudents(
+        assignTeacher.id,
+        [studentUid],
+      );
+
+    toast.success(
+      result?.message ||
+        "Digital Student assigned successfully.",
+    );
+
+    // Reload students
+    const refreshed =
+      await getEligibleDigitalStudents(
+        assignTeacher.id,
+      );
+
+    setEligibleDigitalStudents(
+      Array.isArray(refreshed?.students)
+        ? refreshed.students
+        : [],
+    );
+  } catch (error) {
+    console.error(
+      "ASSIGN STUDENT ERROR:",
+      error,
+    );
+
+    toast.error(
+      error?.message ||
+        "Failed to assign Digital Student.",
+    );
+  } finally {
+    setAssigningStudentUid(null);
+  }
+};
+
+  const loadDigitalTeacherStudents =
+  async (teacher) => {
+    if (!teacher?.id) {
+      return;
+    }
+
+    try {
+      setDigitalStudentsLoading(true);
+
+      const result =
+        await getEligibleDigitalStudents(
+          teacher.id,
+        );
+
+      const students =
+        Array.isArray(
+          result?.students,
+        )
+          ? result.students
+          : [];
+
+      setEligibleDigitalStudents(
+        students,
+      );
+
+      setAssignedDigitalStudents(
+        students.filter(
+          (student) =>
+            student?.alreadyAssigned ===
+            true,
+        ),
+      );
+    } catch (error) {
+      console.error(
+        "LOAD DIGITAL STUDENTS ERROR:",
+        error,
+      );
+
+      toast.error(
+        error?.message ||
+          "Failed to load assigned Digital Students.",
+      );
+
+      setEligibleDigitalStudents([]);
+      setAssignedDigitalStudents([]);
+    } finally {
+      setDigitalStudentsLoading(false);
+    }
+  };
+
+  const handleRemoveDigitalStudent = async (student) => {
+  if (!assignTeacher?.id) {
+    toast.error("Digital Teacher not found.");
+    return;
+  }
+
+  const studentUid =
+    student?.uid ||
+    student?.id;
+
+  if (!studentUid) {
+    toast.error("Digital Student UID not found.");
+    return;
+  }
+
+  try {
+    setRemovingStudentUid(studentUid);
+
+    const result =
+      await unassignDigitalStudent(
+        assignTeacher.id,
+        studentUid,
+      );
+
+    toast.success(
+      result?.message ||
+        "Digital Student removed successfully.",
+    );
+
+    // Reload students
+    const refreshed =
+      await getEligibleDigitalStudents(
+        assignTeacher.id,
+      );
+
+    setEligibleDigitalStudents(
+      Array.isArray(refreshed?.students)
+        ? refreshed.students
+        : [],
+    );
+  } catch (error) {
+    console.error(
+      "REMOVE DIGITAL STUDENT ERROR:",
+      error,
+    );
+
+    toast.error(
+      error?.message ||
+        "Failed to remove Digital Student.",
+    );
+  } finally {
+    setRemovingStudentUid(null);
+  }
+};
 
   const lastDocRef = useRef(null);
 
@@ -806,9 +1017,64 @@ export default function CentralAdminTeachersPage() {
 
     return () => clearTimeout(t);
   }, [searchTerm, debouncedSearchTerm]);
-  const handleViewTeacher = (teacher) => {
+ const handleViewTeacher =
+  async (teacher) => {
     setSelectedTeacher(teacher);
+
+    setAssignedDigitalStudents([]);
+    setEligibleDigitalStudents([]);
+
     setDetailsOpen(true);
+
+    await loadDigitalTeacherStudents(
+      teacher,
+    );
+  };
+
+  const handleOpenAssignStudents =
+  async (teacher) => {
+    if (!teacher?.id) {
+      toast.error(
+        "Digital Teacher ID not found.",
+      );
+
+      return;
+    }
+
+    setAssignTeacher(teacher);
+
+    setEligibleDigitalStudents([]);
+
+    setAssignStudentsOpen(true);
+
+    try {
+      setDigitalStudentsLoading(true);
+
+      const result =
+        await getEligibleDigitalStudents(
+          teacher.id,
+        );
+
+      setEligibleDigitalStudents(
+        Array.isArray(
+          result?.students,
+        )
+          ? result.students
+          : [],
+      );
+    } catch (error) {
+      console.error(
+        "LOAD DIGITAL STUDENTS ERROR:",
+        error,
+      );
+
+      toast.error(
+        error?.message ||
+          "Failed to load Digital Students.",
+      );
+    } finally {
+      setDigitalStudentsLoading(false);
+    }
   };
 
 
@@ -1747,6 +2013,15 @@ const handleInactiveTeacher =
                                 >
                                   <Trash2 className="h-4 w-4" />
                                 </Button>
+                                <Button  type="button"
+                                  onClick={() =>
+                                  handleOpenAssignStudents(
+                                  teacher,
+                                  )}
+                                  variant="outline"
+                                  size="icon" >
+                                <UserPlus className="h-3.5 w-3.5" />
+                                </Button>
                               </div>
                             </TableCell>
                           </TableRow>
@@ -1950,6 +2225,17 @@ const handleInactiveTeacher =
                               <Trash2 className="h-3 w-3 mr-1" />
                               <span className="hidden xs:inline">Delete</span>
                             </Button>
+                            <Button  type="button"
+                              onClick={() =>
+                              handleOpenAssignStudents(
+                              teacher,
+                              )
+                              }
+                                variant="outline"
+                               size="sm"
+                               className="h-8 text-xs px-2 flex items-center justify-center">
+                              <UserPlus className="h-3 w-3 mr-1" />
+                              </Button>
                           </div>
                         </div>
                       </div>
@@ -2181,7 +2467,7 @@ const handleInactiveTeacher =
        {detailsOpen &&
                  selectedTeacher && (
                    <Modal
-                     title="Digital Teacher Application"
+                     title="Digital Teacher Details"
                      onClose={() =>
                        setDetailsOpen(false)
                      }
@@ -2340,7 +2626,223 @@ const handleInactiveTeacher =
                          />
        
                        </InfoSection>
-       
+       {/* =========================================
+    TEACHING ASSIGNMENT
+========================================= */}
+
+<div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+
+  {/* Header */}
+  <div className="mb-6 flex items-start gap-3">
+
+    <div
+      className="
+        flex
+        h-11
+        w-11
+        shrink-0
+        items-center
+        justify-center
+        rounded-2xl
+        bg-teal-50
+        text-teal-600
+      "
+    >
+      <GraduationCap className="h-5 w-5" />
+    </div>
+
+    <div>
+      <h3 className="text-base font-bold text-slate-900">
+        Teaching Assignment
+      </h3>
+
+      <p className="mt-1 text-sm text-slate-500">
+        Classes, subjects and teaching medium assigned by Central Admin.
+      </p>
+    </div>
+
+  </div>
+
+
+  {/* Assignment Cards */}
+  <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+
+    {/* Assigned Classes */}
+    <div
+      className="
+        rounded-2xl
+        border
+        border-slate-200
+        bg-slate-50/70
+        p-5
+      "
+    >
+      <p className="mb-4 text-sm font-bold text-slate-900">
+        Assigned Classes
+      </p>
+
+      <div className="flex flex-wrap gap-2">
+
+        {selectedTeacher
+          ?.teachingAssignment
+          ?.classes
+          ?.length > 0 ? (
+
+          selectedTeacher
+            .teachingAssignment
+            .classes
+            .map((className, index) => (
+
+              <span
+                key={`${className}-${index}`}
+                className="
+                  rounded-full
+                  border
+                  border-teal-300
+                  bg-teal-50
+                  px-3
+                  py-1.5
+                  text-xs
+                  font-semibold
+                  text-teal-700
+                "
+              >
+                {className}
+              </span>
+
+            ))
+
+        ) : (
+
+          <span className="text-sm text-slate-400">
+            No classes assigned
+          </span>
+
+        )}
+
+      </div>
+    </div>
+
+
+    {/* Assigned Subjects */}
+    <div
+      className="
+        rounded-2xl
+        border
+        border-slate-200
+        bg-slate-50/70
+        p-5
+      "
+    >
+      <p className="mb-4 text-sm font-bold text-slate-900">
+        Assigned Subjects
+      </p>
+
+      <div className="flex flex-wrap gap-2">
+
+        {selectedTeacher
+          ?.teachingAssignment
+          ?.subjects
+          ?.length > 0 ? (
+
+          selectedTeacher
+            .teachingAssignment
+            .subjects
+            .map((subject, index) => (
+
+              <span
+                key={`${subject}-${index}`}
+                className="
+                  rounded-full
+                  border
+                  border-indigo-300
+                  bg-indigo-50
+                  px-3
+                  py-1.5
+                  text-xs
+                  font-semibold
+                  text-indigo-700
+                "
+              >
+                {subject}
+              </span>
+
+            ))
+
+        ) : (
+
+          <span className="text-sm text-slate-400">
+            No subjects assigned
+          </span>
+
+        )}
+
+      </div>
+    </div>
+
+
+    {/* Teaching Medium */}
+    <div
+      className="
+        rounded-2xl
+        border
+        border-slate-200
+        bg-slate-50/70
+        p-5
+      "
+    >
+      <p className="mb-4 text-sm font-bold text-slate-900">
+        Teaching Medium
+      </p>
+
+      <div className="flex flex-wrap gap-2">
+
+        {selectedTeacher
+          ?.teachingAssignment
+          ?.languages
+          ?.length > 0 ? (
+
+          selectedTeacher
+            .teachingAssignment
+            .languages
+            .map((language, index) => (
+
+              <span
+                key={`${language}-${index}`}
+                className="
+                  rounded-full
+                  border
+                  border-amber-300
+                  bg-amber-50
+                  px-3
+                  py-1.5
+                  text-xs
+                  font-semibold
+                  text-amber-700
+                "
+              >
+                {language}
+              </span>
+
+            ))
+
+        ) : (
+
+          <span className="text-sm text-slate-400">
+            No teaching medium assigned
+          </span>
+
+        )}
+
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+
+
                        <InfoSection
                          title="Bank Details"
                        >
@@ -2637,6 +3139,938 @@ const handleInactiveTeacher =
             </div>
           </DialogContent>
         </Dialog>
+        <Dialog
+  open={assignStudentsOpen}
+  onOpenChange={(open) => {
+    setAssignStudentsOpen(open);
+
+    if (!open) {
+      setAssignTeacher(null);
+      setEligibleDigitalStudents([]);
+    }
+  }}
+>
+  <DialogContent
+    className="
+      max-h-[90vh]
+      max-w-4xl
+      overflow-y-auto
+      rounded-2xl
+      p-0
+    "
+  >
+
+    {/* Header */}
+
+    <DialogHeader className="border-b border-slate-200 px-6 py-5">
+
+      <DialogTitle className="text-xl font-bold text-slate-900">
+        Assign Digital Students
+      </DialogTitle>
+
+      <DialogDescription>
+        Assign eligible Digital Students to this Digital Teacher.
+      </DialogDescription>
+
+    </DialogHeader>
+
+
+    <div className="space-y-6 p-6">
+
+      {/* =====================================
+          TEACHER
+      ===================================== */}
+
+      <div
+        className="
+          flex
+          items-center
+          gap-4
+          rounded-2xl
+          border
+          border-slate-200
+          bg-slate-50
+          p-4
+        "
+      >
+
+        <div
+          className="
+            flex
+            h-12
+            w-12
+            shrink-0
+            items-center
+            justify-center
+            rounded-xl
+            bg-teal-100
+            text-lg
+            font-bold
+            text-teal-700
+          "
+        >
+          {(
+            assignTeacher?.fullName ||
+            assignTeacher?.name ||
+            "T"
+          )
+            .charAt(0)
+            .toUpperCase()}
+        </div>
+
+
+        <div className="min-w-0">
+
+          <p className="truncate font-bold text-slate-900">
+            {assignTeacher?.fullName ||
+              assignTeacher?.name ||
+              "Digital Teacher"}
+          </p>
+
+          <p className="mt-1 text-sm text-slate-500">
+            {assignTeacher?.mhrId ||
+              assignTeacher?.digitalTeacherEmail ||
+              "Digital Teacher"}
+          </p>
+
+        </div>
+
+      </div>
+
+
+      {/* =====================================
+          TEACHING ASSIGNMENT
+      ===================================== */}
+
+      <div
+        className="
+          rounded-2xl
+          border
+          border-slate-200
+          bg-white
+          p-5
+        "
+      >
+
+        <div className="mb-5">
+
+          <h3 className="text-base font-bold text-slate-900">
+            Teaching Assignment
+          </h3>
+
+          <p className="mt-1 text-sm text-slate-500">
+            Classes, subjects and teaching medium assigned to this teacher.
+          </p>
+
+        </div>
+
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+
+          {/* CLASSES */}
+
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+
+            <p className="mb-3 text-sm font-bold text-slate-800">
+              Assigned Classes
+            </p>
+
+            <div className="flex flex-wrap gap-2">
+
+              {assignTeacher
+                ?.teachingAssignment
+                ?.classes
+                ?.length > 0 ? (
+
+                assignTeacher
+                  .teachingAssignment
+                  .classes
+                  .map(
+                    (
+                      className,
+                      index,
+                    ) => (
+
+                      <span
+                        key={`${className}-${index}`}
+                        className="
+                          rounded-full
+                          border
+                          border-teal-200
+                          bg-teal-50
+                          px-3
+                          py-1
+                          text-xs
+                          font-semibold
+                          text-teal-700
+                        "
+                      >
+                        {className}
+                      </span>
+
+                    ),
+                  )
+
+              ) : (
+
+                <span className="text-sm text-slate-400">
+                  No classes assigned
+                </span>
+
+              )}
+
+            </div>
+
+          </div>
+
+
+          {/* SUBJECTS */}
+
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+
+            <p className="mb-3 text-sm font-bold text-slate-800">
+              Assigned Subjects
+            </p>
+
+            <div className="flex flex-wrap gap-2">
+
+              {assignTeacher
+                ?.teachingAssignment
+                ?.subjects
+                ?.length > 0 ? (
+
+                assignTeacher
+                  .teachingAssignment
+                  .subjects
+                  .map(
+                    (
+                      subject,
+                      index,
+                    ) => (
+
+                      <span
+                        key={`${subject}-${index}`}
+                        className="
+                          rounded-full
+                          border
+                          border-indigo-200
+                          bg-indigo-50
+                          px-3
+                          py-1
+                          text-xs
+                          font-semibold
+                          text-indigo-700
+                        "
+                      >
+                        {subject}
+                      </span>
+
+                    ),
+                  )
+
+              ) : (
+
+                <span className="text-sm text-slate-400">
+                  No subjects assigned
+                </span>
+
+              )}
+
+            </div>
+
+          </div>
+
+
+          {/* MEDIUM */}
+
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+
+            <p className="mb-3 text-sm font-bold text-slate-800">
+              Teaching Medium
+            </p>
+
+            <div className="flex flex-wrap gap-2">
+
+              {assignTeacher
+                ?.teachingAssignment
+                ?.languages
+                ?.length > 0 ? (
+
+                assignTeacher
+                  .teachingAssignment
+                  .languages
+                  .map(
+                    (
+                      language,
+                      index,
+                    ) => (
+
+                      <span
+                        key={`${language}-${index}`}
+                        className="
+                          rounded-full
+                          border
+                          border-amber-200
+                          bg-amber-50
+                          px-3
+                          py-1
+                          text-xs
+                          font-semibold
+                          text-amber-700
+                        "
+                      >
+                        {language}
+                      </span>
+
+                    ),
+                  )
+
+              ) : (
+
+                <span className="text-sm text-slate-400">
+                  No medium assigned
+                </span>
+
+              )}
+
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
+
+
+      {/* =====================================
+          DIGITAL STUDENTS
+          NEXT STEP
+      ===================================== */}
+
+      <div className="rounded-2xl border border-slate-200 bg-white">
+
+  {/* Header */}
+  <div
+    className="
+      flex
+      flex-col
+      gap-2
+      border-b
+      border-slate-200
+      px-5
+      py-4
+      sm:flex-row
+      sm:items-center
+      sm:justify-between
+    "
+  >
+    <div>
+      <h3 className="font-bold text-slate-900">
+        Eligible Digital Students
+      </h3>
+
+      <p className="mt-1 text-sm text-slate-500">
+        Students matching this teacher&apos;s assigned class.
+      </p>
+    </div>
+
+    {!digitalStudentsLoading && (
+      <span
+        className="
+          inline-flex
+          w-fit
+          rounded-full
+          bg-teal-50
+          px-3
+          py-1
+          text-xs
+          font-semibold
+          text-teal-700
+        "
+      >
+        {eligibleDigitalStudents.length} Student
+        {eligibleDigitalStudents.length !== 1
+          ? "s"
+          : ""}
+      </span>
+    )}
+  </div>
+
+
+  {/* Loading */}
+  {digitalStudentsLoading ? (
+
+    <div className="flex min-h-[180px] items-center justify-center">
+
+      <div className="flex items-center gap-2 text-sm text-slate-500">
+
+        <Loader2 className="h-5 w-5 animate-spin" />
+
+        Loading Digital Students...
+
+      </div>
+
+    </div>
+
+  ) : eligibleDigitalStudents.length === 0 ? (
+
+    /* Empty */
+
+    <div
+      className="
+        flex
+        min-h-[180px]
+        flex-col
+        items-center
+        justify-center
+        p-6
+        text-center
+      "
+    >
+      <Users className="h-9 w-9 text-slate-300" />
+
+      <p className="mt-3 font-semibold text-slate-700">
+        No Eligible Digital Students
+      </p>
+
+      <p className="mt-1 text-sm text-slate-500">
+        No Digital Students match the assigned classes.
+      </p>
+    </div>
+
+  ) : (
+
+    /* Student List */
+
+    <div className="divide-y divide-slate-100">
+
+      {eligibleDigitalStudents.map(
+        (student) => {
+
+          const studentUid =
+            student?.uid ||
+            student?.id;
+
+          const isAdding =
+            assigningStudentUid ===
+            studentUid;
+
+          const studentName =
+            student?.fullName ||
+            student?.name ||
+            student?.studentName ||
+            "Digital Student";
+
+          const studentClass =
+            student?.studentClass ||
+            student?.className ||
+            student?.currentClass ||
+            student?.class ||
+            student?.classLevel ||
+            "N/A";
+
+          return (
+            <div
+              key={studentUid}
+              className="
+                flex
+                flex-col
+                gap-4
+                px-5
+                py-4
+                transition
+                hover:bg-slate-50/70
+                sm:flex-row
+                sm:items-center
+                sm:justify-between
+              "
+            >
+
+              {/* Student Info */}
+              <div className="flex min-w-0 items-center gap-3">
+
+                {/* Avatar */}
+                <div
+                  className="
+                    flex
+                    h-11
+                    w-11
+                    shrink-0
+                    items-center
+                    justify-center
+                    overflow-hidden
+                    rounded-xl
+                    bg-teal-50
+                    font-bold
+                    text-teal-700
+                  "
+                >
+                  {student?.profilePicture ? (
+
+                    <img
+                      src={student.profilePicture}
+                      alt={studentName}
+                      className="h-full w-full object-cover"
+                    />
+
+                  ) : (
+
+                    studentName
+                      .charAt(0)
+                      .toUpperCase()
+
+                  )}
+                </div>
+
+
+                {/* Details */}
+                <div className="min-w-0">
+
+                  <div className="flex flex-wrap items-center gap-2">
+
+                    <p className="truncate font-bold text-slate-900">
+                      {studentName}
+                    </p>
+
+                    {student?.alreadyAssigned && (
+                      <span
+                        className="
+                          rounded-full
+                          bg-emerald-50
+                          px-2
+                          py-0.5
+                          text-[11px]
+                          font-semibold
+                          text-emerald-700
+                        "
+                      >
+                        Assigned
+                      </span>
+                    )}
+
+                  </div>
+
+                  <div
+                    className="
+                      mt-1
+                      flex
+                      flex-wrap
+                      items-center
+                      gap-x-3
+                      gap-y-1
+                      text-xs
+                      text-slate-500
+                    "
+                  >
+
+                    <span>
+                      ID:{" "}
+                      {student?.digitalAdmissionNumber ||
+                        student?.studentId ||
+                        studentUid ||
+                        "N/A"}
+                    </span>
+
+                    <span>
+                      Class:{" "}
+                      <strong className="font-semibold text-slate-700">
+                        {studentClass}
+                      </strong>
+                    </span>
+
+                    {student?.phone && (
+                      <span>
+                        {student.phone}
+                      </span>
+                    )}
+
+                  </div>
+
+                </div>
+
+              </div>
+
+
+              {/* Actions */}
+              <div className="flex shrink-0 items-center gap-2">
+
+                {/* View */}
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleViewAssignStudent(
+                      student,
+                    )
+                  }
+                  className="
+                    inline-flex
+                    h-9
+                    items-center
+                    justify-center
+                    gap-1.5
+                    rounded-lg
+                    border
+                    border-slate-200
+                    bg-white
+                    px-3
+                    text-xs
+                    font-semibold
+                    text-slate-700
+                    transition
+                    hover:bg-slate-50
+                  "
+                >
+                  <Eye className="h-3.5 w-3.5" />
+
+                  View
+                </button>
+
+
+                {/* Add */}
+                {student?.alreadyAssigned ? (
+
+  <button
+    type="button"
+    onClick={() =>
+      handleRemoveDigitalStudent(
+        student,
+      )
+    }
+    disabled={
+      removingStudentUid ===
+      studentUid
+    }
+    className="
+      inline-flex
+      h-9
+      items-center
+      justify-center
+      gap-1.5
+      rounded-lg
+      border
+      border-red-200
+      bg-red-50
+      px-3
+      text-xs
+      font-semibold
+      text-red-700
+      transition
+      hover:border-red-300
+      hover:bg-red-100
+      disabled:cursor-not-allowed
+      disabled:opacity-50
+    "
+  >
+    {removingStudentUid ===
+    studentUid ? (
+      <>
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+
+        Removing...
+      </>
+    ) : (
+      <>
+        <Trash2 className="h-3.5 w-3.5" />
+
+        Remove
+      </>
+    )}
+  </button>
+
+) : (
+
+  <button
+    type="button"
+    onClick={() =>
+      handleAddDigitalStudent(
+        student,
+      )
+    }
+    disabled={
+      assigningStudentUid ===
+      studentUid
+    }
+    className="
+      inline-flex
+      h-9
+      items-center
+      justify-center
+      gap-1.5
+      rounded-lg
+      bg-gradient-to-r
+      from-teal-500
+      to-emerald-600
+      px-3
+      text-xs
+      font-semibold
+      text-white
+      transition
+      hover:from-teal-600
+      hover:to-emerald-700
+      disabled:cursor-not-allowed
+      disabled:opacity-50
+    "
+  >
+    {assigningStudentUid ===
+    studentUid ? (
+      <>
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+
+        Adding...
+      </>
+    ) : (
+      <>
+        <UserPlus className="h-3.5 w-3.5" />
+
+        Add
+      </>
+    )}
+  </button>
+
+)}
+
+              </div>
+
+            </div>
+          );
+        },
+      )}
+
+    </div>
+
+  )}
+
+</div>
+
+    </div>
+
+  </DialogContent>
+</Dialog>
+<Dialog
+  open={studentViewOpen}
+  onOpenChange={setStudentViewOpen}
+>
+  <DialogContent className="max-w-lg rounded-2xl">
+
+    <DialogHeader>
+
+      <DialogTitle>
+        Digital Student Details
+      </DialogTitle>
+
+      <DialogDescription>
+        View Digital Student information.
+      </DialogDescription>
+
+    </DialogHeader>
+
+
+    {selectedAssignStudent && (
+
+      <div className="space-y-5 py-3">
+
+        {/* Profile */}
+        <div className="flex items-center gap-4">
+
+          <div
+            className="
+              flex
+              h-16
+              w-16
+              shrink-0
+              items-center
+              justify-center
+              overflow-hidden
+              rounded-2xl
+              bg-teal-50
+              text-xl
+              font-bold
+              text-teal-700
+            "
+          >
+
+            {selectedAssignStudent
+              ?.profilePicture ? (
+
+              <img
+                src={
+                  selectedAssignStudent
+                    .profilePicture
+                }
+                alt="Student"
+                className="h-full w-full object-cover"
+              />
+
+            ) : (
+
+              (
+                selectedAssignStudent
+                  ?.fullName ||
+                selectedAssignStudent
+                  ?.name ||
+                "S"
+              )
+                .charAt(0)
+                .toUpperCase()
+
+            )}
+
+          </div>
+
+
+          <div>
+
+            <h3 className="text-lg font-bold text-slate-900">
+              {selectedAssignStudent
+                ?.fullName ||
+                selectedAssignStudent
+                  ?.name ||
+                "Digital Student"}
+            </h3>
+
+            <p className="mt-1 text-sm text-slate-500">
+              {selectedAssignStudent
+                ?.digitalAdmissionNumber ||
+                selectedAssignStudent
+                  ?.studentId ||
+                "Digital Student"}
+            </p>
+
+          </div>
+
+        </div>
+
+
+        {/* Details */}
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+
+          <div className="rounded-xl bg-slate-50 p-4">
+
+            <p className="text-xs font-medium text-slate-400">
+              Class
+            </p>
+
+            <p className="mt-1 font-semibold text-slate-800">
+              {selectedAssignStudent
+                ?.studentClass ||
+                selectedAssignStudent
+                  ?.className ||
+                selectedAssignStudent
+                  ?.currentClass ||
+                selectedAssignStudent
+                  ?.class ||
+                "N/A"}
+            </p>
+
+          </div>
+
+
+          <div className="rounded-xl bg-slate-50 p-4">
+
+            <p className="text-xs font-medium text-slate-400">
+              Phone
+            </p>
+
+            <p className="mt-1 font-semibold text-slate-800">
+              {selectedAssignStudent
+                ?.phone ||
+                "N/A"}
+            </p>
+
+          </div>
+
+
+          <div className="rounded-xl bg-slate-50 p-4">
+
+            <p className="text-xs font-medium text-slate-400">
+              Email
+            </p>
+
+            <p className="mt-1 break-all font-semibold text-slate-800">
+              {selectedAssignStudent
+                ?.email ||
+                "N/A"}
+            </p>
+
+          </div>
+
+
+          <div className="rounded-xl bg-slate-50 p-4">
+
+            <p className="text-xs font-medium text-slate-400">
+              Status
+            </p>
+
+            <p className="mt-1 font-semibold text-slate-800">
+              {selectedAssignStudent
+                ?.alreadyAssigned
+                ? "Already Assigned"
+                : "Available"}
+            </p>
+
+          </div>
+
+        </div>
+
+
+        {/* Add from View popup */}
+
+        {!selectedAssignStudent
+          ?.alreadyAssigned && (
+
+          <button
+            type="button"
+            onClick={async () => {
+              await handleAddDigitalStudent(
+                selectedAssignStudent,
+              );
+
+              setStudentViewOpen(
+                false,
+              );
+            }}
+            disabled={
+              assigningStudentUid ===
+              (
+                selectedAssignStudent
+                  ?.uid ||
+                selectedAssignStudent
+                  ?.id
+              )
+            }
+            className="
+              inline-flex
+              h-11
+              w-full
+              items-center
+              justify-center
+              gap-2
+              rounded-xl
+              bg-gradient-to-r
+              from-teal-500
+              to-emerald-600
+              px-4
+              font-semibold
+              text-white
+              hover:from-teal-600
+              hover:to-emerald-700
+              disabled:opacity-50
+            "
+          >
+            <UserPlus className="h-4 w-4" />
+
+            Add Student to Teacher
+          </button>
+
+        )}
+
+      </div>
+
+    )}
+
+  </DialogContent>
+</Dialog>
       </div>
     </Layout>
   );
