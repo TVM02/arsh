@@ -53,6 +53,12 @@ const DASHBOARD_RULES = [
     role: "teacher",
     loginPath: "/auth/login/teacher",
   },
+  {
+  basePath: "/dashboard/digital-teacher",
+  role: "teacher",
+  digitalTeacher: true,
+  loginPath: "/auth/login/digital-teacher",
+},
 
   // ==========================================
   // DIGITAL STUDENT
@@ -211,6 +217,34 @@ export default function DashboardAuthGate({
       ) {
         return false;
       }
+
+      // ======================================
+// DIGITAL TEACHER
+// ======================================
+
+if (
+  rule.digitalTeacher === true
+) {
+  return (
+    userData?.role ===
+      "teacher" &&
+
+    userData?.digitalTeacher ===
+      true &&
+
+    userData?.digitalClassAccess ===
+      true &&
+
+    (
+      !userData
+        ?.digitalTeacherStatus ||
+
+      userData
+        ?.digitalTeacherStatus ===
+        "active"
+    )
+  );
+}
 
       // ======================================
       // DIGITAL STUDENT
@@ -404,16 +438,52 @@ export default function DashboardAuthGate({
     }
 
     // Logged in but wrong dashboard
-    if (
-      !roleMatches &&
-      userHome
-    ) {
-      router.replace(
-        userHome,
-      );
 
-      return;
-    }
+// Logged in but wrong dashboard
+if (!roleMatches) {
+  alert(
+    JSON.stringify(
+      {
+        pathname,
+
+        role:
+          userData?.role,
+
+        digitalTeacher:
+          userData?.digitalTeacher,
+
+        digitalClassAccess:
+          userData?.digitalClassAccess,
+
+        digitalTeacherStatus:
+          userData?.digitalTeacherStatus,
+
+        roleMatches,
+
+        userHome,
+      },
+      null,
+      2,
+    ),
+  );
+
+  // TEMPORARY:
+  // Do not redirect Digital Teacher
+  // while debugging.
+  if (
+    rule?.digitalTeacher === true
+  ) {
+    return;
+  }
+
+  if (userHome) {
+    router.replace(
+      userHome,
+    );
+
+    return;
+  }
+}
   }, [
     _hasHydrated,
     authReady,

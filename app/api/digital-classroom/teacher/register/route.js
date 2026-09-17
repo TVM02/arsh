@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { FieldValue } from "firebase-admin/firestore";
 
 import {
+  getAdminAuth,
   getAdminDb,
 } from "@/lib/firebase-admin";
 
@@ -16,11 +16,132 @@ const COLLECTION =
 ============================================ */
 
 function cleanText(value) {
-  if (value === null || value === undefined) {
-    return "";
+  return String(value ?? "").trim();
+}
+
+function cleanEmail(value) {
+  return cleanText(value).toLowerCase();
+}
+
+function errorResponse(
+  message,
+  status = 400,
+) {
+  return NextResponse.json(
+    {
+      success: false,
+      message,
+    },
+    {
+      status,
+    },
+  );
+}
+
+/* ============================================
+   VERIFY LOGGED-IN TEACHER
+============================================ */
+
+async function verifyTeacher(
+  request,
+  auth,
+  db,
+) {
+  const authorization =
+    request.headers.get(
+      "authorization",
+    ) || "";
+
+  if (
+    !authorization.startsWith(
+      "Bearer ",
+    )
+  ) {
+    return null;
   }
 
-  return String(value).trim();
+  const idToken =
+    authorization
+      .slice(7)
+      .trim();
+
+  if (!idToken) {
+    return null;
+  }
+
+  try {
+    const decodedToken =
+      await auth.verifyIdToken(
+        idToken,
+      );
+
+    if (!decodedToken?.uid) {
+      return null;
+    }
+
+    /*
+      Get actual Firebase Auth account.
+      UID + email come from Firebase,
+      not from browser form.
+    */
+    const firebaseUser =
+      await auth.getUser(
+        decodedToken.uid,
+      );
+
+    /*
+      Existing normal Teacher profile
+    */
+    const userRef =
+      db
+        .collection("users")
+        .doc(decodedToken.uid);
+
+    const userSnapshot =
+      await userRef.get();
+
+    const userData =
+      userSnapshot.exists
+        ? userSnapshot.data()
+        : null;
+
+    const role =
+      userData?.role ||
+      decodedToken?.role ||
+      firebaseUser
+        ?.customClaims
+        ?.role ||
+      null;
+
+    if (
+      role !== "teacher"
+    ) {
+      return null;
+    }
+
+    return {
+      uid:
+        decodedToken.uid,
+
+      email:
+        cleanEmail(
+          firebaseUser?.email ||
+            userData?.email,
+        ),
+
+      firebaseUser,
+
+      userData:
+        userData || {},
+    };
+  } catch (error) {
+    console.error(
+      "VERIFY DIGITAL TEACHER REGISTRATION ERROR:",
+      error,
+    );
+
+    return null;
+  }
 }
 
 /* ============================================
@@ -28,319 +149,57 @@ function cleanText(value) {
    DIGITAL TEACHER REGISTRATION
 ============================================ */
 
-export async function POST(request) {
+export async function POST(
+  request,
+) {
   try {
-    const db = getAdminDb();
+    const auth =
+      getAdminAuth();
 
-    const body = await request.json();
+    const db =
+      getAdminDb();
 
-    console.log(
-      "DIGITAL TEACHER REGISTER BODY:",
-      JSON.stringify(body, null, 2),
-    );
+    /* ========================================
+       VERIFY EXISTING TEACHER LOGIN
+    ======================================== */
 
-    const {
-      sourceTeacherId,
-      sourceTeacherUid,
+    const teacherAccount =
+      await verifyTeacher(
+        request,
+        auth,
+        db,
+      );
 
-      fullName,
-      mhrId,
-      email,
-      phone,
-      gender,
-      dateOfBirth,
-      address,
-      madarsaName,
-      profilePicture,
-
-      qualification,
-      bankDetails,
-
-      certificateUrl,
-    } = body;
-
-    /* ============================================
-       TEACHER VALIDATION
-    ============================================ */
-
-    if (!sourceTeacherUid) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Teacher UID is required.",
-        },
-        {
-          status: 400,
-        },
+    if (!teacherAccount?.uid) {
+      return errorResponse(
+        "Unauthorized. Please login with your Teacher account.",
+        401,
       );
     }
 
-    if (!cleanText(fullName)) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Teacher name is required.",
-        },
-        {
-          status: 400,
-        },
+    const body =
+      await request.json();
+
+    const teacherUid =
+      teacherAccount.uid;
+
+    const teacherEmail =
+      teacherAccount.email;
+
+    const userData =
+      teacherAccount.userData ||
+      {};
+
+    if (!teacherEmail) {
+      return errorResponse(
+        "Teacher account email was not found.",
+        400,
       );
     }
 
-    /* ============================================
-       GENERAL EDUCATION
-    ============================================ */
-
-    const generalEducation =
-      qualification?.generalEducation;
-
-    if (
-      !cleanText(
-        generalEducation?.highestQualification,
-      )
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "General Education highest qualification is required.",
-        },
-        {
-          status: 400,
-        },
-      );
-    }
-
-    if (
-      !cleanText(
-        generalEducation?.courseName,
-      )
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "General Education course name is required.",
-        },
-        {
-          status: 400,
-        },
-      );
-    }
-
-    /* ============================================
-       COMPUTER KNOWLEDGE
-    ============================================ */
-
-    const computerKnowledge =
-      qualification?.computerKnowledge;
-
-    if (
-      !cleanText(
-        computerKnowledge?.level,
-      )
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Computer Knowledge level is required.",
-        },
-        {
-          status: 400,
-        },
-      );
-    }
-
-    if (
-      computerKnowledge?.level === "other" &&
-      !cleanText(
-        computerKnowledge?.otherDetails,
-      )
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Please specify your other computer skills.",
-        },
-        {
-          status: 400,
-        },
-      );
-    }
-
-    /* ============================================
-       ISLAMIC / ARABIC EDUCATION
-    ============================================ */
-
-    const islamicEducation =
-  qualification?.islamicEducation;
-
-if (
-  !cleanText(
-    islamicEducation?.highestQualification,
-  )
-) {
-  return NextResponse.json(
-    {
-      success: false,
-      message:
-        "Islamic Academic Qualification is required.",
-    },
-    {
-      status: 400,
-    },
-  );
-}
-
-if (
-  islamicEducation?.highestQualification ===
-    "degree" &&
-  !cleanText(
-    islamicEducation?.courseName,
-  )
-) {
-  return NextResponse.json(
-    {
-      success: false,
-      message:
-        "Islamic Degree Course Name is required.",
-    },
-    {
-      status: 400,
-    },
-  );
-}
-
-if (
-  !cleanText(
-    islamicEducation?.yearOfPassing,
-  )
-) {
-  return NextResponse.json(
-    {
-      success: false,
-      message:
-        "Islamic qualification year of passing is required.",
-    },
-    {
-      status: 400,
-    },
-  );
-}
-
-if (
-  !cleanText(
-    islamicEducation?.teachingExperience,
-  )
-) {
-  return NextResponse.json(
-    {
-      success: false,
-      message:
-        "Teaching Experience is required.",
-    },
-    {
-      status: 400,
-    },
-  );
-}
-
-if (
-  !cleanText(
-    islamicEducation?.quranQualification,
-  )
-) {
-  return NextResponse.json(
-    {
-      success: false,
-      message:
-        "Quran Qualification is required.",
-    },
-    {
-      status: 400,
-    },
-  );
-}
-
-    /* ============================================
-       BANK VALIDATION
-    ============================================ */
-
-    if (
-      !cleanText(
-        bankDetails?.accountHolderName,
-      )
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Account holder name is required.",
-        },
-        {
-          status: 400,
-        },
-      );
-    }
-
-    if (
-      !cleanText(
-        bankDetails?.bankName,
-      )
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Bank name is required.",
-        },
-        {
-          status: 400,
-        },
-      );
-    }
-
-    if (
-      !cleanText(
-        bankDetails?.accountNumber,
-      )
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Bank account number is required.",
-        },
-        {
-          status: 400,
-        },
-      );
-    }
-
-    if (
-      !cleanText(
-        bankDetails?.ifscCode,
-      )
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "IFSC code is required.",
-        },
-        {
-          status: 400,
-        },
-      );
-    }
-
-    /* ============================================
+    /* ========================================
        CHECK EXISTING APPLICATION
-    ============================================ */
+    ======================================== */
 
     const existingSnapshot =
       await db
@@ -348,308 +207,348 @@ if (
         .where(
           "sourceTeacherUid",
           "==",
-          sourceTeacherUid,
+          teacherUid,
         )
+        .limit(1)
         .get();
 
-    if (!existingSnapshot.empty) {
-      const existingApplications =
-        existingSnapshot.docs.map(
-          (doc) => ({
-            id: doc.id,
-            ...doc.data(),
-          }),
-        );
+    if (
+      !existingSnapshot.empty
+    ) {
+      const existingDoc =
+        existingSnapshot.docs[0];
 
-      const pendingApplication =
-        existingApplications.find(
-          (item) =>
-            item.status === "pending",
-        );
+      const existing =
+        existingDoc.data();
 
-      if (pendingApplication) {
+      if (
+        existing?.status ===
+        "pending"
+      ) {
         return NextResponse.json(
           {
-            success: false,
+            success: true,
 
             message:
-              "You already have a pending Digital Teacher application.",
+              "Your Digital Teacher application is already pending.",
+
+            status:
+              "pending",
 
             applicationId:
-              pendingApplication.id,
-
-            status: "pending",
+              existingDoc.id,
           },
           {
-            status: 409,
+            status: 200,
           },
         );
       }
 
-      const approvedApplication =
-        existingApplications.find(
-          (item) =>
-            item.status === "approved",
-        );
-
-      if (approvedApplication) {
+      if (
+        existing?.status ===
+        "approved"
+      ) {
         return NextResponse.json(
           {
-            success: false,
+            success: true,
 
             message:
               "Your Digital Teacher application is already approved.",
 
-            applicationId:
-              approvedApplication.id,
+            status:
+              "approved",
 
-            status: "approved",
+            applicationId:
+              existingDoc.id,
           },
           {
-            status: 409,
+            status: 200,
           },
         );
       }
     }
 
-    /* ============================================
-       NORMALIZE
-    ============================================ */
+    /* ========================================
+       PROFILE IMAGE
 
-    const cleanEmail =
-      cleanText(email).toLowerCase();
+       Uploaded to Firebase Storage
+       before this API call.
+    ======================================== */
 
-    const cleanPhone =
-      cleanText(phone);
-
-    const cleanAccountNumber =
+    const profilePicture =
       cleanText(
-        bankDetails.accountNumber,
+        body?.profilePicture,
+      ) || null;
+
+    /*
+      If profile photo must be mandatory,
+      keep this validation.
+
+      If photo is optional,
+      remove this block.
+    */
+
+    if (!profilePicture) {
+      return errorResponse(
+        "Please upload your Digital Teacher profile photo.",
+        400,
       );
+    }
 
-    const cleanIfsc =
-      cleanText(
-        bankDetails.ifscCode,
-      ).toUpperCase();
+    /* ========================================
+       BUILD APPLICATION
 
-    /* ============================================
-       REGISTRATION DATA
-    ============================================ */
+       IMPORTANT:
+       SAME Firebase UID
+       SAME Firebase email
+       SAME Firebase password
+    ======================================== */
 
-    const registrationData = {
-      /* Existing teacher reference */
+    const applicationData = {
+      /* ======================================
+         EXISTING TEACHER ACCOUNT
+      ====================================== */
+
+      sourceTeacherUid:
+        teacherUid,
 
       sourceTeacherId:
-        sourceTeacherId || null,
-
-      sourceTeacherUid,
-
-      /* Personal */
-
-      fullName:
-        cleanText(fullName),
-
-      mhrId:
-        cleanText(mhrId) || null,
-
-      email:
-        cleanEmail || null,
-
-      phone:
-        cleanPhone || null,
-
-      gender:
-        cleanText(gender) || null,
-
-      dateOfBirth:
-        cleanText(dateOfBirth) ||
+        body?.sourceTeacherId ||
+        userData?.teacherId ||
+        userData?.id ||
         null,
-
-      address:
-        cleanText(address) || null,
-
-      madarsaName:
-        cleanText(madarsaName) ||
-        null,
-
-      profilePicture:
-        cleanText(profilePicture) ||
-        null,
-
-      /* ========================================
-         QUALIFICATION
-      ======================================== */
-
-      qualification: {
-        /* General Education */
-
-        generalEducation: {
-          highestQualification:
-            cleanText(
-              generalEducation
-                .highestQualification,
-            ),
-
-          courseName:
-            cleanText(
-              generalEducation
-                .courseName,
-            ),
-
-          institution:
-            cleanText(
-              generalEducation
-                .institution,
-            ) || null,
-        },
-
-        /* Computer Knowledge */
-
-        computerKnowledge: {
-          level:
-            cleanText(
-              computerKnowledge.level,
-            ),
-
-          otherDetails:
-            computerKnowledge.level ===
-            "other"
-              ? cleanText(
-                  computerKnowledge
-                    .otherDetails,
-                )
-              : null,
-        },
-
-        /* Islamic / Arabic */
-
-        islamicEducation: {
-          highestQualification:
-            cleanText(
-              islamicEducation
-                .highestQualification,
-            ),
-
-          courseName:
-            cleanText(
-              islamicEducation
-                .courseName,
-            ),
-
-          institution:
-            cleanText(
-              islamicEducation
-                .institution,
-            ),
-
-          yearOfPassing:
-            cleanText(
-              islamicEducation
-                .yearOfPassing,
-            ),
-
-          teachingExperience:
-            cleanText(
-              islamicEducation
-                .teachingExperience,
-            ),
-        },
-
-        /* Step 4 upload */
-
-        certificateUrl:
-          cleanText(
-            certificateUrl ||
-              qualification
-                ?.certificateUrl,
-          ) || null,
-      },
-
-      /* ========================================
-         BANK DETAILS
-      ======================================== */
-
-      bankDetails: {
-        accountHolderName:
-          cleanText(
-            bankDetails
-              .accountHolderName,
-          ),
-
-        bankName:
-          cleanText(
-            bankDetails.bankName,
-          ),
-
-        accountNumber:
-          cleanAccountNumber,
-
-        ifscCode:
-          cleanIfsc,
-
-        branchName:
-          cleanText(
-            bankDetails.branchName,
-          ) || null,
-
-        upiId:
-          cleanText(
-            bankDetails.upiId,
-          ) || null,
-      },
-
-      /* ========================================
-         APPLICATION STATUS
-      ======================================== */
-
-      status: "pending",
-
-      accountStatus: null,
-
-      digitalClassAccess: false,
-
-      /* Approval creates these */
-
-      digitalTeacherUid: null,
-
-      digitalTeacherEmail: null,
 
       /*
-        NO teachingAssignment here.
-
-        Central Admin will later set:
-        classes
-        subjects
-        languages
+        Digital Teacher uses
+        SAME Firebase Auth account.
       */
+      digitalTeacherUid:
+        teacherUid,
+
+      /*
+        Existing Teacher email.
+      */
+      email:
+        teacherEmail,
+
+      digitalTeacherEmail:
+        teacherEmail,
+
+      /* ======================================
+         PERSONAL INFORMATION
+      ====================================== */
+
+      fullName:
+        cleanText(
+          body?.fullName ||
+            userData?.fullName ||
+            userData?.name ||
+            teacherAccount
+              ?.firebaseUser
+              ?.displayName,
+        ),
+
+      mhrId:
+        cleanText(
+          body?.mhrId ||
+            userData?.mhrId ||
+            userData?.teacherId,
+        ) || null,
+
+      phone:
+        cleanText(
+          body?.phone ||
+            userData?.phone,
+        ) || null,
+
+      gender:
+        cleanText(
+          body?.gender ||
+            userData?.gender,
+        ) || null,
+
+      dateOfBirth:
+        cleanText(
+          body?.dateOfBirth ||
+            userData?.dateOfBirth,
+        ) || null,
+
+      address:
+        cleanText(
+          body?.address ||
+            userData?.address,
+        ) || null,
+
+      madarsaName:
+        cleanText(
+          body?.madarsaName ||
+            userData?.madarsaName ||
+            userData?.madarsaId ||
+            userData
+              ?.institutionName,
+        ) || null,
+
+      /*
+        New Digital Teacher
+        registration profile image
+      */
+      profilePicture,
+
+      /* ======================================
+         QUALIFICATION
+      ====================================== */
+
+      qualification:
+        body?.qualification &&
+        typeof body.qualification ===
+          "object"
+          ? body.qualification
+          : {},
+
+      /* ======================================
+         BANK DETAILS
+      ====================================== */
+
+      bankDetails:
+        body?.bankDetails &&
+        typeof body.bankDetails ===
+          "object"
+          ? body.bankDetails
+          : {},
+
+      certificateUrl:
+        body?.certificateUrl ||
+        body?.qualification
+          ?.certificateUrl ||
+        null,
+
+      /* ======================================
+         APPLICATION STATUS
+      ====================================== */
+
+      status:
+        "pending",
+
+      /*
+        Not active until
+        Central Admin approves.
+      */
+      accountStatus:
+        "pending",
+
+      digitalClassAccess:
+        false,
+
+      /*
+        Central Admin assigns these
+        during approval.
+      */
+      teachingAssignment: {
+        classes: [],
+        subjects: [],
+        languages: [],
+      },
+
+      /* ======================================
+         APPROVAL
+      ====================================== */
 
       approval: {
         centralAdmin: {
-          status: "pending",
+          status:
+            "pending",
 
-          approvedBy: null,
-          approvedAt: null,
+          approvedBy:
+            null,
 
-          rejectedAt: null,
-          rejectionReason: null,
+          approvedAt:
+            null,
+
+          rejectedAt:
+            null,
+
+          rejectionReason:
+            null,
         },
       },
 
       createdAt:
-        FieldValue.serverTimestamp(),
+        new Date(),
 
       updatedAt:
-        FieldValue.serverTimestamp(),
+        new Date(),
     };
 
-    /* ============================================
-       SAVE
-    ============================================ */
+    /* ========================================
+       REJECTED APPLICATION -> REAPPLY
+    ======================================== */
 
-    const docRef =
-      await db
+    if (
+      !existingSnapshot.empty
+    ) {
+      const existingDoc =
+        existingSnapshot.docs[0];
+
+      const existing =
+        existingDoc.data();
+
+      if (
+        existing?.status ===
+        "rejected"
+      ) {
+        await existingDoc.ref.set(
+          {
+            ...applicationData,
+
+            createdAt:
+              existing?.createdAt ||
+              new Date(),
+
+            updatedAt:
+              new Date(),
+          },
+          {
+            merge: true,
+          },
+        );
+
+        return NextResponse.json({
+          success: true,
+
+          message:
+            "Digital Teacher application resubmitted successfully.",
+
+          status:
+            "pending",
+
+          applicationId:
+            existingDoc.id,
+
+          digitalTeacherUid:
+            teacherUid,
+
+          digitalTeacherEmail:
+            teacherEmail,
+        });
+      }
+    }
+
+    /* ========================================
+       CREATE APPLICATION
+    ======================================== */
+
+    const applicationRef =
+      db
         .collection(COLLECTION)
-        .add(registrationData);
+        .doc();
+
+    await applicationRef.set(
+      applicationData,
+    );
+
+    /* ========================================
+       SUCCESS
+    ======================================== */
 
     return NextResponse.json(
       {
@@ -658,10 +557,20 @@ if (
         message:
           "Digital Teacher application submitted successfully.",
 
-        applicationId:
-          docRef.id,
+        status:
+          "pending",
 
-        status: "pending",
+        applicationId:
+          applicationRef.id,
+
+        /*
+          Same existing Firebase account
+        */
+        digitalTeacherUid:
+          teacherUid,
+
+        digitalTeacherEmail:
+          teacherEmail,
       },
       {
         status: 201,
@@ -669,7 +578,7 @@ if (
     );
   } catch (error) {
     console.error(
-      "DIGITAL TEACHER REGISTER ERROR:",
+      "DIGITAL TEACHER REGISTRATION ERROR:",
       error,
     );
 
@@ -679,7 +588,7 @@ if (
 
         message:
           error?.message ||
-          "Digital Teacher registration failed.",
+          "Unable to submit Digital Teacher application.",
       },
       {
         status: 500,

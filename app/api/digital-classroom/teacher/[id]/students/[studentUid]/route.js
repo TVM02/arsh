@@ -8,62 +8,60 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const TEACHER_COLLECTION =
-  "digitalClassTeacherRegistrations";
 
-const ASSIGNMENT_COLLECTION =
-  "digitalTeacherStudentAssignments";
+function cleanText(value) {
+  return String(value ?? "").trim();
+}
 
-/* ============================================
-   VERIFY CENTRAL ADMIN
-============================================ */
 
 async function verifyCentralAdmin(
   request,
   auth,
   db,
 ) {
-  const authorization =
-    request.headers.get("authorization") || "";
+  const header =
+    request.headers.get(
+      "authorization",
+    ) || "";
 
-  if (!authorization.startsWith("Bearer ")) {
-    return null;
-  }
-
-  const token =
-    authorization.slice(7).trim();
-
-  if (!token) {
+  if (
+    !header.startsWith("Bearer ")
+  ) {
     return null;
   }
 
   try {
     const decoded =
-      await auth.verifyIdToken(token);
+      await auth.verifyIdToken(
+        header.slice(7).trim(),
+      );
 
     if (
-      decoded?.role === "central_admin" ||
-      decoded?.role === "admin"
+      decoded?.role ===
+        "central_admin" ||
+      decoded?.role ===
+        "admin"
     ) {
       return decoded;
     }
 
-    const userSnapshot =
+    const snap =
       await db
         .collection("users")
         .doc(decoded.uid)
         .get();
 
-    if (!userSnapshot.exists) {
+    if (!snap.exists) {
       return null;
     }
 
-    const userData =
-      userSnapshot.data();
+    const data =
+      snap.data() || {};
 
     if (
-      userData?.role !== "central_admin" &&
-      userData?.role !== "admin"
+      data?.role !==
+        "central_admin" &&
+      data?.role !== "admin"
     ) {
       return null;
     }
@@ -71,7 +69,7 @@ async function verifyCentralAdmin(
     return decoded;
   } catch (error) {
     console.error(
-      "VERIFY CENTRAL ADMIN ERROR:",
+      "VERIFY ADMIN ERROR:",
       error,
     );
 
@@ -79,9 +77,6 @@ async function verifyCentralAdmin(
   }
 }
 
-/* ============================================
-   UNASSIGN DIGITAL STUDENT
-============================================ */
 
 export async function DELETE(
   request,
@@ -93,7 +88,13 @@ export async function DELETE(
       studentUid,
     } = await params;
 
-    if (!id) {
+    const teacherApplicationId =
+      cleanText(id);
+
+    const cleanStudentUid =
+      cleanText(studentUid);
+
+    if (!teacherApplicationId) {
       return NextResponse.json(
         {
           success: false,
@@ -106,12 +107,12 @@ export async function DELETE(
       );
     }
 
-    if (!studentUid) {
+    if (!cleanStudentUid) {
       return NextResponse.json(
         {
           success: false,
           message:
-            "Digital Student UID is required.",
+            "Student UID is required.",
         },
         {
           status: 400,
@@ -125,10 +126,6 @@ export async function DELETE(
     const db =
       getAdminDb();
 
-    /* ========================================
-       VERIFY CENTRAL ADMIN
-    ======================================== */
-
     const admin =
       await verifyCentralAdmin(
         request,
@@ -141,7 +138,7 @@ export async function DELETE(
         {
           success: false,
           message:
-            "Unauthorized. Central Admin access required.",
+            "Unauthorized.",
         },
         {
           status: 401,
@@ -149,19 +146,24 @@ export async function DELETE(
       );
     }
 
+
     /* ========================================
        LOAD DIGITAL TEACHER
     ======================================== */
 
-    const teacherSnapshot =
-      await db
+    const teacherRef =
+      db
         .collection(
-          TEACHER_COLLECTION,
+          "digitalClassTeacherRegistrations",
         )
-        .doc(id)
-        .get();
+        .doc(
+          teacherApplicationId,
+        );
 
-    if (!teacherSnapshot.exists) {
+    const teacherSnap =
+      await teacherRef.get();
+
+    if (!teacherSnap.exists) {
       return NextResponse.json(
         {
           success: false,
@@ -175,17 +177,20 @@ export async function DELETE(
     }
 
     const teacher =
-      teacherSnapshot.data();
+      teacherSnap.data() || {};
 
-    const digitalTeacherUid =
-      teacher?.digitalTeacherUid;
+    const teacherUid =
+      cleanText(
+        teacher?.sourceTeacherUid ||
+        teacher?.digitalTeacherUid,
+      );
 
-    if (!digitalTeacherUid) {
+    if (!teacherUid) {
       return NextResponse.json(
         {
           success: false,
           message:
-            "Digital Teacher UID not found.",
+            "Teacher Firebase UID not found.",
         },
         {
           status: 400,
@@ -193,24 +198,27 @@ export async function DELETE(
       );
     }
 
+
     /* ========================================
-       ASSIGNMENT DOCUMENT ID
+       FIND ACTIVE ASSIGNMENT
     ======================================== */
 
     const assignmentId =
-      `${digitalTeacherUid}_${studentUid}`;
+      `${teacherUid}_${cleanStudentUid}`;
 
     const assignmentRef =
       db
         .collection(
-          ASSIGNMENT_COLLECTION,
+          "digitalTeacherStudentAssignments",
         )
-        .doc(assignmentId);
+        .doc(
+          assignmentId,
+        );
 
-    const assignmentSnapshot =
+    const assignmentSnap =
       await assignmentRef.get();
 
-    if (!assignmentSnapshot.exists) {
+    if (!assignmentSnap.exists) {
       return NextResponse.json(
         {
           success: false,
@@ -223,82 +231,46 @@ export async function DELETE(
       );
     }
 
-    const assignment =
-      assignmentSnapshot.data();
 
     /* ========================================
-       SECURITY CHECK
+       FIND DIGITAL STUDENT REGISTRATION
     ======================================== */
 
-    if (
-      assignment?.digitalTeacherUid !==
-      digitalTeacherUid
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Invalid student assignment.",
-        },
-        {
-          status: 400,
-        },
-      );
-    }
+    const studentQuery =
+      await db
+        .collection(
+          "digitalClassStudentRegistrations",
+        )
+        .where(
+          "uid",
+          "==",
+          cleanStudentUid,
+        )
+        .limit(1)
+        .get();
 
-    if (
-      assignment?.studentUid !==
-      studentUid
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Student UID does not match assignment.",
-        },
-        {
-          status: 400,
-        },
-      );
-    }
-
-    /* ========================================
-       ALREADY REMOVED
-    ======================================== */
-
-    if (
-      assignment?.status ===
-      "inactive"
-    ) {
-      return NextResponse.json(
-        {
-          success: true,
-          message:
-            "Digital Student is already unassigned.",
-        },
-        {
-          status: 200,
-        },
-      );
-    }
-
-    /* ========================================
-       SOFT REMOVE
-    ======================================== */
+    const batch =
+      db.batch();
 
     const now =
       new Date();
 
-    await assignmentRef.set(
+
+    /* ========================================
+       MARK ASSIGNMENT INACTIVE
+    ======================================== */
+
+    batch.set(
+      assignmentRef,
       {
         status:
           "inactive",
 
-        unassignedBy:
-          admin.uid,
-
         unassignedAt:
           now,
+
+        unassignedBy:
+          admin.uid,
 
         updatedAt:
           now,
@@ -308,23 +280,95 @@ export async function DELETE(
       },
     );
 
-    return NextResponse.json(
-      {
-        success: true,
 
-        message:
-          "Digital Student unassigned successfully.",
+    /* ========================================
+       CLEAR STUDENT ASSIGNED TEACHER
+    ======================================== */
 
-        assignmentId,
+    if (!studentQuery.empty) {
+      const studentDoc =
+        studentQuery.docs[0];
 
-        digitalTeacherUid,
+      const studentData =
+        studentDoc.data() || {};
 
-        studentUid,
-      },
-      {
-        status: 200,
-      },
-    );
+      /*
+        Safety:
+        clear only if this is the
+        currently assigned teacher.
+      */
+      const currentAssignedTeacherUid =
+        cleanText(
+          studentData
+            ?.assignedDigitalTeacherUid,
+        );
+
+      if (
+        !currentAssignedTeacherUid ||
+        currentAssignedTeacherUid ===
+          teacherUid
+      ) {
+        batch.set(
+          studentDoc.ref,
+          {
+            teacherAssigned:
+              false,
+
+            assignedDigitalTeacherUid:
+              null,
+
+            assignedDigitalTeacherApplicationId:
+              null,
+
+            assignedDigitalTeacherMhrId:
+              null,
+
+            assignedDigitalTeacherName:
+              null,
+
+            assignedDigitalTeacherEmail:
+              null,
+
+            assignedDigitalTeacherClass:
+              null,
+
+            teacherAssignedAt:
+              null,
+
+            teacherUnassignedAt:
+              now,
+
+            teacherUnassignedBy:
+              admin.uid,
+
+            updatedAt:
+              now,
+          },
+          {
+            merge: true,
+          },
+        );
+      }
+    }
+
+
+    await batch.commit();
+
+
+    return NextResponse.json({
+      success: true,
+
+      message:
+        "Digital Student unassigned successfully.",
+
+      studentUid:
+        cleanStudentUid,
+
+      teacherUid,
+
+      teacherApplicationId,
+    });
+
   } catch (error) {
     console.error(
       "UNASSIGN DIGITAL STUDENT ERROR:",
@@ -337,7 +381,7 @@ export async function DELETE(
 
         message:
           error?.message ||
-          "Failed to unassign Digital Student.",
+          "Unable to unassign Digital Student.",
       },
       {
         status: 500,

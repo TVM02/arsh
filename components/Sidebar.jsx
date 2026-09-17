@@ -64,6 +64,7 @@ const Sidebar = ({ isOpen, onClose }) => {
     reports: true,
     settings: true,
     exams: false,
+    digital: true,
   });
 
   const toggleGroup = (groupKey) => {
@@ -76,6 +77,7 @@ const Sidebar = ({ isOpen, onClose }) => {
         reports: true,
         settings: true,
         exams: true,
+        digital: true,
       };
 
       if (!isCurrentlyOpen) {
@@ -234,6 +236,7 @@ const Sidebar = ({ isOpen, onClose }) => {
           reports: activeGroup !== "reports",
           settings: activeGroup !== "settings",
           exams: activeGroup !== "exams",
+          digital: activeGroup !== "digital",
         });
       }
     }

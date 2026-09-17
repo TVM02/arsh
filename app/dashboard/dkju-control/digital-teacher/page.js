@@ -57,7 +57,7 @@ Loader2,
   Building2,
   Landmark,
   ShieldCheck,
- 
+ Languages
 
 } from "lucide-react";
 import {
@@ -71,8 +71,7 @@ import {
   getDigitalTeachers,
   updateDigitalTeacher,
   deleteDigitalTeacher,
-  getEligibleDigitalStudents,
-assignDigitalStudents,
+  getAssignedDigitalStudents,
 unassignDigitalStudent,
 } from "@/lib/digitalClassTeacherService";
 import useAuthStore from "@/lib/authStore";
@@ -83,7 +82,39 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
 
+const DIGITAL_CLASS_OPTIONS = [
+  "LKG",
+  "UKG",
+  "Class 1",
+  "Class 2",
+  "Class 3",
+  "Class 4",
+  "Class 5",
+  "Class 6",
+  "Class 7",
+  "Class 8",
+  "Class 9",
+  "Class 10",
+  "Class 11",
+  "Class 12",
+];
 
+const DIGITAL_SUBJECT_OPTIONS = [
+  "Quran",
+  "Arabic",
+  "Islamic Studies",
+  "Fiqh",
+  "Aqeedah",
+  "Hadees",
+  "Seerah",
+  "Dua",
+];
+
+const DIGITAL_LANGUAGE_OPTIONS = [
+  "Malayalam",
+  "Arabic",
+  "English",
+];
 
 
 
@@ -135,10 +166,6 @@ export default function CentralAdminTeachersPage() {
   const itemsPerPage = 20;
 
   // Lazy Secondary Data: Maps for O(1) lookup of madarsa and mekhala names
-  const [
-  eligibleDigitalStudents,
-  setEligibleDigitalStudents,
-] = useState([]);
 
 const [
   assignedDigitalStudents,
@@ -170,10 +197,7 @@ const [
   setStudentViewOpen,
 ] = useState(false);
 
-const [
-  assigningStudentUid,
-  setAssigningStudentUid,
-] = useState(null);
+
 const [
   removingStudentUid,
   setRemovingStudentUid,
@@ -213,7 +237,42 @@ const [
     return s;
   };
  
+const toggleTeachingAssignmentValue = (
+  field,
+  value,
+) => {
+  setEditForm((prev) => {
+    const teachingAssignment =
+      prev?.teachingAssignment || {};
 
+    const currentValues =
+      Array.isArray(
+        teachingAssignment?.[field],
+      )
+        ? teachingAssignment[field]
+        : [];
+
+    const exists =
+      currentValues.includes(value);
+
+    return {
+      ...prev,
+
+      teachingAssignment: {
+        ...teachingAssignment,
+
+        [field]: exists
+          ? currentValues.filter(
+              (item) => item !== value,
+            )
+          : [
+              ...currentValues,
+              value,
+            ],
+      },
+    };
+  });
+};
   
 
   const teacherMatchesClientFilters = useCallback(
@@ -266,14 +325,11 @@ const [
           teacher.teacherEmail,
           teacher.digitalTeacherEmail,
           teacher.email,
+          teacher.mhrId,
           teacher.phone,
-          teacher.digitalAdmissionNumber,
-          teacher.oldRegistrationNumber,
           teacher.madarsaName,
-          teacher.uid,
-          teacher.guardianName,
-          teacher.guardianPhone,
-          teacher.aadharNumber,
+          
+      
         ]
           .filter(Boolean)
           .join(" ")
@@ -429,10 +485,42 @@ const [
   const [showSuspendedOnly, setShowSuspendedOnly] = useState(false); // Toggle for showing only suspended teachers
   // Open edit dialog with teacher data
   const handleEditTeacher = (teacher) => {
-    setEditForm({ ...teacher });
-    setOriginalTeacherStatus(teacher.accountStatus || "active");
-    setIsEditDialogOpen(true);
-  };
+  setEditForm({
+    ...teacher,
+
+    teachingAssignment: {
+      classes: Array.isArray(
+        teacher?.teachingAssignment
+          ?.classes,
+      )
+        ? teacher.teachingAssignment
+            .classes
+        : [],
+
+      subjects: Array.isArray(
+        teacher?.teachingAssignment
+          ?.subjects,
+      )
+        ? teacher.teachingAssignment
+            .subjects
+        : [],
+
+      languages: Array.isArray(
+        teacher?.teachingAssignment
+          ?.languages,
+      )
+        ? teacher.teachingAssignment
+            .languages
+        : [],
+    },
+  });
+
+  setOriginalTeacherStatus(
+    teacher?.accountStatus || "",
+  );
+
+  setIsEditDialogOpen(true);
+};
 
   // Save edited teacher info
   const handleEditTeacherSubmit = async (e, bypassInactivateCheck = false) => {
@@ -499,72 +587,20 @@ const handleViewAssignStudent = (student) => {
 };
 
 
-const handleAddDigitalStudent = async (student) => {
-  if (!assignTeacher?.id) {
-    toast.error("Digital Teacher not found.");
-    return;
-  }
 
-  const studentUid =
-    student?.uid ||
-    student?.id;
-
-  if (!studentUid) {
-    toast.error("Digital Student UID not found.");
-    return;
-  }
-
-  try {
-    setAssigningStudentUid(studentUid);
-
-    const result =
-      await assignDigitalStudents(
-        assignTeacher.id,
-        [studentUid],
-      );
-
-    toast.success(
-      result?.message ||
-        "Digital Student assigned successfully.",
-    );
-
-    // Reload students
-    const refreshed =
-      await getEligibleDigitalStudents(
-        assignTeacher.id,
-      );
-
-    setEligibleDigitalStudents(
-      Array.isArray(refreshed?.students)
-        ? refreshed.students
-        : [],
-    );
-  } catch (error) {
-    console.error(
-      "ASSIGN STUDENT ERROR:",
-      error,
-    );
-
-    toast.error(
-      error?.message ||
-        "Failed to assign Digital Student.",
-    );
-  } finally {
-    setAssigningStudentUid(null);
-  }
-};
-
-  const loadDigitalTeacherStudents =
+   const loadDigitalTeacherStudents =
   async (teacher) => {
     if (!teacher?.id) {
       return;
     }
 
     try {
-      setDigitalStudentsLoading(true);
+      setDigitalStudentsLoading(
+        true,
+      );
 
       const result =
-        await getEligibleDigitalStudents(
+        await getAssignedDigitalStudents(
           teacher.id,
         );
 
@@ -575,20 +611,17 @@ const handleAddDigitalStudent = async (student) => {
           ? result.students
           : [];
 
-      setEligibleDigitalStudents(
+      console.log(
+        "ASSIGNED DIGITAL STUDENTS:",
         students,
       );
 
       setAssignedDigitalStudents(
-        students.filter(
-          (student) =>
-            student?.alreadyAssigned ===
-            true,
-        ),
+        students,
       );
     } catch (error) {
       console.error(
-        "LOAD DIGITAL STUDENTS ERROR:",
+        "LOAD ASSIGNED DIGITAL STUDENTS ERROR:",
         error,
       );
 
@@ -597,67 +630,127 @@ const handleAddDigitalStudent = async (student) => {
           "Failed to load assigned Digital Students.",
       );
 
-      setEligibleDigitalStudents([]);
-      setAssignedDigitalStudents([]);
+      setAssignedDigitalStudents(
+        [],
+      );
     } finally {
-      setDigitalStudentsLoading(false);
+      setDigitalStudentsLoading(
+        false,
+      );
     }
   };
 
-  const handleRemoveDigitalStudent = async (student) => {
-  if (!assignTeacher?.id) {
-    toast.error("Digital Teacher not found.");
-    return;
-  }
+  
+  const handleRemoveDigitalStudent =
+  async (student) => {
+    if (!assignTeacher?.id) {
+      toast.error(
+        "Digital Teacher not found.",
+      );
 
-  const studentUid =
-    student?.uid ||
-    student?.id;
+      return;
+    }
 
-  if (!studentUid) {
-    toast.error("Digital Student UID not found.");
-    return;
-  }
+    const studentUid =
+      student?.uid ||
+      student?.id;
 
-  try {
-    setRemovingStudentUid(studentUid);
+    if (!studentUid) {
+      toast.error(
+        "Digital Student UID not found.",
+      );
 
-    const result =
-      await unassignDigitalStudent(
-        assignTeacher.id,
+      return;
+    }
+
+    const confirmed =
+      window.confirm(
+        `Unassign ${
+          student?.fullName ||
+          student?.name ||
+          "this student"
+        } from this Digital Teacher?`,
+      );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setRemovingStudentUid(
         studentUid,
       );
 
-    toast.success(
-      result?.message ||
-        "Digital Student removed successfully.",
-    );
+      const result =
+        await unassignDigitalStudent(
+          assignTeacher.id,
+          studentUid,
+        );
 
-    // Reload students
-    const refreshed =
-      await getEligibleDigitalStudents(
-        assignTeacher.id,
+      toast.success(
+        result?.message ||
+          "Digital Student unassigned successfully.",
       );
 
-    setEligibleDigitalStudents(
-      Array.isArray(refreshed?.students)
-        ? refreshed.students
-        : [],
-    );
-  } catch (error) {
-    console.error(
-      "REMOVE DIGITAL STUDENT ERROR:",
-      error,
-    );
+      /*
+        Reload and keep ONLY
+        assigned students.
+      */
+      const refreshed =
+        await getAssignedDigitalStudents(
+          assignTeacher.id,
+        );
 
-    toast.error(
-      error?.message ||
-        "Failed to remove Digital Student.",
-    );
-  } finally {
-    setRemovingStudentUid(null);
-  }
-};
+      const students =
+        Array.isArray(
+          refreshed?.students,
+        )
+          ? refreshed.students
+          : [];
+
+      setAssignedDigitalStudents(
+        students.filter(
+          (item) =>
+            item?.alreadyAssigned ===
+            true,
+        ),
+      );
+
+      /*
+        Close Student Details popup
+        if it is currently open.
+      */
+      if (
+        selectedAssignStudent &&
+        (
+          selectedAssignStudent?.uid ||
+          selectedAssignStudent?.id
+        ) === studentUid
+      ) {
+        setStudentViewOpen(
+          false,
+        );
+
+        setSelectedAssignStudent(
+          null,
+        );
+      }
+    } catch (error) {
+      console.error(
+        "UNASSIGN DIGITAL STUDENT ERROR:",
+        error,
+      );
+
+      toast.error(
+        error?.message ||
+          "Failed to unassign Digital Student.",
+      );
+    } finally {
+      setRemovingStudentUid(
+        null,
+      );
+    }
+  };
 
   const lastDocRef = useRef(null);
 
@@ -721,11 +814,8 @@ const handleAddDigitalStudent = async (student) => {
             teacher.digitalTeacherEmail,
             teacher.email,
             teacher.phone,
-            teacher.digitalAdmissionNumber,
-            teacher.oldRegistrationNumber,
             teacher.madarsaName,
-            teacher.guardianName,
-            teacher.guardianPhone,
+            teacher.mhrId,
           ]
             .filter(Boolean)
             .join(" ")
@@ -1031,7 +1121,7 @@ const handleAddDigitalStudent = async (student) => {
     );
   };
 
-  const handleOpenAssignStudents =
+  const handleOpenAssignedStudents =
   async (teacher) => {
     if (!teacher?.id) {
       toast.error(
@@ -1041,40 +1131,21 @@ const handleAddDigitalStudent = async (student) => {
       return;
     }
 
-    setAssignTeacher(teacher);
+    setAssignTeacher(
+      teacher,
+    );
 
-    setEligibleDigitalStudents([]);
+    setAssignedDigitalStudents(
+      [],
+    );
 
-    setAssignStudentsOpen(true);
+    setAssignStudentsOpen(
+      true,
+    );
 
-    try {
-      setDigitalStudentsLoading(true);
-
-      const result =
-        await getEligibleDigitalStudents(
-          teacher.id,
-        );
-
-      setEligibleDigitalStudents(
-        Array.isArray(
-          result?.students,
-        )
-          ? result.students
-          : [],
-      );
-    } catch (error) {
-      console.error(
-        "LOAD DIGITAL STUDENTS ERROR:",
-        error,
-      );
-
-      toast.error(
-        error?.message ||
-          "Failed to load Digital Students.",
-      );
-    } finally {
-      setDigitalStudentsLoading(false);
-    }
+    await loadDigitalTeacherStudents(
+      teacher,
+    );
   };
 
 
@@ -2013,15 +2084,19 @@ const handleInactiveTeacher =
                                 >
                                   <Trash2 className="h-4 w-4" />
                                 </Button>
-                                <Button  type="button"
-                                  onClick={() =>
-                                  handleOpenAssignStudents(
-                                  teacher,
-                                  )}
-                                  variant="outline"
-                                  size="icon" >
-                                <UserPlus className="h-3.5 w-3.5" />
-                                </Button>
+                                <Button
+  type="button"
+  onClick={() =>
+    handleOpenAssignedStudents(
+      teacher,
+    )
+  }
+  variant="outline"
+  size="icon"
+  title="Assigned Students"
+>
+  <Users className="h-4 w-4" />
+</Button>
                               </div>
                             </TableCell>
                           </TableRow>
@@ -2225,17 +2300,23 @@ const handleInactiveTeacher =
                               <Trash2 className="h-3 w-3 mr-1" />
                               <span className="hidden xs:inline">Delete</span>
                             </Button>
-                            <Button  type="button"
-                              onClick={() =>
-                              handleOpenAssignStudents(
-                              teacher,
-                              )
-                              }
-                                variant="outline"
-                               size="sm"
-                               className="h-8 text-xs px-2 flex items-center justify-center">
-                              <UserPlus className="h-3 w-3 mr-1" />
-                              </Button>
+                            <Button
+  type="button"
+  onClick={() =>
+    handleOpenAssignedStudents(
+      teacher,
+    )
+  }
+  variant="outline"
+  size="sm"
+  className="h-8 text-xs px-2 flex items-center justify-center gap-1"
+>
+  <Users className="h-3.5 w-3.5" />
+
+  <span className="hidden xs:inline">
+    Students
+  </span>
+</Button>
                           </div>
                         </div>
                       </div>
@@ -2441,7 +2522,312 @@ const handleInactiveTeacher =
                   </div>
                   
                 </div>
-                
+                {/* =====================================================
+    TEACHING ASSIGNMENT
+===================================================== */}
+
+<div className="space-y-7 border-t border-slate-200 pt-6">
+
+  {/* =====================================
+      CLASSES
+  ===================================== */}
+
+  <div>
+
+    <div className="mb-4 flex items-start gap-3">
+
+      <div
+        className="
+          flex
+          h-10
+          w-10
+          shrink-0
+          items-center
+          justify-center
+          rounded-xl
+          bg-teal-50
+          text-teal-600
+        "
+      >
+        <GraduationCap className="h-5 w-5" />
+      </div>
+
+      <div>
+
+        <h3 className="font-bold text-slate-900">
+          Classes
+        </h3>
+
+        <p className="mt-1 text-sm text-slate-500">
+          Select classes for this Digital Teacher.
+        </p>
+
+      </div>
+
+    </div>
+
+
+    <div className="flex flex-wrap gap-3">
+
+      {DIGITAL_CLASS_OPTIONS.map(
+        (className) => {
+
+          const selected =
+            editForm
+              ?.teachingAssignment
+              ?.classes
+              ?.includes(
+                className,
+              );
+
+          return (
+            <button
+              key={className}
+              type="button"
+              onClick={() =>
+                toggleTeachingAssignmentValue(
+                  "classes",
+                  className,
+                )
+              }
+              className={`
+                rounded-xl
+                border
+                px-4
+                py-2.5
+                text-sm
+                font-semibold
+                transition-all
+                ${
+                  selected
+                    ? `
+                      border-teal-500
+                      bg-teal-500
+                      text-white
+                      shadow-sm
+                    `
+                    : `
+                      border-slate-200
+                      bg-white
+                      text-slate-600
+                      hover:border-teal-300
+                      hover:bg-teal-50
+                      hover:text-teal-700
+                    `
+                }
+              `}
+            >
+              {className}
+            </button>
+          );
+        },
+      )}
+
+    </div>
+
+  </div>
+
+
+  {/* =====================================
+      SUBJECTS
+  ===================================== */}
+
+  <div>
+
+    <div className="mb-4 flex items-start gap-3">
+
+      <div
+        className="
+          flex
+          h-10
+          w-10
+          shrink-0
+          items-center
+          justify-center
+          rounded-xl
+          bg-teal-50
+          text-teal-600
+        "
+      >
+        <BookOpen className="h-5 w-5" />
+      </div>
+
+      <div>
+
+        <h3 className="font-bold text-slate-900">
+          Subjects
+        </h3>
+
+        <p className="mt-1 text-sm text-slate-500">
+          Select subjects for this Digital Teacher.
+        </p>
+
+      </div>
+
+    </div>
+
+
+    <div className="flex flex-wrap gap-3">
+
+      {DIGITAL_SUBJECT_OPTIONS.map(
+        (subject) => {
+
+          const selected =
+            editForm
+              ?.teachingAssignment
+              ?.subjects
+              ?.includes(
+                subject,
+              );
+
+          return (
+            <button
+              key={subject}
+              type="button"
+              onClick={() =>
+                toggleTeachingAssignmentValue(
+                  "subjects",
+                  subject,
+                )
+              }
+              className={`
+                rounded-xl
+                border
+                px-4
+                py-2.5
+                text-sm
+                font-semibold
+                transition-all
+                ${
+                  selected
+                    ? `
+                      border-indigo-500
+                      bg-indigo-500
+                      text-white
+                      shadow-sm
+                    `
+                    : `
+                      border-slate-200
+                      bg-white
+                      text-slate-600
+                      hover:border-indigo-300
+                      hover:bg-indigo-50
+                      hover:text-indigo-700
+                    `
+                }
+              `}
+            >
+              {subject}
+            </button>
+          );
+        },
+      )}
+
+    </div>
+
+  </div>
+
+
+  {/* =====================================
+      TEACHING LANGUAGE / MEDIUM
+  ===================================== */}
+
+  <div>
+
+    <div className="mb-4 flex items-start gap-3">
+
+      <div
+        className="
+          flex
+          h-10
+          w-10
+          shrink-0
+          items-center
+          justify-center
+          rounded-xl
+          bg-teal-50
+          text-teal-600
+        "
+      >
+        <Languages className="h-5 w-5" />
+      </div>
+
+      <div>
+
+        <h3 className="font-bold text-slate-900">
+          Teaching Language / Medium
+        </h3>
+
+        <p className="mt-1 text-sm text-slate-500">
+          Select teaching language / medium for this Digital Teacher.
+        </p>
+
+      </div>
+
+    </div>
+
+
+    <div className="flex flex-wrap gap-3">
+
+      {DIGITAL_LANGUAGE_OPTIONS.map(
+        (language) => {
+
+          const selected =
+            editForm
+              ?.teachingAssignment
+              ?.languages
+              ?.includes(
+                language,
+              );
+
+          return (
+            <button
+              key={language}
+              type="button"
+              onClick={() =>
+                toggleTeachingAssignmentValue(
+                  "languages",
+                  language,
+                )
+              }
+              className={`
+                rounded-xl
+                border
+                px-4
+                py-2.5
+                text-sm
+                font-semibold
+                transition-all
+                ${
+                  selected
+                    ? `
+                      border-amber-500
+                      bg-amber-500
+                      text-white
+                      shadow-sm
+                    `
+                    : `
+                      border-slate-200
+                      bg-white
+                      text-slate-600
+                      hover:border-amber-300
+                      hover:bg-amber-50
+                      hover:text-amber-700
+                    `
+                }
+              `}
+            >
+              {language}
+            </button>
+          );
+        },
+      )}
+
+    </div>
+
+  </div>
+
+</div>
                 
                 <div className="flex flex-col sm:flex-row gap-2 sm:justify-end mt-4">
                   <Button
@@ -3142,11 +3528,18 @@ const handleInactiveTeacher =
         <Dialog
   open={assignStudentsOpen}
   onOpenChange={(open) => {
-    setAssignStudentsOpen(open);
+    setAssignStudentsOpen(
+      open,
+    );
 
     if (!open) {
-      setAssignTeacher(null);
-      setEligibleDigitalStudents([]);
+      setAssignTeacher(
+        null,
+      );
+
+      setAssignedDigitalStudents(
+        [],
+      );
     }
   }}
 >
@@ -3165,12 +3558,12 @@ const handleInactiveTeacher =
     <DialogHeader className="border-b border-slate-200 px-6 py-5">
 
       <DialogTitle className="text-xl font-bold text-slate-900">
-        Assign Digital Students
-      </DialogTitle>
+  Assigned Digital Students
+</DialogTitle>
 
-      <DialogDescription>
-        Assign eligible Digital Students to this Digital Teacher.
-      </DialogDescription>
+<DialogDescription>
+  View and manage students currently assigned to this Digital Teacher.
+</DialogDescription>
 
     </DialogHeader>
 
@@ -3442,10 +3835,7 @@ const handleInactiveTeacher =
       </div>
 
 
-      {/* =====================================
-          DIGITAL STUDENTS
-          NEXT STEP
-      ===================================== */}
+   
 
       <div className="rounded-2xl border border-slate-200 bg-white">
 
@@ -3466,12 +3856,10 @@ const handleInactiveTeacher =
   >
     <div>
       <h3 className="font-bold text-slate-900">
-        Eligible Digital Students
+        Assigned Digital Students
       </h3>
 
-      <p className="mt-1 text-sm text-slate-500">
-        Students matching this teacher&apos;s assigned class.
-      </p>
+   
     </div>
 
     {!digitalStudentsLoading && (
@@ -3488,10 +3876,10 @@ const handleInactiveTeacher =
           text-teal-700
         "
       >
-        {eligibleDigitalStudents.length} Student
-        {eligibleDigitalStudents.length !== 1
-          ? "s"
-          : ""}
+        {assignedDigitalStudents.length} Student
+{assignedDigitalStudents.length !== 1
+  ? "s"
+  : ""}
       </span>
     )}
   </div>
@@ -3512,7 +3900,7 @@ const handleInactiveTeacher =
 
     </div>
 
-  ) : eligibleDigitalStudents.length === 0 ? (
+  ) : assignedDigitalStudents.length === 0 ? (
 
     /* Empty */
 
@@ -3530,12 +3918,12 @@ const handleInactiveTeacher =
       <Users className="h-9 w-9 text-slate-300" />
 
       <p className="mt-3 font-semibold text-slate-700">
-        No Eligible Digital Students
-      </p>
+  No Assigned Digital Students
+</p>
 
-      <p className="mt-1 text-sm text-slate-500">
-        No Digital Students match the assigned classes.
-      </p>
+<p className="mt-1 text-sm text-slate-500">
+  No students are currently assigned to this Digital Teacher.
+</p>
     </div>
 
   ) : (
@@ -3544,16 +3932,14 @@ const handleInactiveTeacher =
 
     <div className="divide-y divide-slate-100">
 
-      {eligibleDigitalStudents.map(
+      {assignedDigitalStudents.map(
         (student) => {
 
           const studentUid =
             student?.uid ||
             student?.id;
 
-          const isAdding =
-            assigningStudentUid ===
-            studentUid;
+         
 
           const studentName =
             student?.fullName ||
@@ -3727,107 +4113,51 @@ const handleInactiveTeacher =
 
 
                 {/* Add */}
-                {student?.alreadyAssigned ? (
-
-  <button
-    type="button"
-    onClick={() =>
-      handleRemoveDigitalStudent(
-        student,
-      )
-    }
-    disabled={
-      removingStudentUid ===
-      studentUid
-    }
-    className="
-      inline-flex
-      h-9
-      items-center
-      justify-center
-      gap-1.5
-      rounded-lg
-      border
-      border-red-200
-      bg-red-50
-      px-3
-      text-xs
-      font-semibold
-      text-red-700
-      transition
-      hover:border-red-300
-      hover:bg-red-100
-      disabled:cursor-not-allowed
-      disabled:opacity-50
-    "
-  >
-    {removingStudentUid ===
-    studentUid ? (
-      <>
-        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-
-        Removing...
-      </>
-    ) : (
-      <>
-        <Trash2 className="h-3.5 w-3.5" />
-
-        Remove
-      </>
-    )}
-  </button>
-
-) : (
-
-  <button
-    type="button"
-    onClick={() =>
-      handleAddDigitalStudent(
-        student,
-      )
-    }
-    disabled={
-      assigningStudentUid ===
-      studentUid
-    }
-    className="
-      inline-flex
-      h-9
-      items-center
-      justify-center
-      gap-1.5
-      rounded-lg
-      bg-gradient-to-r
-      from-teal-500
-      to-emerald-600
-      px-3
-      text-xs
-      font-semibold
-      text-white
-      transition
-      hover:from-teal-600
-      hover:to-emerald-700
-      disabled:cursor-not-allowed
-      disabled:opacity-50
-    "
-  >
-    {assigningStudentUid ===
-    studentUid ? (
-      <>
-        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-
-        Adding...
-      </>
-    ) : (
-      <>
-        <UserPlus className="h-3.5 w-3.5" />
-
-        Add
-      </>
-    )}
-  </button>
-
-)}
+                <button
+  type="button"
+  onClick={() =>
+    handleRemoveDigitalStudent(
+      student,
+    )
+  }
+  disabled={
+    removingStudentUid ===
+    studentUid
+  }
+  className="
+    inline-flex
+    h-9
+    items-center
+    justify-center
+    gap-1.5
+    rounded-lg
+    border
+    border-red-200
+    bg-red-50
+    px-3
+    text-xs
+    font-semibold
+    text-red-700
+    transition
+    hover:border-red-300
+    hover:bg-red-100
+    disabled:cursor-not-allowed
+    disabled:opacity-50
+  "
+>
+  {removingStudentUid ===
+  studentUid ? (
+    <>
+      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+      Unassigning...
+    </>
+  ) : (
+    <>
+      <UserX className="h-3.5 w-3.5" />
+      Unassign
+    </>
+  )}
+</button>
 
               </div>
 
@@ -4005,7 +4335,7 @@ const handleInactiveTeacher =
             <p className="mt-1 font-semibold text-slate-800">
               {selectedAssignStudent
                 ?.alreadyAssigned
-                ? "Already Assigned"
+                ? "Assigned"
                 : "Available"}
             </p>
 
@@ -4016,54 +4346,56 @@ const handleInactiveTeacher =
 
         {/* Add from View popup */}
 
-        {!selectedAssignStudent
-          ?.alreadyAssigned && (
-
-          <button
-            type="button"
-            onClick={async () => {
-              await handleAddDigitalStudent(
-                selectedAssignStudent,
-              );
-
-              setStudentViewOpen(
-                false,
-              );
-            }}
-            disabled={
-              assigningStudentUid ===
-              (
-                selectedAssignStudent
-                  ?.uid ||
-                selectedAssignStudent
-                  ?.id
-              )
-            }
-            className="
-              inline-flex
-              h-11
-              w-full
-              items-center
-              justify-center
-              gap-2
-              rounded-xl
-              bg-gradient-to-r
-              from-teal-500
-              to-emerald-600
-              px-4
-              font-semibold
-              text-white
-              hover:from-teal-600
-              hover:to-emerald-700
-              disabled:opacity-50
-            "
-          >
-            <UserPlus className="h-4 w-4" />
-
-            Add Student to Teacher
-          </button>
-
-        )}
+        {selectedAssignStudent?.alreadyAssigned && (
+  <button
+    type="button"
+    onClick={async () => {
+      await handleRemoveDigitalStudent(
+        selectedAssignStudent,
+      );
+    }}
+    disabled={
+      removingStudentUid ===
+      (
+        selectedAssignStudent?.uid ||
+        selectedAssignStudent?.id
+      )
+    }
+    className="
+      inline-flex
+      h-11
+      w-full
+      items-center
+      justify-center
+      gap-2
+      rounded-xl
+      border
+      border-red-200
+      bg-red-50
+      px-4
+      font-semibold
+      text-red-700
+      hover:bg-red-100
+      disabled:opacity-50
+    "
+  >
+    {removingStudentUid ===
+    (
+      selectedAssignStudent?.uid ||
+      selectedAssignStudent?.id
+    ) ? (
+      <>
+        <Loader2 className="h-4 w-4 animate-spin" />
+        Unassigning...
+      </>
+    ) : (
+      <>
+        <UserX className="h-4 w-4" />
+        Unassign Student
+      </>
+    )}
+  </button>
+)}
 
       </div>
 

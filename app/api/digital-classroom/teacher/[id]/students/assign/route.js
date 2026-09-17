@@ -5,95 +5,57 @@ import {
   getAdminDb,
 } from "@/lib/firebase-admin";
 
-import {
-  createDigitalTeacherStudentAssignment,
-} from "@/lib/digitalTeacherStudentAssignmentService";
-
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const TEACHER_COLLECTION =
-  "digitalClassTeacherRegistrations";
-
-/* ============================================
-   HELPERS
-============================================ */
 
 function cleanText(value) {
   return String(value ?? "").trim();
 }
-
-function normalizeClass(value) {
-  return cleanText(value)
-    .toLowerCase()
-    .replace(/^class\s*/i, "")
-    .replace(/\s+/g, "");
-}
-
-/* ============================================
-   VERIFY CENTRAL ADMIN
-============================================ */
 
 async function verifyCentralAdmin(
   request,
   auth,
   db,
 ) {
-  const authorization =
+  const header =
     request.headers.get(
       "authorization",
     ) || "";
 
-  if (
-    !authorization.startsWith(
-      "Bearer ",
-    )
-  ) {
-    return null;
-  }
-
-  const token =
-    authorization
-      .slice(7)
-      .trim();
-
-  if (!token) {
+  if (!header.startsWith("Bearer ")) {
     return null;
   }
 
   try {
     const decoded =
       await auth.verifyIdToken(
-        token,
+        header.slice(7).trim(),
       );
 
     if (
-      decoded?.role ===
-        "central_admin" ||
-      decoded?.role ===
-        "admin"
+      decoded?.role === "central_admin" ||
+      decoded?.role === "admin"
     ) {
       return decoded;
     }
 
-    const userSnapshot =
+    const userSnap =
       await db
         .collection("users")
         .doc(decoded.uid)
         .get();
 
-    if (!userSnapshot.exists) {
+    if (!userSnap.exists) {
       return null;
     }
 
     const userData =
-      userSnapshot.data();
+      userSnap.data() || {};
 
     if (
       userData?.role !==
         "central_admin" &&
-      userData?.role !==
-        "admin"
+      userData?.role !== "admin"
     ) {
       return null;
     }
@@ -101,7 +63,7 @@ async function verifyCentralAdmin(
     return decoded;
   } catch (error) {
     console.error(
-      "VERIFY CENTRAL ADMIN ERROR:",
+      "VERIFY ADMIN ERROR:",
       error,
     );
 
@@ -109,38 +71,17 @@ async function verifyCentralAdmin(
   }
 }
 
-/* ============================================
-   GET STUDENT CLASS
-============================================ */
-
-function getStudentClass(student) {
-  return (
-    student?.className ||
-    student?.class ||
-    student?.currentClass ||
-    student?.applyingclass ||
-    student?.classLevel ||
-    student?.academicDetails
-      ?.className ||
-    student?.academicDetails
-      ?.class ||
-    ""
-  );
-}
-
-/* ============================================
-   ASSIGN STUDENTS
-============================================ */
-
-export async function POST(
+export async function GET(
   request,
   { params },
 ) {
   try {
-    const { id } =
-      await params;
+    const { id } = await params;
 
-    if (!id) {
+    const teacherApplicationId =
+      cleanText(id);
+
+    if (!teacherApplicationId) {
       return NextResponse.json(
         {
           success: false,
@@ -159,10 +100,6 @@ export async function POST(
     const db =
       getAdminDb();
 
-    /* ----------------------------------------
-       VERIFY ADMIN
-    ---------------------------------------- */
-
     const admin =
       await verifyCentralAdmin(
         request,
@@ -175,7 +112,7 @@ export async function POST(
         {
           success: false,
           message:
-            "Unauthorized. Central Admin access required.",
+            "Unauthorized.",
         },
         {
           status: 401,
@@ -183,60 +120,21 @@ export async function POST(
       );
     }
 
-    /* ----------------------------------------
-       BODY
-    ---------------------------------------- */
-
-    const body =
-      await request.json();
-
-    const studentIds =
-      Array.isArray(
-        body?.studentIds,
-      )
-        ? [
-            ...new Set(
-              body.studentIds
-                .map((value) =>
-                  cleanText(value),
-                )
-                .filter(Boolean),
-            ),
-          ]
-        : [];
-
-    if (
-      studentIds.length === 0
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Please select at least one Digital Student.",
-        },
-        {
-          status: 400,
-        },
-      );
-    }
-
-    /* ----------------------------------------
+    /* ==========================================
        LOAD TEACHER
-    ---------------------------------------- */
+    ========================================== */
 
-    const teacherRef =
-      db
+    const teacherSnap =
+      await db
         .collection(
-          TEACHER_COLLECTION,
+          "digitalClassTeacherRegistrations",
         )
-        .doc(id);
+        .doc(
+          teacherApplicationId,
+        )
+        .get();
 
-    const teacherSnapshot =
-      await teacherRef.get();
-
-    if (
-      !teacherSnapshot.exists
-    ) {
+    if (!teacherSnap.exists) {
       return NextResponse.json(
         {
           success: false,
@@ -250,283 +148,317 @@ export async function POST(
     }
 
     const teacher =
-      teacherSnapshot.data();
+      teacherSnap.data() || {};
 
-    if (
-      teacher?.status !==
-      "approved"
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Digital Teacher must be approved before assigning students.",
-        },
-        {
-          status: 400,
-        },
+    const sourceTeacherUid =
+      cleanText(
+        teacher?.sourceTeacherUid,
       );
-    }
-
-    if (
-      teacher?.accountStatus &&
-      teacher.accountStatus !==
-        "active"
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Digital Teacher account is not active.",
-        },
-        {
-          status: 400,
-        },
-      );
-    }
 
     const digitalTeacherUid =
-      teacher?.digitalTeacherUid;
-
-    if (!digitalTeacherUid) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Digital Teacher Firebase UID not found.",
-        },
-        {
-          status: 400,
-        },
-      );
-    }
-
-    /* ----------------------------------------
-       TEACHING ASSIGNMENT
-    ---------------------------------------- */
-
-    const teachingAssignment =
-      teacher?.teachingAssignment ||
-      {};
-
-    const assignedClasses =
-      Array.isArray(
-        teachingAssignment?.classes,
-      )
-        ? teachingAssignment.classes
-        : [];
-
-    const assignedSubjects =
-      Array.isArray(
-        teachingAssignment?.subjects,
-      )
-        ? teachingAssignment.subjects
-        : [];
-
-    const teachingLanguages =
-      Array.isArray(
-        teachingAssignment?.languages,
-      )
-        ? teachingAssignment.languages
-        : [];
-
-    if (
-      assignedClasses.length === 0
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "This Digital Teacher has no assigned classes.",
-        },
-        {
-          status: 400,
-        },
-      );
-    }
-
-    const normalizedTeacherClasses =
-      assignedClasses.map(
-        normalizeClass,
+      cleanText(
+        teacher?.digitalTeacherUid,
       );
 
-    /* ----------------------------------------
-       VALIDATE EACH STUDENT
-    ---------------------------------------- */
+    const legacyTeacherUid =
+      cleanText(
+        teacher?.legacyDigitalTeacherUid,
+      );
 
-    const assignedStudents = [];
+    const possibleTeacherUids =
+      [
+        sourceTeacherUid,
+        digitalTeacherUid,
+        legacyTeacherUid,
+      ].filter(
+        (value, index, array) =>
+          value &&
+          array.indexOf(value) ===
+            index,
+      );
 
-    const skippedStudents = [];
+    /* ==========================================
+       LOAD ASSIGNMENTS
+
+       Application ID is most important.
+       This also survives UID migration.
+    ========================================== */
+
+    const assignmentsCollection =
+      db.collection(
+        "digitalTeacherStudentAssignments",
+      );
+
+    const assignmentMap =
+      new Map();
+
+    const applicationQuery =
+      await assignmentsCollection
+        .where(
+          "digitalTeacherApplicationId",
+          "==",
+          teacherApplicationId,
+        )
+        .get();
+
+    applicationQuery.docs.forEach(
+      (docSnap) => {
+        const data =
+          docSnap.data() || {};
+
+        if (
+          data?.status ===
+          "active"
+        ) {
+          assignmentMap.set(
+            docSnap.id,
+            {
+              id: docSnap.id,
+              ...data,
+            },
+          );
+        }
+      },
+    );
+
+    /*
+      Also search by Teacher UID.
+
+      Covers old records where
+      application ID may be missing.
+    */
 
     for (
-      const studentId
-      of studentIds
+      const teacherUid of
+      possibleTeacherUids
     ) {
-      try {
-        const studentSnapshot =
+      const uidQuery =
+        await assignmentsCollection
+          .where(
+            "digitalTeacherUid",
+            "==",
+            teacherUid,
+          )
+          .get();
+
+      uidQuery.docs.forEach(
+        (docSnap) => {
+          const data =
+            docSnap.data() || {};
+
+          if (
+            data?.status ===
+            "active"
+          ) {
+            assignmentMap.set(
+              docSnap.id,
+              {
+                id: docSnap.id,
+                ...data,
+              },
+            );
+          }
+        },
+      );
+    }
+
+    const assignments =
+      Array.from(
+        assignmentMap.values(),
+      );
+
+    /* ==========================================
+       LOAD STUDENT PROFILES
+    ========================================== */
+
+    const students = [];
+
+    for (
+      const assignment of
+      assignments
+    ) {
+      const studentUid =
+        cleanText(
+          assignment?.studentUid,
+        );
+
+      if (!studentUid) {
+        continue;
+      }
+
+      let studentDoc = null;
+
+      /*
+        Current records:
+        uid = Firebase student UID
+      */
+
+      const byUid =
+        await db
+          .collection(
+            "digitalClassStudentRegistrations",
+          )
+          .where(
+            "uid",
+            "==",
+            studentUid,
+          )
+          .limit(1)
+          .get();
+
+      if (!byUid.empty) {
+        studentDoc =
+          byUid.docs[0];
+      }
+
+      /*
+        Legacy fallback:
+        studentUid field
+      */
+
+      if (!studentDoc) {
+        const byStudentUid =
           await db
-            .collection("users")
-            .doc(studentId)
+            .collection(
+              "digitalClassStudentRegistrations",
+            )
+            .where(
+              "studentUid",
+              "==",
+              studentUid,
+            )
+            .limit(1)
             .get();
 
         if (
-          !studentSnapshot.exists
+          !byStudentUid.empty
         ) {
-          skippedStudents.push({
-            studentId,
-            reason:
-              "Student not found.",
-          });
-
-          continue;
+          studentDoc =
+            byStudentUid.docs[0];
         }
+      }
 
-        const student =
-          studentSnapshot.data();
+      /*
+        Final fallback:
+        UID may be document ID
+      */
 
-        /* Must be Digital Student */
-
-        if (
-          student?.role !==
-            "student" ||
-          student?.userType !==
-            "digital_student"
-        ) {
-          skippedStudents.push({
-            studentId,
-            reason:
-              "User is not a Digital Student.",
-          });
-
-          continue;
-        }
-
-        /* Student UID */
-
-        const studentUid =
-          student?.uid ||
-          studentSnapshot.id;
-
-        /* Class validation */
-
-        const studentClass =
-          getStudentClass(
-            student,
-          );
-
-        const normalizedStudentClass =
-          normalizeClass(
-            studentClass,
-          );
-
-        if (
-          !normalizedTeacherClasses
-            .includes(
-              normalizedStudentClass,
+      if (!studentDoc) {
+        const directSnap =
+          await db
+            .collection(
+              "digitalClassStudentRegistrations",
             )
+            .doc(studentUid)
+            .get();
+
+        if (
+          directSnap.exists
         ) {
-          skippedStudents.push({
-            studentId,
-            studentUid,
-            reason:
-              `Student class "${studentClass || "Unknown"}" is not assigned to this teacher.`,
-          });
-
-          continue;
+          studentDoc =
+            directSnap;
         }
+      }
 
-        /* ----------------------------------------
-           CREATE ASSIGNMENT
-        ---------------------------------------- */
+      /*
+        IMPORTANT:
+        Even if student profile is
+        missing, do not silently lose
+        the assignment.
+      */
 
-        const assignment =
-          await createDigitalTeacherStudentAssignment(
-            {
-              digitalTeacherUid,
+      if (!studentDoc) {
+        students.push({
+          id:
+            studentUid,
 
-              digitalTeacherApplicationId:
-                id,
-
-              studentUid,
-
-              studentId:
-                studentSnapshot.id,
-
-              assignedClasses: [
-                studentClass,
-              ],
-
-              assignedSubjects,
-
-              teachingLanguages,
-
-              assignedBy:
-                admin.uid,
-            },
-          );
-
-        assignedStudents.push({
-          studentId:
-            studentSnapshot.id,
+          uid:
+            studentUid,
 
           studentUid,
 
           fullName:
-            student?.fullName ||
-            student?.name ||
-            "",
+            "Student Profile Not Found",
 
-          studentClass,
+          alreadyAssigned:
+            true,
 
           assignmentId:
             assignment.id,
-        });
-      } catch (studentError) {
-        console.error(
-          "STUDENT ASSIGN ERROR:",
-          studentId,
-          studentError,
-        );
 
-        skippedStudents.push({
-          studentId,
-          reason:
-            studentError?.message ||
-            "Assignment failed.",
+          assignment:
+            assignment,
+
+          assignedDigitalTeacherUid:
+            assignment
+              ?.digitalTeacherUid ||
+            null,
+
+          assignedDigitalTeacherApplicationId:
+            assignment
+              ?.digitalTeacherApplicationId ||
+            teacherApplicationId,
         });
+
+        continue;
       }
+
+      const studentData =
+        studentDoc.data() || {};
+
+      students.push({
+        id:
+          studentDoc.id,
+
+        ...studentData,
+
+        /*
+          Always preserve Firebase UID.
+        */
+        uid:
+          studentData?.uid ||
+          studentData?.studentUid ||
+          studentUid,
+
+        alreadyAssigned:
+          true,
+
+        assignmentId:
+          assignment.id,
+
+        assignment:
+          assignment,
+
+        assignedDigitalTeacherUid:
+          assignment
+            ?.digitalTeacherUid ||
+          studentData
+            ?.assignedDigitalTeacherUid ||
+          null,
+
+        assignedDigitalTeacherApplicationId:
+          teacherApplicationId,
+      });
     }
 
-    /* ----------------------------------------
-       RESPONSE
-    ---------------------------------------- */
+    return NextResponse.json({
+      success: true,
 
-    return NextResponse.json(
-      {
-        success: true,
+      teacherApplicationId,
 
-        message:
-          `${assignedStudents.length} Digital Student(s) assigned successfully.`,
+      teacherUid:
+        sourceTeacherUid ||
+        digitalTeacherUid ||
+        null,
 
-        digitalTeacherUid,
+      assignedCount:
+        students.length,
 
-        assignedCount:
-          assignedStudents.length,
-
-        skippedCount:
-          skippedStudents.length,
-
-        assignedStudents,
-
-        skippedStudents,
-      },
-      {
-        status: 200,
-      },
-    );
+      students,
+    });
   } catch (error) {
     console.error(
-      "ASSIGN DIGITAL STUDENTS ERROR:",
+      "GET ASSIGNED DIGITAL STUDENTS ERROR:",
       error,
     );
 
@@ -536,7 +468,7 @@ export async function POST(
 
         message:
           error?.message ||
-          "Failed to assign Digital Students.",
+          "Unable to load assigned Digital Students.",
       },
       {
         status: 500,

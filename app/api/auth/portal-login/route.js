@@ -715,6 +715,364 @@ async function loginStudent({ auth, db, identifier, password }) {
     phone: profile.phone || profile.guardianPhone,
   });
 }
+async function loginDigitalTeacher({
+  auth,
+  db,
+  identifier,
+  password,
+}) {
+  const credential =
+    normalize(identifier);
+
+  const email =
+    normalizeEmail(credential);
+
+  const idPrefix =
+    credential
+      .split("@")[0]
+      .toUpperCase();
+
+  /* ==========================================
+     FIND EXISTING NORMAL TEACHER
+  ========================================== */
+
+  const profiles =
+    await getAllByFields(
+      db,
+      "teachers",
+      [
+        [
+          "email",
+          email,
+        ],
+        [
+          "mhrId",
+          credential,
+        ],
+        [
+          "teacherId",
+          credential,
+        ],
+        [
+          "mhrId",
+          idPrefix,
+        ],
+        [
+          "teacherId",
+          idPrefix,
+        ],
+      ],
+    );
+
+  if (
+    profiles.length === 0
+  ) {
+    throw new Error(
+      "No Teacher account found with this Email / ID.",
+    );
+  }
+
+  let profile =
+    null;
+
+  let passwordVerification =
+    null;
+
+  /* ==========================================
+     FIND ACTIVE TEACHER + VERIFY PASSWORD
+  ========================================== */
+
+  for (
+    const teacher of profiles
+  ) {
+    if (
+      String(
+        teacher?.status ||
+          "active",
+      ).toLowerCase() !==
+      "active"
+    ) {
+      continue;
+    }
+
+    const loginEmail =
+      normalizeEmail(
+        teacher?.email ||
+          email,
+      );
+
+    if (!loginEmail) {
+      continue;
+    }
+
+    const verified =
+      await verifyPassword(
+        loginEmail,
+        password,
+        teacher?.password,
+      );
+
+    if (
+      verified?.verified
+    ) {
+      profile =
+        teacher;
+
+      passwordVerification =
+        verified;
+
+      break;
+    }
+  }
+
+  if (!profile) {
+    const hasInactive =
+      profiles.some(
+        (teacher) =>
+          String(
+            teacher?.status ||
+              "active",
+          ).toLowerCase() !==
+          "active",
+      );
+
+    if (
+      hasInactive &&
+      profiles.length === 1
+    ) {
+      throw new Error(
+        "Your Teacher account is not active. Please contact the administrator.",
+      );
+    }
+
+    throw new Error(
+      "Invalid login credentials or password",
+    );
+  }
+
+  const loginEmail =
+    normalizeEmail(
+      profile?.email ||
+        email,
+    );
+
+  /* ==========================================
+     GET EXISTING FIREBASE AUTH ACCOUNT
+  ========================================== */
+
+  let firebaseUser;
+
+  try {
+    firebaseUser =
+      await auth.getUserByEmail(
+        loginEmail,
+      );
+  } catch (error) {
+    if (
+      error?.code ===
+      "auth/user-not-found"
+    ) {
+      throw new Error(
+        "Teacher Firebase account was not found.",
+      );
+    }
+
+    throw error;
+  }
+
+  /* ==========================================
+     GET users/{TEACHER_UID}
+
+     This contains Digital Teacher approval.
+  ========================================== */
+
+  const userSnapshot =
+    await db
+      .collection("users")
+      .doc(firebaseUser.uid)
+      .get();
+
+  if (
+    !userSnapshot.exists
+  ) {
+    throw new Error(
+      "Teacher user profile was not found.",
+    );
+  }
+
+  const userData =
+    userSnapshot.data() || {};
+
+  /* ==========================================
+     NORMAL TEACHER ROLE MUST REMAIN
+  ========================================== */
+
+  if (
+    userData?.role !==
+    "teacher"
+  ) {
+    throw new Error(
+      "This account is not a Teacher account.",
+    );
+  }
+
+  /* ==========================================
+     DIGITAL TEACHER APPROVAL CHECK
+  ========================================== */
+
+  if (
+    userData?.digitalTeacher !==
+    true
+  ) {
+    throw new Error(
+      "Your Digital Teacher registration is not approved yet.",
+    );
+  }
+
+  if (
+    userData
+      ?.digitalClassAccess !==
+    true
+  ) {
+    throw new Error(
+      "Digital Classroom access is not enabled for this Teacher.",
+    );
+  }
+
+  if (
+    userData
+      ?.digitalTeacherStatus &&
+    userData
+      .digitalTeacherStatus !==
+      "active"
+  ) {
+    throw new Error(
+      "Your Digital Teacher account is not active.",
+    );
+  }
+
+  /* ==========================================
+     MERGE NORMAL TEACHER + DIGITAL DATA
+  ========================================== */
+
+  const digitalTeacherProfile = {
+    ...profile,
+    ...userData,
+
+    uid:
+      firebaseUser.uid,
+
+    email:
+      loginEmail,
+
+    /*
+      IMPORTANT:
+      Keep role teacher.
+    */
+    role:
+      "teacher",
+
+    digitalTeacher:
+      true,
+
+    digitalClassAccess:
+      true,
+
+    digitalTeacherStatus:
+      "active",
+
+    fullName:
+      userData?.fullName ||
+      profile?.fullName ||
+      profile?.name ||
+      firebaseUser
+        ?.displayName ||
+      "Digital Teacher",
+
+    teacherId:
+      profile?.mhrId ||
+      profile?.teacherId ||
+      null,
+
+    profileComplete:
+      profile
+        ?.profileComplete ??
+      true,
+  };
+
+  /* ==========================================
+     CREATE / RESTORE FIREBASE SESSION
+
+     SAME EXISTING ACCOUNT
+  ========================================== */
+
+  const session =
+    await ensureFirebaseSession({
+      auth,
+      db,
+
+      email:
+        loginEmail,
+
+      password,
+
+      displayName:
+        digitalTeacherProfile
+          .fullName,
+
+      /*
+        KEEP NORMAL ROLE
+      */
+      role:
+        "teacher",
+
+      profile:
+        digitalTeacherProfile,
+
+      updatePassword:
+        passwordVerification
+          ?.source ===
+        "legacy",
+    });
+
+  /* ==========================================
+     RETURN DIGITAL TEACHER LOGIN DATA
+  ========================================== */
+
+  return okPayload({
+    token:
+      session.token,
+
+    user:
+      session.user,
+
+    userData: {
+      ...digitalTeacherProfile,
+
+      uid:
+        session.user.uid,
+
+      email:
+        loginEmail,
+
+      role:
+        "teacher",
+
+      digitalTeacher:
+        true,
+
+      digitalClassAccess:
+        true,
+    },
+
+    phone:
+      digitalTeacherProfile
+        ?.phone,
+
+    restoreEmail:
+      loginEmail,
+  });
+}
 
 async function loginTeacher({ auth, db, identifier, password }) {
   const credential = normalize(identifier);
@@ -1197,6 +1555,18 @@ case "digital_student":
           identifier: trimmedIdentifier,
           password: trimmedPassword,
         });
+      case "digital_teacher":
+case "digital-teacher":
+  return await loginDigitalTeacher({
+    auth,
+    db,
+
+    identifier:
+      trimmedIdentifier,
+
+    password:
+      trimmedPassword,
+  });  
 
       case "madarsa-admin":
         return await loginMadarsaAdmin({

@@ -59,6 +59,10 @@ import {
   updateDigitalStudent,
   deleteDigitalStudent,
 } from "@/lib/digitalClassStudentService";
+import {
+  getDigitalTeachers,
+  assignDigitalStudents,
+} from "@/lib/digitalClassTeacherService";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import useAuthStore from "@/lib/authStore";
 import Layout from "@/components/Layout";
@@ -123,6 +127,39 @@ export default function CentralAdminStudentsPage() {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
   const [deleteStudentId, setDeleteStudentId] = useState(null);
+  /* ============================================
+   DIGITAL TEACHER ASSIGNMENT
+============================================ */
+
+const [
+  selectedStudentUids,
+  setSelectedStudentUids,
+] = useState([]);
+
+const [
+  teacherAssignDialogOpen,
+  setTeacherAssignDialogOpen,
+] = useState(false);
+
+const [
+  availableDigitalTeachers,
+  setAvailableDigitalTeachers,
+] = useState([]);
+
+const [
+  selectedDigitalTeacher,
+  setSelectedDigitalTeacher,
+] = useState(null);
+
+const [
+  teachersLoading,
+  setTeachersLoading,
+] = useState(false);
+
+const [
+  assignmentLoading,
+  setAssignmentLoading,
+] = useState(false);
 
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
@@ -278,6 +315,366 @@ export default function CentralAdminStudentsPage() {
            
     ],
   );
+  const normalizeAssignmentClass = (
+  value,
+) => {
+  if (!value) {
+    return "";
+  }
+
+  let text =
+    String(value)
+      .trim()
+      .toLowerCase();
+
+  if (text === "lkg") {
+    return "lkg";
+  }
+
+  if (text === "ukg") {
+    return "ukg";
+  }
+
+  /*
+    Class 5
+    class 5
+    5
+    CLASS-5
+
+    all become:
+    5
+  */
+  text =
+    text
+      .replace(/^class[\s_-]*/i, "")
+      .trim();
+
+  return text;
+};
+
+
+/* ============================================
+   OPEN ASSIGN TEACHER POPUP
+============================================ */
+
+const handleOpenTeacherAssignDialog =
+  async () => {
+    if (
+      !filterClass ||
+      filterClass === "all"
+    ) {
+      toast.error(
+        "Please select a class first.",
+      );
+
+      return;
+    }
+
+    if (
+      selectedStudentUids.length === 0
+    ) {
+      toast.error(
+        "Please select at least one student.",
+      );
+
+      return;
+    }
+
+    try {
+      setTeachersLoading(true);
+
+      setSelectedDigitalTeacher(
+        null,
+      );
+
+      setAvailableDigitalTeachers(
+        [],
+      );
+
+      /*
+        Get all Digital Teachers
+      */
+      const result =
+        await getDigitalTeachers();
+
+      const teachers =
+        Array.isArray(result)
+          ? result
+          : result?.teachers ||
+            result?.data ||
+            result?.applications ||
+            [];
+
+      const selectedClass =
+        normalizeAssignmentClass(
+          filterClass,
+        );
+
+      /*
+        Only:
+        - approved
+        - active
+        - Digital Classroom access enabled
+        - assigned to same class
+      */
+      const matchingTeachers =
+        teachers.filter(
+          (teacher) => {
+            const approved =
+              teacher?.status ===
+              "approved";
+
+            const active =
+              (
+                teacher?.accountStatus ||
+                "active"
+              ) === "active";
+
+            const hasAccess =
+              teacher
+                ?.digitalClassAccess ===
+              true;
+
+            const teacherClasses =
+              teacher
+                ?.teachingAssignment
+                ?.classes || [];
+
+            const sameClass =
+              teacherClasses.some(
+                (className) =>
+                  normalizeAssignmentClass(
+                    className,
+                  ) ===
+                  selectedClass,
+              );
+
+            return (
+              approved &&
+              active &&
+              hasAccess &&
+              sameClass
+            );
+          },
+        );
+
+      setAvailableDigitalTeachers(
+        matchingTeachers,
+      );
+
+      setTeacherAssignDialogOpen(
+        true,
+      );
+    } catch (error) {
+      console.error(
+        "LOAD DIGITAL TEACHERS ERROR:",
+        error,
+      );
+
+      toast.error(
+        error?.message ||
+          "Unable to load Digital Teachers.",
+      );
+    } finally {
+      setTeachersLoading(false);
+    }
+  };
+
+/* ============================================
+   ASSIGN SELECTED STUDENTS TO DIGITAL TEACHER
+============================================ */
+
+const handleAssignSelectedStudents =
+  async () => {
+    if (
+      !selectedDigitalTeacher
+    ) {
+      toast.error(
+        "Please select a Digital Teacher.",
+      );
+
+      return;
+    }
+
+    if (
+      selectedStudentUids.length ===
+      0
+    ) {
+      toast.error(
+        "Please select at least one student.",
+      );
+
+      return;
+    }
+
+    if (
+      !filterClass ||
+      filterClass === "all"
+    ) {
+      toast.error(
+        "Please select a class first.",
+      );
+
+      return;
+    }
+
+    /*
+      IMPORTANT:
+
+      selectedDigitalTeacher.id
+      = Digital Teacher application
+        document ID
+
+      This is NOT the Firebase UID.
+    */
+
+    const teacherApplicationId =
+      selectedDigitalTeacher?.id;
+
+    if (
+      !teacherApplicationId
+    ) {
+      toast.error(
+        "Digital Teacher application ID not found.",
+      );
+
+      return;
+    }
+
+    try {
+      setAssignmentLoading(
+        true,
+      );
+
+      const result =
+  await assignDigitalStudents(
+    selectedDigitalTeacher.id,
+    selectedStudentUids,
+    filterClass,
+  );
+const selectedStudents =
+  students.filter((student) => {
+    const uid =
+      student?.uid ||
+      student?.id;
+
+    return selectedStudentUids.includes(
+      uid,
+    );
+  });
+
+await Promise.all(
+  selectedStudents.map(
+    async (student) => {
+      if (!student?.id) {
+        return;
+      }
+
+      await updateDigitalStudent(
+        student.id,
+        {
+          teacherAssigned:
+            true,
+
+          assignedDigitalTeacherUid:
+            selectedDigitalTeacher
+              ?.digitalTeacherUid ||
+            selectedDigitalTeacher
+              ?.sourceTeacherUid ||
+            null,
+
+          assignedDigitalTeacherApplicationId:
+            selectedDigitalTeacher
+              ?.id ||
+            null,
+            assignedDigitalTeacherMhrId:
+  selectedDigitalTeacher?.mhrId ||
+  selectedDigitalTeacher?.teacherId ||
+  null,
+
+          assignedDigitalTeacherName:
+            selectedDigitalTeacher
+              ?.fullName ||
+            selectedDigitalTeacher
+              ?.name ||
+            "Digital Teacher",
+
+          assignedDigitalTeacherEmail:
+            selectedDigitalTeacher
+              ?.digitalTeacherEmail ||
+            selectedDigitalTeacher
+              ?.email ||
+            null,
+
+          assignedDigitalTeacherClass:
+            filterClass,
+
+          teacherAssignedAt:
+            new Date()
+              .toISOString(),
+
+          teacherAssignedBy:
+            user?.uid ||
+            null,
+        },
+      );
+    },
+  ),
+);
+      
+
+      toast.success(
+        `${selectedStudentUids.length} student(s) assigned to ${
+          selectedDigitalTeacher
+            ?.fullName ||
+          selectedDigitalTeacher
+            ?.name ||
+          "Digital Teacher"
+        } successfully.`,
+      );
+
+      /* Close popup */
+
+      setTeacherAssignDialogOpen(
+        false,
+      );
+
+      /* Clear teacher */
+
+      setSelectedDigitalTeacher(
+        null,
+      );
+
+      /* Clear selected students */
+
+      setSelectedStudentUids(
+        [],
+      );
+
+      /*
+        Refresh students if later we
+        show teacher assignment status
+        in the table.
+      */
+
+      await fetchStudents();
+
+    } catch (error) {
+      console.error(
+        "ASSIGN DIGITAL STUDENTS ERROR:",
+        error,
+      );
+
+      toast.error(
+        error?.message ||
+          "Unable to assign students to Digital Teacher.",
+      );
+    } finally {
+      setAssignmentLoading(
+        false,
+      );
+    }
+  };
 
   // Fetch stats counts for dashboard
   const fetchStatsCounts =
@@ -483,8 +880,150 @@ export default function CentralAdminStudentsPage() {
     setEditSubmitting(false);
   };
 
+/* ============================================
+   SELECT DIGITAL STUDENTS
+============================================ */
+const isStudentAssigned = (
+  student,
+) => {
+  return Boolean(
+    student?.teacherAssigned ===
+      true ||
+    student
+      ?.assignedDigitalTeacherUid ||
+    student
+      ?.assignedDigitalTeacherApplicationId,
+  );
+};
 
+
+const toggleStudentSelection = (
+  student,
+) => {
+  if (
+    isStudentAssigned(
+      student,
+    )
+  ) {
+    toast.info(
+      `This student is already assigned to ${
+        student
+          ?.assignedDigitalTeacherName ||
+        "a Digital Teacher"
+      }.`,
+    );
+
+    return;
+  }
+
+  const uid =
+    student?.uid ||
+    student?.id;
+
+  if (!uid) {
+    toast.error(
+      "Student UID not found.",
+    );
+
+    return;
+  }
+
+  setSelectedStudentUids(
+    (prev) => {
+      if (
+        prev.includes(uid)
+      ) {
+        return prev.filter(
+          (item) =>
+            item !== uid,
+        );
+      }
+
+      return [
+        ...prev,
+        uid,
+      ];
+    },
+  );
+};
+
+
+/* ============================================
+   SELECT ALL CURRENT FILTERED STUDENTS
+============================================ */
+
+const handleSelectAllStudents =
+  () => {
+
+    /*
+      Central Admin must first
+      select one class.
+    */
+    if (
+      !filterClass ||
+      filterClass === "all"
+    ) {
+      toast.error(
+        "Please select a class first.",
+      );
+
+      return;
+    }
+
+    /*
+      `students` is already filtered
+      by the selected class in
+      fetchStudents().
+    */
+    const studentUids =
+  students
+    .filter(
+      (student) =>
+        !isStudentAssigned(
+          student,
+        ),
+    )
+    .map(
+      (student) =>
+        student?.uid ||
+        student?.id,
+    )
+    .filter(Boolean);
+
+    const allSelected =
+      studentUids.length > 0 &&
+      studentUids.every(
+        (uid) =>
+          selectedStudentUids.includes(
+            uid,
+          ),
+      );
+
+    if (allSelected) {
+      setSelectedStudentUids(
+        (prev) =>
+          prev.filter(
+            (uid) =>
+              !studentUids.includes(
+                uid,
+              ),
+          ),
+      );
+    } else {
+      setSelectedStudentUids(
+        (prev) => [
+          ...new Set([
+            ...prev,
+            ...studentUids,
+          ]),
+        ],
+      );
+    }
+  };
   
+
+
+
 
   const lastDocRef = useRef(null);
 
@@ -771,6 +1310,22 @@ export default function CentralAdminStudentsPage() {
     lastDocRef.current = null;
   }, [debouncedSearchTerm]);
 
+
+useEffect(() => {
+  /*
+    Never keep students selected
+    when Central Admin changes class.
+  */
+  setSelectedStudentUids([]);
+
+  setSelectedDigitalTeacher(
+    null,
+  );
+
+  setAvailableDigitalTeachers(
+    [],
+  );
+}, [filterClass]);
   // Fetch static metadata once on mount
   useEffect(() => {
     
@@ -1602,6 +2157,72 @@ const handleInactiveStudent =
           loading={loading}
           searchLoading={searchLoading}
         />
+        {filterClass !== "all" && (
+  <div
+    className="
+      flex
+      flex-col
+      gap-4
+      rounded-xl
+      border
+      border-teal-200
+      bg-teal-50
+      p-4
+      md:flex-row
+      md:items-center
+      md:justify-between
+    "
+  >
+    <div>
+      <p className="text-sm text-slate-500">
+        Selected Class
+      </p>
+
+      <p className="font-semibold text-slate-900">
+        {normalizeClassDisplay(
+          filterClass,
+        )}
+      </p>
+
+      <p className="mt-1 text-sm text-teal-700">
+        {
+          selectedStudentUids.length
+        }{" "}
+        student(s) selected
+      </p>
+    </div>
+
+    <div className="flex flex-col gap-2 sm:flex-row">
+
+      <Button
+        type="button"
+        variant="outline"
+        onClick={
+          handleSelectAllStudents
+        }
+      >
+        Select All
+      </Button>
+
+      <Button
+  type="button"
+  disabled={
+    selectedStudentUids.length ===
+    0
+  }
+  onClick={
+    handleOpenTeacherAssignDialog
+  }
+  className="bg-teal-600 hover:bg-teal-700"
+>
+  <Users className="mr-2 h-4 w-4" />
+
+  Assign Teacher
+</Button>
+
+    </div>
+  </div>
+)}
 
         {/* Suspended Students Toggle */}
         <div className="flex justify-center items-center gap-3 mb-4 p-3 bg-gray-50 rounded-lg border">
@@ -1706,6 +2327,27 @@ const handleInactiveStudent =
                 <Table className="min-w-[900px] w-full">
                   <TableHeader>
                     <TableRow>
+                    {filterClass !== "all" && (
+  <TableHead className="w-[50px]">
+    <input
+      type="checkbox"
+      checked={
+        students.length > 0 &&
+        students.every(
+          (student) =>
+            selectedStudentUids.includes(
+              student?.uid ||
+                student?.id,
+            ),
+        )
+      }
+      onChange={
+        handleSelectAllStudents
+      }
+      className="h-4 w-4 cursor-pointer"
+    />
+  </TableHead>
+)}
                       <TableHead className="whitespace-nowrap w-[160px]">
                         Name
                       </TableHead>
@@ -1724,6 +2366,9 @@ const handleInactiveStudent =
                       <TableHead className="whitespace-nowrap w-[60px]">
                         Applying Class
                       </TableHead>
+                      <TableHead className="whitespace-nowrap w-[60px]">
+                          Assigned Teacher
+                        </TableHead>
                       <TableHead className="whitespace-nowrap text-center w-[140px]">
                         Status
                       </TableHead>
@@ -1782,6 +2427,40 @@ const handleInactiveStudent =
                         ))
                       : students.map((student) => (
                           <TableRow key={student.id}>
+                          {filterClass !== "all" && (
+  <TableCell>
+    <input
+  type="checkbox"
+  disabled={
+    isStudentAssigned(
+      student,
+    )
+  }
+  checked={
+    !isStudentAssigned(
+      student,
+    ) &&
+    selectedStudentUids.includes(
+      student?.uid ||
+        student?.id,
+    )
+  }
+  onChange={() =>
+    toggleStudentSelection(
+      student,
+    )
+  }
+  className="
+    h-4
+    w-4
+    cursor-pointer
+    rounded
+    disabled:cursor-not-allowed
+    disabled:opacity-40
+  "
+/>
+  </TableCell>
+)}
                             <TableCell className="font-medium w-[160px] max-w-[160px]">
                               <div className="min-w-0">
                                 <div
@@ -1828,6 +2507,56 @@ const handleInactiveStudent =
                               {normalizeClassDisplay(student.applyingclass) ||
                                 "N/A"}
                             </TableCell>
+                            <TableCell className="w-[180px]">
+
+  {isStudentAssigned(
+    student,
+  ) ? (
+
+    <div className="min-w-0">
+
+      <p
+        className="truncate text-sm font-semibold text-teal-700"
+        title={
+          student
+            ?.assignedDigitalTeacherName ||
+          "Digital Teacher"
+        }
+      >
+        {
+          student
+            ?.assignedDigitalTeacherName ||
+          "Digital Teacher"
+        }
+      </p>
+
+      {student
+        ?.assignedDigitalTeacherMhrId && (
+        <p className="text-xs text-slate-500">
+  MHR ID:{" "}
+  {student.assignedDigitalTeacherMhrId ||
+    "N/A"}
+</p>
+      )}
+
+      <Badge className="mt-1 bg-green-100 text-green-700 hover:bg-green-100">
+        Assigned
+      </Badge>
+
+    </div>
+
+  ) : (
+
+    <Badge
+      variant="outline"
+      className="text-slate-500"
+    >
+      Not Assigned
+    </Badge>
+
+  )}
+
+</TableCell>
                             <TableCell className="text-center w-[140px]">
                               <div className="flex flex-col items-center gap-1.5 mx-auto">
                                 <Badge
@@ -1936,6 +2665,48 @@ const handleInactiveStudent =
                     className="border-l-4 border-l-blue-500 shadow-sm"
                   >
                     <CardContent className="p-4">
+                    {filterClass !== "all" && (
+  <div className="mb-3 flex items-center justify-between">
+
+    <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-700">
+
+      <input
+  type="checkbox"
+  disabled={
+    isStudentAssigned(
+      student,
+    )
+  }
+  checked={
+    !isStudentAssigned(
+      student,
+    ) &&
+    selectedStudentUids.includes(
+      student?.uid ||
+        student?.id,
+    )
+  }
+  onChange={() =>
+    toggleStudentSelection(
+      student,
+    )
+  }
+  className="
+    h-4
+    w-4
+    cursor-pointer
+    rounded
+    disabled:cursor-not-allowed
+    disabled:opacity-40
+  "
+/>
+
+      Select Student
+
+    </label>
+
+  </div>
+)}
                       <div className="space-y-4">
                         {/* Header Section with Profile Picture */}
                         <div className="flex justify-between items-start gap-3">
@@ -2022,6 +2793,36 @@ const handleInactiveStudent =
                                 "N/A"}
                             </p>
                           </div>
+                          <div className="col-span-2">
+
+  <p className="mb-1 text-xs font-medium text-gray-500">
+    Assigned Digital Teacher
+  </p>
+
+  {isStudentAssigned(
+    student,
+  ) ? (
+    <div>
+      <p className="font-semibold text-teal-700">
+        {
+          student
+            ?.assignedDigitalTeacherName ||
+          "Digital Teacher"
+        }
+      </p>
+
+      <Badge className="mt-1 bg-green-100 text-green-700">
+        Assigned
+      </Badge>
+    </div>
+  ) : (
+    <p className="text-sm text-gray-400">
+      Not Assigned
+    </p>
+  )}
+
+</div>
+                          
                           <div className="min-w-0">
                             <p className="text-gray-500 text-xs font-medium mb-1">
                               Previous Madrasa
@@ -3298,6 +4099,371 @@ const handleInactiveStudent =
             </div>
           </DialogContent>
         </Dialog>
+      {/* ==========================================
+    ASSIGN DIGITAL TEACHER DIALOG
+========================================== */}
+
+<Dialog
+  open={
+    teacherAssignDialogOpen
+  }
+  onOpenChange={(open) => {
+    setTeacherAssignDialogOpen(
+      open,
+    );
+
+    if (!open) {
+      setSelectedDigitalTeacher(
+        null,
+      );
+    }
+  }}
+>
+  <DialogContent className="max-h-[90vh] w-[95vw] overflow-y-auto bg-white sm:max-w-2xl">
+
+    <DialogHeader>
+      <DialogTitle className="text-xl font-bold text-slate-900">
+        Assign Digital Teacher
+      </DialogTitle>
+    </DialogHeader>
+
+
+    {/* SUMMARY */}
+
+    <div className="grid gap-3 sm:grid-cols-2">
+
+      <div className="rounded-xl border border-teal-100 bg-teal-50 p-4">
+
+        <p className="text-xs font-medium uppercase tracking-wide text-teal-600">
+          Selected Class
+        </p>
+
+        <p className="mt-1 text-lg font-bold text-slate-900">
+          {normalizeClassDisplay(
+            filterClass,
+          )}
+        </p>
+
+      </div>
+
+
+      <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
+
+        <p className="text-xs font-medium uppercase tracking-wide text-blue-600">
+          Selected Students
+        </p>
+
+        <p className="mt-1 text-lg font-bold text-slate-900">
+          {
+            selectedStudentUids.length
+          }{" "}
+          Student(s)
+        </p>
+
+      </div>
+
+    </div>
+
+
+    {/* TEACHER LIST */}
+
+    <div className="mt-5">
+
+      <div className="mb-3 flex items-center justify-between">
+
+        <div>
+          <p className="font-semibold text-slate-900">
+            Available Digital Teachers
+          </p>
+
+          <p className="text-sm text-slate-500">
+            Only teachers assigned to{" "}
+            {normalizeClassDisplay(
+              filterClass,
+            )}{" "}
+            are shown.
+          </p>
+        </div>
+
+        {!teachersLoading && (
+          <Badge variant="outline">
+            {
+              availableDigitalTeachers.length
+            }{" "}
+            Teacher(s)
+          </Badge>
+        )}
+
+      </div>
+
+
+      {teachersLoading ? (
+
+        <div className="flex min-h-[180px] items-center justify-center">
+
+          <div className="text-center">
+
+            <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-teal-600 border-t-transparent" />
+
+            <p className="mt-3 text-sm text-slate-500">
+              Loading Digital Teachers...
+            </p>
+
+          </div>
+
+        </div>
+
+      ) : availableDigitalTeachers.length ===
+        0 ? (
+
+        <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center">
+
+          <Users className="mx-auto h-10 w-10 text-slate-300" />
+
+          <p className="mt-3 font-semibold text-slate-700">
+            No Digital Teacher available
+          </p>
+
+          <p className="mt-1 text-sm text-slate-500">
+            No active Digital Teacher is assigned to{" "}
+            {normalizeClassDisplay(
+              filterClass,
+            )}.
+          </p>
+
+        </div>
+
+      ) : (
+
+        <div className="space-y-3">
+
+          {availableDigitalTeachers.map(
+            (teacher) => {
+              const teacherId =
+                teacher?.id;
+
+              const selected =
+                selectedDigitalTeacher
+                  ?.id ===
+                teacherId;
+
+              const subjects =
+                teacher
+                  ?.teachingAssignment
+                  ?.subjects || [];
+
+              const languages =
+                teacher
+                  ?.teachingAssignment
+                  ?.languages || [];
+
+              return (
+                <button
+                  key={
+                    teacherId ||
+                    teacher
+                      ?.digitalTeacherUid
+                  }
+                  type="button"
+                  onClick={() =>
+                    setSelectedDigitalTeacher(
+                      teacher,
+                    )
+                  }
+                  className={`
+                    w-full
+                    rounded-xl
+                    border
+                    p-4
+                    text-left
+                    transition
+                    ${
+                      selected
+                        ? "border-teal-500 bg-teal-50 ring-2 ring-teal-100"
+                        : "border-slate-200 bg-white hover:border-teal-300 hover:bg-slate-50"
+                    }
+                  `}
+                >
+
+                  <div className="flex items-start gap-4">
+
+                    {/* RADIO */}
+
+                    <div className="pt-1">
+
+                      <div
+                        className={`
+                          flex
+                          h-5
+                          w-5
+                          items-center
+                          justify-center
+                          rounded-full
+                          border-2
+                          ${
+                            selected
+                              ? "border-teal-600"
+                              : "border-slate-300"
+                          }
+                        `}
+                      >
+                        {selected && (
+                          <div className="h-2.5 w-2.5 rounded-full bg-teal-600" />
+                        )}
+                      </div>
+
+                    </div>
+
+
+                    {/* TEACHER */}
+
+                    <div className="min-w-0 flex-1">
+
+                      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+
+                        <div>
+
+                          <p className="font-bold text-slate-900">
+                            {teacher?.fullName ||
+                              teacher?.name ||
+                              "Digital Teacher"}
+                          </p>
+
+                          <p className="text-sm text-slate-500">
+                            {teacher
+                              ?.digitalTeacherEmail ||
+                              teacher?.email ||
+                              "No email"}
+                          </p>
+
+                        </div>
+
+                        {teacher?.mhrId && (
+                          <Badge variant="outline">
+                            {
+                              teacher.mhrId
+                            }
+                          </Badge>
+                        )}
+
+                      </div>
+
+
+                      {/* SUBJECTS */}
+
+                      <div className="mt-3">
+
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                          Subjects
+                        </p>
+
+                        <div className="mt-1 flex flex-wrap gap-1.5">
+
+                          {subjects.length >
+                          0 ? (
+                            subjects.map(
+                              (subject) => (
+                                <Badge
+                                  key={
+                                    subject
+                                  }
+                                  className="bg-blue-50 text-blue-700 hover:bg-blue-50"
+                                >
+                                  {
+                                    subject
+                                  }
+                                </Badge>
+                              ),
+                            )
+                          ) : (
+                            <span className="text-xs text-slate-400">
+                              No subjects
+                            </span>
+                          )}
+
+                        </div>
+
+                      </div>
+
+
+                      {/* LANGUAGE */}
+
+                      <div className="mt-3">
+
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                          Teaching Medium
+                        </p>
+
+                        <p className="mt-1 text-sm text-slate-600">
+                          {languages.length >
+                          0
+                            ? languages.join(
+                                ", ",
+                              )
+                            : "Not specified"}
+                        </p>
+
+                      </div>
+
+                    </div>
+
+                  </div>
+
+                </button>
+              );
+            },
+          )}
+
+        </div>
+
+      )}
+
+    </div>
+
+
+    {/* BUTTONS */}
+
+    <div className="mt-6 flex flex-col-reverse gap-2 border-t border-slate-200 pt-4 sm:flex-row sm:justify-end">
+
+      <Button
+        type="button"
+        variant="outline"
+        onClick={() => {
+          setTeacherAssignDialogOpen(
+            false,
+          );
+
+          setSelectedDigitalTeacher(
+            null,
+          );
+        }}
+      >
+        Cancel
+      </Button>
+
+
+      <Button
+  type="button"
+  onClick={
+    handleAssignSelectedStudents
+  }
+  disabled={
+    assignmentLoading ||
+    !selectedDigitalTeacher ||
+    selectedStudentUids.length ===
+      0
+  }
+  className="bg-teal-600 hover:bg-teal-700"
+>
+  {assignmentLoading
+    ? "Assigning..."
+    : `Assign ${selectedStudentUids.length} Student(s)`}
+</Button>
+
+    </div>
+
+  </DialogContent>
+</Dialog>
       </div>
     </Layout>
   );

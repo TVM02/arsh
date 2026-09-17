@@ -14,6 +14,8 @@ import {
   LogOut,
   X,
   BookOpen,
+  Users,
+  UserCheck,
 } from "lucide-react";
 
 import { usePathname, useRouter } from "next/navigation";
@@ -98,47 +100,47 @@ const dcRole = pathname.includes("/dashboard/digital-teacher")
       return [
         {
           name: "Dashboard",
-          href: "/digital-classroom/teacher",
+          href: "/dashboard/digital-teacher",
           icon: Home,
         },
         {
-          name: "Classes",
-          href: "/digital-classroom/teacher/classes",
+          name: "My Student",
+          href: "/dashboard/digital-teacher/student",
           icon: BookOpen,
         },
         {
-          name: "Students",
-          href: "/digital-classroom/teacher/students",
+          name: "Live Classes",
+          href: "/dashboard/digital-teacher/class",
           icon: Users,
         },
         {
-          name: "Assignments",
-          href: "/digital-classroom/teacher/assignments",
-          icon: ClipboardList,
-        },
-        {
           name: "Study Materials",
-          href: "/digital-classroom/teacher/materials",
+          href: "/dashboard/digital-teacher/materials",
           icon: FolderOpen,
         },
         {
+          name: "Assignments",
+          href: "/dashboard/digital-teacher/assignments",
+          icon: ClipboardList,
+        },
+        {
           name: "Attendance",
-          href: "/digital-classroom/teacher/attendance",
+          href: "/dashboard/digital-teacher/attendance",
           icon: UserCheck,
         },
         {
           name: "Exams",
-          href: "/digital-classroom/teacher/exams",
+          href: "/dashboard/digital-teacher/exams",
           icon: FileCheck,
         },
         {
           name: "Messages",
-          href: "/digital-classroom/teacher/messages",
+          href: "/dashboard/digital-teacher/messages",
           icon: MessageSquare,
         },
         {
           name: "Profile",
-          href: "/digital-classroom/teacher/profile",
+          href: "/dashboard/digital-teacher/profile",
           icon: User,
         },
       ];

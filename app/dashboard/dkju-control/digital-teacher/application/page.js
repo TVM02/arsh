@@ -15,7 +15,6 @@ import {
   CheckCircle2,
   XCircle,
   Mail,
-  KeyRound,
   GraduationCap,
   BookOpen,
   Languages,
@@ -96,14 +95,12 @@ export default function DigitalTeacherApplicationsPage() {
   const [message, setMessage] =
     useState("");
 
-  const [approvalForm, setApprovalForm] =
-    useState({
-      email: "",
-      password: "",
-      assignedClasses: [],
-      assignedSubjects: [],
-      languages: [],
-    });
+const [approvalForm, setApprovalForm] =
+  useState({
+    assignedClasses: [],
+    assignedSubjects: [],
+    languages: [],
+  });
   
 
 const [approveLoading, setApproveLoading] =
@@ -215,77 +212,21 @@ const [rejectionReason, setRejectionReason] =
       (item) => item.status === "rejected",
     ).length;
 
-  /* ============================================
-     GENERATE LOGIN EMAIL
-  ============================================ */
-
-  const generateEmail = (teacher) => {
-    const name =
-      String(
-        teacher?.fullName ||
-          "teacher",
-      )
-        .toLowerCase()
-        .replace(/[^a-z0-9\s]/g, "")
-        .trim()
-        .replace(/\s+/g, ".");
-
-    const phone =
-      String(
-        teacher?.phone || "",
-      ).replace(/\D/g, "");
-
-    const suffix =
-      phone.slice(-4) ||
-      Math.floor(
-        1000 +
-          Math.random() * 9000,
-      );
-
-    return `${name}.${suffix}@dkju.in`;
-  };
-
-  const generatePassword = () => {
-    const chars =
-      "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
-
-    let result = "";
-
-    for (let i = 0; i < 10; i++) {
-      result +=
-        chars.charAt(
-          Math.floor(
-            Math.random() *
-              chars.length,
-          ),
-        );
-    }
-
-    return result;
-  };
-
-  /* ============================================
-     OPEN APPROVAL
-  ============================================ */
+ 
 
   const openApprove = (teacher) => {
-    setSelectedTeacher(teacher);
+  setSelectedTeacher(teacher);
 
-    setApprovalForm({
-      email:
-        teacher?.digitalTeacherEmail ||
-        generateEmail(teacher),
+  setApprovalForm({
+    assignedClasses: [],
+    assignedSubjects: [],
+    languages: [],
+  });
 
-      password:
-        generatePassword(),
+  setMessage("");
 
-      assignedClasses: [],
-      assignedSubjects: [],
-      languages: [],
-    });
-
-    setApproveOpen(true);
-  };
+  setApproveOpen(true);
+};
 
   /* ============================================
      TOGGLE ARRAY VALUE
@@ -334,26 +275,13 @@ const [rejectionReason, setRejectionReason] =
       return;
     }
 
-    if (
-      !approvalForm.email.trim()
-    ) {
-      setMessage(
-        "Digital Teacher email is required.",
-      );
+    if (!selectedTeacher?.id) {
+  setMessage(
+    "Digital Teacher application not found.",
+  );
 
-      return;
-    }
-
-    if (
-      approvalForm.password
-        .length < 6
-    ) {
-      setMessage(
-        "Password must be at least 6 characters.",
-      );
-
-      return;
-    }
+  return;
+}
 
     if (
       approvalForm
@@ -395,30 +323,22 @@ const [rejectionReason, setRejectionReason] =
 
     try {
       const result =
-        await approveDigitalTeacher(
-          selectedTeacher.id,
-          {
-            email:
-              approvalForm.email
-                .trim()
-                .toLowerCase(),
+  await approveDigitalTeacher(
+    selectedTeacher.id,
+    {
+      assignedClasses:
+        approvalForm
+          .assignedClasses,
 
-            password:
-              approvalForm.password,
+      assignedSubjects:
+        approvalForm
+          .assignedSubjects,
 
-            assignedClasses:
-              approvalForm
-                .assignedClasses,
-
-            assignedSubjects:
-              approvalForm
-                .assignedSubjects,
-
-            languages:
-              approvalForm
-                .languages,
-          },
-        );
+      languages:
+        approvalForm
+          .languages,
+    },
+  );
 
       console.log(
         "DIGITAL TEACHER APPROVED:",
@@ -1079,69 +999,7 @@ const [rejectionReason, setRejectionReason] =
 
               <div className="space-y-7">
 
-                {/* LOGIN */}
-
-                <div>
-
-                  <SectionHeading
-                    icon={KeyRound}
-                    title="Login Credentials"
-                    description="Create separate Digital Teacher login credentials."
-                  />
-
-                  <div className="mt-4 grid gap-4 md:grid-cols-2">
-
-                    <div>
-                      <label className="mb-2 block text-sm font-semibold text-slate-700">
-                        Digital Teacher Email
-                      </label>
-
-                      <input
-                        type="email"
-                        value={
-                          approvalForm.email
-                        }
-                        onChange={(e) =>
-                          setApprovalForm(
-                            (prev) => ({
-                              ...prev,
-                              email:
-                                e.target
-                                  .value,
-                            }),
-                          )
-                        }
-                        className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm outline-none focus:border-teal-500"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="mb-2 block text-sm font-semibold text-slate-700">
-                        Password
-                      </label>
-
-                      <input
-                        value={
-                          approvalForm.password
-                        }
-                        onChange={(e) =>
-                          setApprovalForm(
-                            (prev) => ({
-                              ...prev,
-                              password:
-                                e.target
-                                  .value,
-                            }),
-                          )
-                        }
-                        className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm outline-none focus:border-teal-500"
-                      />
-                    </div>
-
-                  </div>
-
-                </div>
-
+                
                 {/* CLASSES */}
 
                 <AssignmentSection

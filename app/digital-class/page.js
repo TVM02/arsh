@@ -28,7 +28,7 @@ export default function PortalsPage() {
       icon: BookOpen,
       title: "Teacher",
       description: "Manage your classes, teaching materials and students",
-      href: "/auth/login/teacher",
+      href: "/auth/login/digital-teacher",
       iconBg: "bg-emerald-100",
       iconColor: "text-emerald-600",
       cardBorder: "border-emerald-100",

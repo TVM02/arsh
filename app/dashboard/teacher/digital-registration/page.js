@@ -26,6 +26,17 @@ import {
   getDigitalTeacherStatus,
 } from "@/lib/digitalClassTeacherService";
 
+import { storage } from "@/lib/firebase";
+
+import {
+  ref,
+  uploadBytesResumable,
+  getDownloadURL,
+} from "firebase/storage";
+
+
+
+
 export default function DigitalTeacherRegistrationPage() {
   const { user, userData } = useAuthStore();
 
@@ -65,6 +76,8 @@ quranQualification: "",
       ifscCode: "",
       branchName: "",
       upiId: "",
+      profileFile: null,
+profilePreview: "",
 
       certificateFile: null,
 
@@ -209,6 +222,51 @@ useEffect(() => {
       certificateFile: file,
     }));
   };
+  const handleProfileImage = (e) => {
+  const file =
+    e.target.files?.[0] || null;
+
+  if (!file) {
+    return;
+  }
+
+  if (
+    !file.type.startsWith("image/")
+  ) {
+    setMessage(
+      "Please select a valid image file.",
+    );
+
+    return;
+  }
+
+  // Maximum 5 MB
+  if (
+    file.size >
+    5 * 1024 * 1024
+  ) {
+    setMessage(
+      "Profile image must be below 5 MB.",
+    );
+
+    return;
+  }
+
+  const preview =
+    URL.createObjectURL(file);
+
+  setFormData((prev) => ({
+    ...prev,
+
+    profileFile:
+      file,
+
+    profilePreview:
+      preview,
+  }));
+
+  setMessage("");
+};
 
   const handleSubmit = async (e) => {
   e.preventDefault();
@@ -227,13 +285,8 @@ useEffect(() => {
     return;
   }
 
-  /* ============================================
-     QUALIFICATION VALIDATION
-  ============================================ */
 
-  /* ============================================
-   QUALIFICATION VALIDATION
-============================================ */
+
 
 if (
   !formData.generalQualification ||
@@ -329,124 +382,166 @@ if (
 
     return;
   }
+  if (!formData.profileFile) {
+  setMessage(
+    "Please upload your Digital Teacher profile photo.",
+  );
+
+  return;
+}
 
   setSubmitting(true);
 
   try {
-    /* ============================================
-       PREPARE SERVER DATA
-    ============================================ */
+  let profileImageUrl =
+  teacher?.profilePicture ||
+  null;
+
+if (formData.profileFile) {
+  profileImageUrl =
+    await uploadDigitalTeacherProfile(
+      formData.profileFile,
+    );
+}
 
     const registrationData = {
-      /* Existing teacher */
+  /* ========================================
+     EXISTING NORMAL TEACHER ACCOUNT
+  ======================================== */
 
-      sourceTeacherId:
-        teacher.teacherId || null,
+  sourceTeacherId:
+    teacher.teacherId || null,
 
-      sourceTeacherUid:
-        teacher.uid,
+  sourceTeacherUid:
+    teacher.uid,
 
-      /* Personal */
+  /*
+    SAME Firebase UID will become
+    Digital Teacher UID after approval.
+  */
+  digitalTeacherUid:
+    teacher.uid,
 
-      fullName:
-        teacher.fullName,
+  /*
+    SAME Teacher login email.
+  */
+  email:
+    teacher.email || null,
 
-      mhrId:
-        teacher.mhrId || null,
+  digitalTeacherEmail:
+    teacher.email || null,
 
-      email:
-        teacher.email || null,
+  /* ========================================
+     PERSONAL INFORMATION
+  ======================================== */
 
-      phone:
-        teacher.phone || null,
+  fullName:
+    teacher.fullName,
 
-      gender:
-        teacher.gender || null,
+  mhrId:
+    teacher.mhrId || null,
 
-      dateOfBirth:
-        teacher.dateOfBirth || null,
+  phone:
+    teacher.phone || null,
 
-      address:
-        teacher.address || null,
+  gender:
+    teacher.gender || null,
 
-      madarsaName:
-        teacher.madarsaName || null,
+  dateOfBirth:
+    teacher.dateOfBirth || null,
 
-      profilePicture:
-        teacher.profilePicture || null,
+  address:
+    teacher.address || null,
 
-      /* Qualification */
+  madarsaName:
+    teacher.madarsaName || null,
 
-      qualification: {
-  generalEducation: {
-    highestQualification:
-      formData.generalQualification,
+profilePicture:
+  profileImageUrl,
 
-    courseName:
-      formData.generalCourseName,
+  /* ========================================
+     QUALIFICATION
+  ======================================== */
 
-    institution:
-      formData.generalInstitution || null,
+  qualification: {
+    generalEducation: {
+      highestQualification:
+        formData.generalQualification,
+
+      courseName:
+        formData.generalCourseName,
+
+      institution:
+        formData.generalInstitution ||
+        null,
+    },
+
+    computerKnowledge: {
+      level:
+        formData.computerKnowledge,
+
+      otherDetails:
+        formData.computerKnowledge ===
+        "other"
+          ? formData.otherComputerSkill.trim()
+          : null,
+    },
+
+    islamicEducation: {
+      highestQualification:
+        formData.islamicHighestQualification,
+
+      courseName:
+        formData.islamicQualificationName,
+
+      institution:
+        formData.islamicInstitution,
+
+      yearOfPassing:
+        formData.islamicYearOfPassing,
+
+      teachingExperience:
+        formData.islamicTeachingExperience,
+
+      QuranQualification:
+        formData.isQuranQualification,
+    },
+
+    certificateUrl:
+      null,
   },
 
-  computerKnowledge: {
-    level:
-      formData.computerKnowledge,
+  /* ========================================
+     BANK
+  ======================================== */
 
-    otherDetails:
-      formData.computerKnowledge === "other"
-        ? formData.otherComputerSkill.trim()
-        : null,
+  bankDetails: {
+    accountHolderName:
+      formData.accountHolderName,
+
+    bankName:
+      formData.bankName,
+
+    accountNumber:
+      formData.accountNumber.trim(),
+
+    ifscCode:
+      formData.ifscCode
+        .trim()
+        .toUpperCase(),
+
+    branchName:
+      formData.branchName ||
+      null,
+
+    upiId:
+      formData.upiId ||
+      null,
   },
 
-  islamicEducation: {
-    highestQualification:
-      formData.islamicHighestQualification,
-
-    courseName:
-      formData.islamicQualificationName,
-
-    institution:
-      formData.islamicInstitution,
-
-    yearOfPassing:
-      formData.islamicYearOfPassing,
-
-    teachingExperience:
-      formData.islamicTeachingExperience,
-    quranQualification:
-      formData.quranQualification,
-  },
-
-  certificateUrl: null,
-},
-
-      /* Bank */
-
-      bankDetails: {
-        accountHolderName:
-          formData.accountHolderName,
-
-        bankName:
-          formData.bankName,
-
-        accountNumber:
-          formData.accountNumber.trim(),
-
-        ifscCode:
-          formData.ifscCode
-            .trim()
-            .toUpperCase(),
-
-        branchName:
-          formData.branchName || null,
-
-        upiId:
-          formData.upiId || null,
-      },
-
-      certificateUrl: null,
-    };
+  certificateUrl:
+    null,
+};
 
     /* ============================================
        SEND TO API
@@ -495,6 +590,8 @@ quranQualification: "",
       ifscCode: "",
       branchName: "",
       upiId: "",
+      profileFile: null,
+profilePreview: "",
 
       certificateFile: null,
 
@@ -514,6 +611,89 @@ quranQualification: "",
     setSubmitting(false);
   }
 };
+const uploadDigitalTeacherProfile =
+  async (file) => {
+    if (!file) {
+      return null;
+    }
+
+    if (!teacher?.uid) {
+      throw new Error(
+        "Teacher UID not found.",
+      );
+    }
+
+    const safeFileName =
+      file.name
+        .replace(
+          /[^a-zA-Z0-9._-]/g,
+          "_",
+        );
+
+    const storagePath =
+      `digital-teachers/profile-images/${teacher.uid}/${Date.now()}_${safeFileName}`;
+
+    const storageRef =
+      ref(
+        storage,
+        storagePath,
+      );
+
+    const uploadTask =
+      uploadBytesResumable(
+        storageRef,
+        file,
+        {
+          contentType:
+            file.type,
+        },
+      );
+
+    return await new Promise(
+      (
+        resolve,
+        reject,
+      ) => {
+        uploadTask.on(
+          "state_changed",
+
+          () => {},
+
+          (error) => {
+            console.error(
+              "PROFILE IMAGE UPLOAD ERROR:",
+              error,
+            );
+
+            reject(
+              new Error(
+                "Unable to upload profile image.",
+              ),
+            );
+          },
+
+          async () => {
+            try {
+              const downloadURL =
+                await getDownloadURL(
+                  uploadTask
+                    .snapshot
+                    .ref,
+                );
+
+              resolve(
+                downloadURL,
+              );
+            } catch (error) {
+              reject(error);
+            }
+          },
+        );
+      },
+    );
+  };
+
+
 
   return (
     <Layout>
@@ -538,12 +718,12 @@ quranQualification: "",
 
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
               Submit your qualification and
-              bank details to apply as a
-              Digital Classroom teacher.
-              Board will review your
-              application and create your
-              Digital Teacher login after
-              approval.
+  bank details to apply as a
+  Digital Classroom teacher.
+  After approval, your existing
+  Teacher login credentials can
+  also be used to access the
+  Digital Teacher portal.
             </p>
           </div>
 
@@ -580,7 +760,7 @@ quranQualification: "",
   <ProcessCard
     number="3"
     title="Account Approval"
-    description="Credentials and assignment created"
+    description="Digital Classroom access enabled"
     active={
       applicationStatus === "approved"
     }
@@ -669,7 +849,128 @@ quranQualification: "",
                   }
                 />
 
+
               </div>
+              <div className="mt-6 border-t border-slate-200 pt-6">
+
+  <label className="mb-3 block text-sm font-semibold text-slate-800">
+    Digital Teacher Profile Photo
+  </label>
+
+  <div
+    className="
+      flex
+      flex-col
+      gap-5
+      rounded-2xl
+      border
+      border-slate-200
+      bg-slate-50
+      p-5
+      sm:flex-row
+      sm:items-center
+    "
+  >
+
+    {/* Preview */}
+    <div
+      className="
+        flex
+        h-24
+        w-24
+        shrink-0
+        items-center
+        justify-center
+        overflow-hidden
+        rounded-2xl
+        border
+        border-slate-200
+        bg-white
+      "
+    >
+
+      {formData.profilePreview ||
+      teacher?.profilePicture ? (
+
+        <img
+          src={
+            formData.profilePreview ||
+            teacher.profilePicture
+          }
+          alt="Digital Teacher"
+          className="h-full w-full object-cover"
+        />
+
+      ) : (
+
+        <User className="h-10 w-10 text-slate-300" />
+
+      )}
+
+    </div>
+
+
+    <div className="flex-1">
+
+      <p className="text-sm font-semibold text-slate-800">
+        Upload Profile Image
+      </p>
+
+      <p className="mt-1 text-xs text-slate-500">
+        JPG, JPEG, PNG or WEBP. Maximum 5 MB.
+      </p>
+
+
+      <label
+        className="
+          mt-4
+          inline-flex
+          cursor-pointer
+          items-center
+          gap-2
+          rounded-xl
+          bg-teal-600
+          px-4
+          py-2.5
+          text-sm
+          font-semibold
+          text-white
+          transition
+          hover:bg-teal-700
+        "
+      >
+        <UploadCloud className="h-4 w-4" />
+
+        Choose Photo
+
+        <input
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          onChange={
+            handleProfileImage
+          }
+          className="hidden"
+        />
+      </label>
+
+
+      {formData.profileFile && (
+
+        <p className="mt-2 text-xs font-medium text-teal-700">
+          {
+            formData
+              .profileFile
+              .name
+          }
+        </p>
+
+      )}
+
+    </div>
+
+  </div>
+
+</div>
 
               <div className="mt-5 rounded-2xl border border-teal-100 bg-teal-50 p-4">
 

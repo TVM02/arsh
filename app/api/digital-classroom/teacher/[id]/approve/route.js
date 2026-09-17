@@ -19,10 +19,6 @@ function cleanText(value) {
   return String(value ?? "").trim();
 }
 
-function cleanEmail(value) {
-  return cleanText(value).toLowerCase();
-}
-
 function cleanArray(value) {
   if (!Array.isArray(value)) {
     return [];
@@ -55,7 +51,7 @@ function errorResponse(
 }
 
 /* ============================================
-   CENTRAL ADMIN AUTH CHECK
+   VERIFY CENTRAL ADMIN
 ============================================ */
 
 async function verifyCentralAdmin(
@@ -95,7 +91,8 @@ async function verifyCentralAdmin(
       decodedToken?.role;
 
     if (
-      claimRole === "central_admin" ||
+      claimRole ===
+        "central_admin" ||
       claimRole === "admin"
     ) {
       return decodedToken;
@@ -117,7 +114,8 @@ async function verifyCentralAdmin(
     if (
       userData?.role !==
         "central_admin" &&
-      userData?.role !== "admin"
+      userData?.role !==
+        "admin"
     ) {
       return null;
     }
@@ -142,30 +140,9 @@ export async function PATCH(
   request,
   { params },
 ) {
-    console.log(
-    "========== DIGITAL TEACHER PATCH HIT ==========",
-  );
-
-  console.log(
-    "METHOD:",
-    request.method,
-  );
-
-  console.log(
-    "URL:",
-    request.url,
-  );
-
-  console.log(
-    "AUTH HEADER:",
-    request.headers.get("authorization")
-      ? "PRESENT"
-      : "MISSING",
-  );
-  let createdAuthUid = null;
-
   try {
-    const { id } = await params;
+    const { id } =
+      await params;
 
     if (!id) {
       return errorResponse(
@@ -179,9 +156,9 @@ export async function PATCH(
     const db =
       getAdminDb();
 
-    /* ============================================
+    /* ========================================
        VERIFY CENTRAL ADMIN
-    ============================================ */
+    ======================================== */
 
     const admin =
       await verifyCentralAdmin(
@@ -197,18 +174,15 @@ export async function PATCH(
       );
     }
 
-    /* ============================================
-       BODY
-    ============================================ */
+    /* ========================================
+       REQUEST BODY
+
+       NO EMAIL
+       NO PASSWORD
+    ======================================== */
 
     const body =
       await request.json();
-
-    const email =
-      cleanEmail(body?.email);
-
-    const password =
-      cleanText(body?.password);
 
     const assignedClasses =
       cleanArray(
@@ -225,31 +199,9 @@ export async function PATCH(
         body?.languages,
       );
 
-    /* ============================================
-       VALIDATION
-    ============================================ */
-
-    if (!email) {
-      return errorResponse(
-        "Digital Teacher email is required.",
-      );
-    }
-
-    if (
-      !email.includes("@")
-    ) {
-      return errorResponse(
-        "Please enter a valid Digital Teacher email.",
-      );
-    }
-
-    if (
-      password.length < 6
-    ) {
-      return errorResponse(
-        "Password must be at least 6 characters.",
-      );
-    }
+    /* ========================================
+       ASSIGNMENT VALIDATION
+    ======================================== */
 
     if (
       assignedClasses.length === 0
@@ -276,9 +228,9 @@ export async function PATCH(
       );
     }
 
-    /* ============================================
+    /* ========================================
        LOAD REGISTRATION
-    ============================================ */
+    ======================================== */
 
     const registrationRef =
       db
@@ -300,9 +252,9 @@ export async function PATCH(
     const teacher =
       registrationSnapshot.data();
 
-    /* ============================================
-       APPLICATION STATUS CHECK
-    ============================================ */
+    /* ========================================
+       APPLICATION STATUS
+    ======================================== */
 
     if (
       teacher?.status ===
@@ -334,67 +286,111 @@ export async function PATCH(
       );
     }
 
-    /* ============================================
-       CHECK DIGITAL LOGIN EMAIL
-    ============================================ */
+    /* ========================================
+       EXISTING TEACHER FIREBASE UID
+    ======================================== */
 
-    try {
-      const existingUser =
-        await auth.getUserByEmail(
-          email,
-        );
+    const teacherUid =
+      cleanText(
+        teacher?.sourceTeacherUid ||
+          teacher?.digitalTeacherUid,
+      );
 
-      if (existingUser) {
-        return errorResponse(
-          "This Digital Teacher email is already registered in Firebase Authentication.",
-          409,
-        );
-      }
-    } catch (error) {
-      if (
-        error?.code !==
-        "auth/user-not-found"
-      ) {
-        throw error;
-      }
+    if (!teacherUid) {
+      return errorResponse(
+        "Existing Teacher Firebase UID was not found.",
+        400,
+      );
     }
 
-    /* ============================================
-       CREATE SEPARATE DIGITAL TEACHER
-       FIREBASE AUTH ACCOUNT
-    ============================================ */
+    /*
+      IMPORTANT:
 
-    const digitalTeacherUser =
-      await auth.createUser({
-        email,
-        password,
+      We do NOT create another Firebase user.
 
-        displayName:
-          teacher?.fullName ||
-          "Digital Teacher",
+      Normal Teacher UID
+             =
+      Digital Teacher UID
+    */
 
-        emailVerified: true,
+    let firebaseUser;
 
-        disabled: false,
-      });
+    try {
+      firebaseUser =
+        await auth.getUser(
+          teacherUid,
+        );
+    } catch (error) {
+      if (
+        error?.code ===
+        "auth/user-not-found"
+      ) {
+        return errorResponse(
+          "Existing Teacher Firebase account was not found.",
+          404,
+        );
+      }
 
-    createdAuthUid =
-      digitalTeacherUser.uid;
+      throw error;
+    }
 
-    /* ============================================
-       SET DIGITAL TEACHER CLAIM
-    ============================================ */
+    /* ========================================
+       VERIFY EXISTING USER DOCUMENT
+    ======================================== */
 
-    await auth.setCustomUserClaims(
-      digitalTeacherUser.uid,
-      {
-        role: "digital-teacher",
-      },
-    );
+    const userRef =
+      db
+        .collection("users")
+        .doc(teacherUid);
 
-    /* ============================================
+    const userSnapshot =
+      await userRef.get();
+
+    if (!userSnapshot.exists) {
+      return errorResponse(
+        "Teacher user profile was not found.",
+        404,
+      );
+    }
+
+    const existingUser =
+      userSnapshot.data();
+
+    /*
+      Keep normal Teacher role.
+    */
+
+    if (
+      existingUser?.role !==
+      "teacher"
+    ) {
+      return errorResponse(
+        "This account is not a Teacher account.",
+        400,
+      );
+    }
+
+    /* ========================================
+       EXISTING LOGIN EMAIL
+    ======================================== */
+
+    const teacherEmail =
+      cleanText(
+        firebaseUser?.email ||
+          teacher?.email ||
+          existingUser?.email,
+      ).toLowerCase();
+
+    if (!teacherEmail) {
+      return errorResponse(
+        "Teacher login email was not found.",
+        400,
+      );
+    }
+
+    /* ========================================
        TEACHING ASSIGNMENT
-    ============================================ */
+    ======================================== */
 
     const teachingAssignment = {
       classes:
@@ -406,9 +402,12 @@ export async function PATCH(
       languages,
     };
 
-    /* ============================================
+    const now =
+      new Date();
+
+    /* ========================================
        FIRESTORE TRANSACTION
-    ============================================ */
+    ======================================== */
 
     await db.runTransaction(
       async (transaction) => {
@@ -425,110 +424,75 @@ export async function PATCH(
           );
         }
 
-        const latestTeacher =
+        const latest =
           latestSnapshot.data();
 
         if (
-          latestTeacher?.status !==
+          latest?.status !==
           "pending"
         ) {
           throw new Error(
-            "Digital Teacher application is no longer pending.",
+            "Only pending Digital Teacher applications can be approved.",
           );
         }
 
-        const userRef =
-          db
-            .collection("users")
-            .doc(
-              digitalTeacherUser.uid,
-            );
+        /* ====================================
+           UPDATE EXISTING NORMAL TEACHER USER
 
-        /* ========================================
-           CREATE DIGITAL TEACHER USER PROFILE
-        ======================================== */
+           DO NOT CHANGE:
+           role: "teacher"
+        ==================================== */
 
         transaction.set(
           userRef,
           {
-            uid:
-              digitalTeacherUser.uid,
-
-            email,
-
-            fullName:
-              latestTeacher
-                ?.fullName ||
-              "Digital Teacher",
-
-            name:
-              latestTeacher
-                ?.fullName ||
-              "Digital Teacher",
-
-            role:
-              "digital-teacher",
-
-            /* Link back to normal teacher */
-
-            sourceTeacherId:
-              latestTeacher
-                ?.sourceTeacherId ||
-              null,
-
-            sourceTeacherUid:
-              latestTeacher
-                ?.sourceTeacherUid ||
-              null,
-
-            mhrId:
-              latestTeacher
-                ?.mhrId ||
-              null,
-
-            phone:
-              latestTeacher
-                ?.phone ||
-              null,
-
-            madarsaName:
-              latestTeacher
-                ?.madarsaName ||
-              null,
-
-            profilePicture:
-              latestTeacher
-                ?.profilePicture ||
-              null,
-
-            /* Access */
-
-            status: "active",
-
-            accountStatus:
-              "active",
+            /*
+              Digital Teacher access
+            */
+            digitalTeacher:
+              true,
 
             digitalClassAccess:
               true,
 
-            /* Assignment */
+            digitalTeacherStatus:
+              "active",
 
-            teachingAssignment,
+            digitalTeacherApplicationId:
+              id,
 
-            createdAt:
-              new Date(),
+            /*
+              Keep Digital Teacher assignment
+              separate from normal Teacher data.
+            */
+            digitalTeachingAssignment:
+              teachingAssignment,
+
+            /*
+              Digital Teacher registration
+              can have a separate profile photo.
+            */
+            digitalTeacherProfilePicture:
+              teacher?.profilePicture ||
+              null,
+
+            digitalTeacherApprovedAt:
+              now,
+
+            digitalTeacherApprovedBy:
+              admin.uid,
 
             updatedAt:
-              new Date(),
+              now,
           },
           {
             merge: true,
           },
         );
 
-        /* ========================================
-           UPDATE APPLICATION
-        ======================================== */
+        /* ====================================
+           UPDATE DIGITAL TEACHER APPLICATION
+        ==================================== */
 
         transaction.update(
           registrationRef,
@@ -542,11 +506,17 @@ export async function PATCH(
             digitalClassAccess:
               true,
 
+            /*
+              SAME existing Teacher UID
+            */
             digitalTeacherUid:
-              digitalTeacherUser.uid,
+              teacherUid,
 
+            /*
+              SAME existing Teacher email
+            */
             digitalTeacherEmail:
-              email,
+              teacherEmail,
 
             teachingAssignment,
 
@@ -557,7 +527,7 @@ export async function PATCH(
               admin.uid,
 
             "approval.centralAdmin.approvedAt":
-              new Date(),
+              now,
 
             "approval.centralAdmin.rejectedAt":
               null,
@@ -566,15 +536,15 @@ export async function PATCH(
               null,
 
             updatedAt:
-              new Date(),
+              now,
           },
         );
       },
     );
 
-    /* ============================================
+    /* ========================================
        SUCCESS
-    ============================================ */
+    ======================================== */
 
     return NextResponse.json(
       {
@@ -587,14 +557,23 @@ export async function PATCH(
           applicationId:
             id,
 
+          sourceTeacherUid:
+            teacherUid,
+
           digitalTeacherUid:
-            digitalTeacherUser.uid,
+            teacherUid,
 
           digitalTeacherEmail:
-            email,
+            teacherEmail,
 
+          /*
+            Normal role stays teacher.
+          */
           role:
-            "digital-teacher",
+            "teacher",
+
+          digitalTeacher:
+            true,
 
           accountStatus:
             "active",
@@ -615,35 +594,6 @@ export async function PATCH(
       error,
     );
 
-    /*
-      If Firebase Authentication account was created
-      but Firestore approval failed, remove that new
-      account so we don't leave an orphan user.
-    */
-
-    if (createdAuthUid) {
-      try {
-        const auth =
-          getAdminAuth();
-
-        await auth.deleteUser(
-          createdAuthUid,
-        );
-
-        console.log(
-          "ROLLED BACK DIGITAL TEACHER AUTH USER:",
-          createdAuthUid,
-        );
-      } catch (
-        rollbackError
-      ) {
-        console.error(
-          "DIGITAL TEACHER AUTH ROLLBACK ERROR:",
-          rollbackError,
-        );
-      }
-    }
-
     return NextResponse.json(
       {
         success: false,
@@ -658,15 +608,22 @@ export async function PATCH(
     );
   }
 }
+
+/* ============================================
+   TEST GET
+============================================ */
+
 export async function GET(
   request,
   { params },
 ) {
-  const { id } = await params;
+  const { id } =
+    await params;
 
   return NextResponse.json({
     success: true,
-    message: "Digital Teacher Approve API is working",
+    message:
+      "Digital Teacher Approve API is working",
     id,
   });
 }

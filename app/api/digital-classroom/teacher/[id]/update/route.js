@@ -39,6 +39,13 @@ function cleanArray(value) {
   ];
 }
 
+function hasOwn(object, key) {
+  return Object.prototype.hasOwnProperty.call(
+    object,
+    key,
+  );
+}
+
 /* ============================================
    VERIFY CENTRAL ADMIN
 ============================================ */
@@ -149,9 +156,9 @@ export async function PATCH(
     const db =
       getAdminDb();
 
-    /* ============================================
-       ADMIN AUTH
-    ============================================ */
+    /* ========================================
+       VERIFY ADMIN
+    ======================================== */
 
     const admin =
       await verifyCentralAdmin(
@@ -173,82 +180,22 @@ export async function PATCH(
       );
     }
 
-    /* ============================================
-       BODY
-    ============================================ */
+    /* ========================================
+       REQUEST BODY
+    ======================================== */
 
     const body =
       await request.json();
 
-    const email =
-      cleanEmail(
-        body?.email,
-      );
-
-    const password =
-      cleanText(
-        body?.password,
-      );
-
-    const assignedClasses =
-      cleanArray(
-        body?.assignedClasses,
-      );
-
-    const assignedSubjects =
-      cleanArray(
-        body?.assignedSubjects,
-      );
-
-    const languages =
-      cleanArray(
-        body?.languages,
-      );
-
-    /* ============================================
-       VALIDATION
-    ============================================ */
-
-    if (!email) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Digital Teacher email is required.",
-        },
-        {
-          status: 400,
-        },
-      );
-    }
-
-    if (!email.includes("@")) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Please enter a valid email.",
-        },
-        {
-          status: 400,
-        },
-      );
-    }
-
-    /*
-      Empty password means:
-      keep current password.
-    */
-
     if (
-      password &&
-      password.length < 6
+      !body ||
+      typeof body !== "object"
     ) {
       return NextResponse.json(
         {
           success: false,
           message:
-            "Password must be at least 6 characters.",
+            "Invalid update data.",
         },
         {
           status: 400,
@@ -256,55 +203,9 @@ export async function PATCH(
       );
     }
 
-    if (
-      assignedClasses.length === 0
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Please assign at least one class.",
-        },
-        {
-          status: 400,
-        },
-      );
-    }
-
-    if (
-      assignedSubjects.length ===
-      0
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Please assign at least one subject.",
-        },
-        {
-          status: 400,
-        },
-      );
-    }
-
-    if (
-      languages.length === 0
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Please select at least one teaching language.",
-        },
-        {
-          status: 400,
-        },
-      );
-    }
-
-    /* ============================================
+    /* ========================================
        LOAD APPLICATION
-    ============================================ */
+    ======================================== */
 
     const registrationRef =
       db
@@ -364,9 +265,9 @@ export async function PATCH(
       );
     }
 
-    /* ============================================
-       GET CURRENT FIREBASE USER
-    ============================================ */
+    /* ========================================
+       FIREBASE USER
+    ======================================== */
 
     let firebaseUser;
 
@@ -388,112 +289,392 @@ export async function PATCH(
       );
     }
 
-    /* ============================================
-       CHECK EMAIL DUPLICATE
-    ============================================ */
+    /* ========================================
+       UPDATE OBJECTS
+
+       Only fields sent from frontend
+       will be updated.
+    ======================================== */
+
+    const registrationUpdate = {};
+
+    const userUpdate = {};
+
+    const authUpdate = {};
+
+    let passwordUpdated = false;
+
+    /* ========================================
+       EMAIL - OPTIONAL
+    ======================================== */
+
+    const digitalTeacherEmailWasSent =
+  hasOwn(
+    body,
+    "digitalTeacherEmail",
+  );
+
+if (digitalTeacherEmailWasSent) {
+  const email =
+    cleanEmail(
+      body.digitalTeacherEmail,
+    );
+
+      if (!email) {
+    return NextResponse.json(
+      {
+        success: false,
+        message:
+          "Digital Teacher email cannot be empty.",
+      },
+      {
+        status: 400,
+      },
+    );
+  }
+
+  if (!email.includes("@")) {
+    return NextResponse.json(
+      {
+        success: false,
+        message:
+          "Please enter a valid Digital Teacher email.",
+      },
+      {
+        status: 400,
+      },
+    );
+  }
+
+  if (
+    email !==
+    firebaseUser.email
+  ) {
+    try {
+      const existing =
+        await auth.getUserByEmail(
+          email,
+        );
+
+      if (
+        existing?.uid !==
+        digitalTeacherUid
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "This Digital Teacher email is already used by another Firebase account.",
+          },
+          {
+            status: 409,
+          },
+        );
+      }
+    } catch (error) {
+      if (
+        error?.code !==
+        "auth/user-not-found"
+      ) {
+        throw error;
+      }
+    }
+
+    authUpdate.email =
+      email;
+  }
+
+  registrationUpdate.digitalTeacherEmail =
+    email;
+
+  userUpdate.email =
+    email;
+}
+
+    /* ========================================
+       PASSWORD - OPTIONAL
+
+       Firebase Auth only.
+       Never save password in Firestore.
+    ======================================== */
 
     if (
-      email !==
-      firebaseUser.email
+      hasOwn(body, "password")
     ) {
-      try {
-        const existing =
-          await auth.getUserByEmail(
-            email,
-          );
+      const password =
+        cleanText(
+          body.password,
+        );
 
+      /*
+        Empty password means:
+        keep existing password.
+      */
+
+      if (password) {
         if (
-          existing?.uid !==
-          digitalTeacherUid
+          password.length < 6
         ) {
           return NextResponse.json(
             {
               success: false,
               message:
-                "This email is already used by another Firebase account.",
+                "Password must be at least 6 characters.",
             },
             {
-              status: 409,
+              status: 400,
             },
           );
         }
-      } catch (error) {
-        if (
-          error?.code !==
-          "auth/user-not-found"
-        ) {
-          throw error;
-        }
+
+        authUpdate.password =
+          password;
+
+        passwordUpdated =
+          true;
       }
     }
 
-    /* ============================================
-       UPDATE FIREBASE AUTH
-    ============================================ */
+    /* ========================================
+       NORMAL EDITABLE FIELDS
+    ======================================== */
 
-    const authUpdate = {
-      email,
+    const editableFields = [
+      "fullName",
+      "name",
+      "phone",
+      "gender",
+      "dateOfBirth",
+      "address",
+      "madarsaName",
+      "profilePicture",
+      "mhrId",
+      "qualification",
+      "bankDetails",
+      "accountStatus",
+      "digitalClassAccess",
+    ];
 
-      displayName:
-        teacher?.fullName ||
-        firebaseUser.displayName ||
-        "Digital Teacher",
+    for (
+      const field
+      of editableFields
+    ) {
+      if (
+        hasOwn(body, field)
+      ) {
+        registrationUpdate[field] =
+          body[field];
 
-      emailVerified: true,
-
-      disabled: false,
-    };
-
-    /*
-      Only update password
-      when admin entered a new password.
-    */
-
-    if (password) {
-      authUpdate.password =
-        password;
+        userUpdate[field] =
+          body[field];
+      }
     }
 
-    const updatedFirebaseUser =
-      await auth.updateUser(
-        digitalTeacherUid,
-        authUpdate,
+    /* ========================================
+       FULL NAME -> FIREBASE DISPLAY NAME
+    ======================================== */
+
+    if (
+      hasOwn(body, "fullName") ||
+      hasOwn(body, "name")
+    ) {
+      const displayName =
+        cleanText(
+          body?.fullName ??
+            body?.name,
+        );
+
+      if (displayName) {
+        authUpdate.displayName =
+          displayName;
+      }
+    }
+
+    /* ========================================
+       TEACHING ASSIGNMENT - OPTIONAL
+    ======================================== */
+
+    const teachingAssignmentWasSent =
+      hasOwn(
+        body,
+        "teachingAssignment",
+      ) ||
+      hasOwn(
+        body,
+        "assignedClasses",
+      ) ||
+      hasOwn(
+        body,
+        "assignedSubjects",
+      ) ||
+      hasOwn(
+        body,
+        "languages",
       );
 
-    /* ============================================
-       ENSURE ROLE CLAIM
-    ============================================ */
+    if (
+      teachingAssignmentWasSent
+    ) {
+      const currentAssignment =
+        teacher
+          ?.teachingAssignment || {
+          classes: [],
+          subjects: [],
+          languages: [],
+        };
 
-    await auth.setCustomUserClaims(
-      digitalTeacherUid,
-      {
-        ...(
-          firebaseUser
-            ?.customClaims || {}
-        ),
+      const incoming =
+        body
+          ?.teachingAssignment ||
+        {};
 
-        role:
-          "digital-teacher",
-      },
-    );
+      const classesWasSent =
+        hasOwn(
+          incoming,
+          "classes",
+        ) ||
+        hasOwn(
+          body,
+          "assignedClasses",
+        );
 
-    /* ============================================
-       TEACHING ASSIGNMENT
-    ============================================ */
+      const subjectsWasSent =
+        hasOwn(
+          incoming,
+          "subjects",
+        ) ||
+        hasOwn(
+          body,
+          "assignedSubjects",
+        );
 
-    const teachingAssignment = {
-      classes:
-        assignedClasses,
+      const languagesWasSent =
+        hasOwn(
+          incoming,
+          "languages",
+        ) ||
+        hasOwn(
+          body,
+          "languages",
+        );
 
-      subjects:
-        assignedSubjects,
+      const teachingAssignment = {
+        classes:
+          classesWasSent
+            ? cleanArray(
+                incoming?.classes ??
+                  body?.assignedClasses,
+              )
+            : cleanArray(
+                currentAssignment
+                  ?.classes,
+              ),
 
-      languages,
-    };
+        subjects:
+          subjectsWasSent
+            ? cleanArray(
+                incoming?.subjects ??
+                  body?.assignedSubjects,
+              )
+            : cleanArray(
+                currentAssignment
+                  ?.subjects,
+              ),
 
-    /* ============================================
+        languages:
+          languagesWasSent
+            ? cleanArray(
+                incoming?.languages ??
+                  body?.languages,
+              )
+            : cleanArray(
+                currentAssignment
+                  ?.languages,
+              ),
+      };
+
+      /*
+        IMPORTANT:
+        No minimum class / subject /
+        language validation here.
+
+        Empty array is allowed.
+      */
+
+      registrationUpdate.teachingAssignment =
+        teachingAssignment;
+
+      userUpdate.teachingAssignment =
+        teachingAssignment;
+    }
+
+    /* ========================================
+       NOTHING TO UPDATE
+    ======================================== */
+
+    const hasFirestoreUpdate =
+      Object.keys(
+        registrationUpdate,
+      ).length > 0;
+
+    const hasAuthUpdate =
+      Object.keys(
+        authUpdate,
+      ).length > 0;
+
+    if (
+      !hasFirestoreUpdate &&
+      !hasAuthUpdate
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "No editable data was provided.",
+        },
+        {
+          status: 400,
+        },
+      );
+    }
+
+    /* ========================================
+       UPDATE FIREBASE AUTH
+    ======================================== */
+
+    let updatedFirebaseUser =
+      firebaseUser;
+
+    if (hasAuthUpdate) {
+      updatedFirebaseUser =
+        await auth.updateUser(
+          digitalTeacherUid,
+          authUpdate,
+        );
+    }
+
+    /* ========================================
+       COMMON UPDATE DATA
+    ======================================== */
+
+    const now =
+      new Date();
+
+    registrationUpdate.updatedAt =
+      now;
+
+    registrationUpdate.updatedBy =
+      admin.uid;
+
+    userUpdate.updatedAt =
+      now;
+
+    userUpdate.updatedBy =
+      admin.uid;
+
+    /* ========================================
        UPDATE FIRESTORE
-    ============================================ */
+    ======================================== */
 
     const userRef =
       db
@@ -505,67 +686,34 @@ export async function PATCH(
     await db.runTransaction(
       async (transaction) => {
         transaction.set(
-          userRef,
-          {
-            email,
-
-            role:
-              "digital-teacher",
-
-            accountStatus:
-              "active",
-
-            digitalClassAccess:
-              true,
-
-            teachingAssignment,
-
-            updatedAt:
-              new Date(),
-
-            updatedBy:
-              admin.uid,
-          },
+          registrationRef,
+          registrationUpdate,
           {
             merge: true,
           },
         );
 
-        transaction.update(
-          registrationRef,
+        transaction.set(
+          userRef,
+          userUpdate,
           {
-            digitalTeacherEmail:
-              email,
-
-            teachingAssignment,
-
-            accountStatus:
-              "active",
-
-            digitalClassAccess:
-              true,
-
-            updatedAt:
-              new Date(),
-
-            updatedBy:
-              admin.uid,
+            merge: true,
           },
         );
       },
     );
 
-    /* ============================================
+    /* ========================================
        SUCCESS
-    ============================================ */
+    ======================================== */
 
     return NextResponse.json({
       success: true,
 
       message:
-        password
+        passwordUpdated
           ? "Digital Teacher details and password updated successfully."
-          : "Digital Teacher details updated successfully.",
+          : "Digital Teacher updated successfully.",
 
       teacher: {
         applicationId:
@@ -574,18 +722,24 @@ export async function PATCH(
         digitalTeacherUid,
 
         digitalTeacherEmail:
-          updatedFirebaseUser.email,
+          updatedFirebaseUser
+            ?.email ||
+          teacher
+            ?.digitalTeacherEmail ||
+          null,
 
-        accountStatus:
-          "active",
+        passwordUpdated,
 
-        digitalClassAccess:
-          true,
-
-        passwordUpdated:
-          Boolean(password),
-
-        teachingAssignment,
+        updatedFields:
+          Object.keys(
+            registrationUpdate,
+          ).filter(
+            (field) =>
+              field !==
+                "updatedAt" &&
+              field !==
+                "updatedBy",
+          ),
       },
     });
   } catch (error) {
