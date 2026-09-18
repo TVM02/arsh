@@ -175,28 +175,7 @@ export default function TeacherLogin() {
         password: formData.password,
       });
       
-      if (process.env.NODE_ENV === "development") {
-        let sessionUser = login.user;
       
-        if (login.restoreCustomToken) {
-          sessionUser =
-            (await restorePortalFirebaseSession(login.restoreCustomToken)) ||
-            sessionUser;
-        }
-      
-        setUser(sessionUser);
-      
-        // TEMP: bypass OTP verification for localhost development
-        setUserData(login.userData);
-      
-        resetLoginFailures(PORTAL_KEY, formData.email);
-      
-        toast.success("Development login successful");
-      
-        router.push("/dashboard/teacher");
-      
-        return;
-      }
 
       await startOtpLogin({
         user: login.user,

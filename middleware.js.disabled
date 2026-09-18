@@ -1,0 +1,20 @@
+import { NextResponse } from "next/server";
+
+export function middleware(request) {
+  const { pathname } = request.nextUrl;
+
+  if (
+    pathname === "/admission" ||
+    pathname.startsWith("/admission/")
+  ) {
+    return NextResponse.rewrite(
+      new URL("/maintenance", request.url)
+    );
+  }
+
+  return NextResponse.next();
+}
+
+export const config = {
+  matcher: ["/admission/:path*"],
+};

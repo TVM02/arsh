@@ -407,10 +407,7 @@ export default function StudentLoginPage() {
         });
 
 
-      // ==========================================
-      // DIGITAL CLASSROOM DASHBOARD
-      // Change this route if needed
-      // ==========================================
+   
 
       router.push(
         "/dashboard/digital-student "
@@ -495,67 +492,7 @@ export default function StudentLoginPage() {
         });
 
 
-      // ==========================================
-      // LOCALHOST / DEVELOPMENT
-      // TEMPORARILY SKIP OTP
-      // ==========================================
-
-      if (
-        process.env.NODE_ENV ===
-        "development"
-      ) {
-
-        let sessionUser =
-          login.user;
-
-
-        if (
-          login.restoreCustomToken
-        ) {
-
-          sessionUser =
-            (
-              await restorePortalFirebaseSession(
-                login.restoreCustomToken
-              )
-            ) || sessionUser;
-        }
-
-
-        setUser(
-          sessionUser
-        );
-
-
-        // IMPORTANT:
-        // Don't mark OTP as verified
-        // because localhost is bypassing OTP.
-        setUserData(
-          login.userData
-        );
-
-
-        resetLoginFailures(
-          PORTAL_KEY,
-          formData.email
-        );
-
-
-        toast.success(
-          "Development login successful"
-        );
-
-
-        router.push(
-          "/dashboard/digital-student"
-        );
-
-
-        return;
-      }
-
-
-      // ==========================================
+           // ==========================================
       // PRODUCTION
       // NORMAL OTP LOGIN
       // ==========================================

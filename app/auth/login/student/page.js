@@ -161,35 +161,7 @@ export default function StudentLogin() {
         password: formData.password,
       });
 
-      // await startOtpChallenge({
-      //   user: login.user,
-      //   userData: login.userData,
-      //   studentData: login.userData,
-      //   restoreCustomToken: login.restoreCustomToken,
-      // });
-      // TEMPORARY DEVELOPMENT MODE - SKIP OTP
-if (process.env.NODE_ENV === "development") {
-  let sessionUser = login.user;
-
-  if (login.restoreCustomToken) {
-    sessionUser =
-      (await restorePortalFirebaseSession(login.restoreCustomToken)) ||
-      sessionUser;
-  }
-
-  setUser(sessionUser);
-
-  // TEMP: bypass OTP verification for localhost development
-  setUserData(login.userData);
-
-  resetLoginFailures(PORTAL_KEY, formData.email);
-
-  toast.success("Development login successful");
-
-  router.push("/dashboard/student");
-
-  return;
-}
+      
 
 // PRODUCTION - NORMAL OTP LOGIN
 await startOtpChallenge({
