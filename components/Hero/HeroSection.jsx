@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
 
-import { buildings as defaultBuildings } from "@/data/buildings";
+
 import MarqueeSection from "@/components/Marquee/Marquee";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";

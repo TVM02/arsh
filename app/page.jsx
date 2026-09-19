@@ -8,7 +8,8 @@ import LatestEvents from "@/components/UpdatesSection/LatestEvents";
 import OrganizationsSection from "@/components/OrganizationsSection/OrganizationsSection";
 import HijriCalendar from "@/components/UpdatesSection/HijriCalendar";
 import Quotes from "@/components/UpdatesSection/Quotes";
-
+import ThanfaseLiveScoreboard
+  from "@/components/UpdatesSection/ThanfaseLiveScoreboard";
 
 
 export default function Home() {
@@ -23,6 +24,7 @@ export default function Home() {
     >
       <Navbar />
       <HeroSection />
+      <ThanfaseLiveScoreboard />
       <HijriCalendar />
    
       <UpdatesSection />

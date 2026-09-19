@@ -37,56 +37,32 @@ import {
 
 const INITIAL_STATE = {
   marquee: [
-    { text: "New Face of DKJU: Live Update Processing is underway. The updated portal will be live in 2 days. Thank you for your patience." },
-    { text: "New Face of DKJU ലൈവ് അപ്ഡേഷൻ പ്രൊസസ്സിങ് നടന്നുകൊണ്ടിരിക്കുകയാണ്. പുതിയ മാറ്റങ്ങളോടെ വെബ്സൈറ്റ് 2 ദിവസത്തിനകം ലഭ്യമാകും." },
-  ],
+    ],
   carousel: [
-    { image: "/buildings/three.jpg", title: "DKJU Building 1" },
-    { image: "/buildings/five.jpg", title: "DKJU Building 2" },
-    { image: "/buildings/seven.jpg", title: "DKJU Building 3" },
+   
   ],
   news: [
-    { month: "May", startDate: "2023-05-01", endDate: "2023-05-31", title: "Test content random text describing the latest news update 1.", createdAt: "2023-05-01" },
-    { month: "May", startDate: "2023-05-01", endDate: "2023-05-31", title: "Test content random text describing the latest news update 2.", createdAt: "2023-05-01" },
-    { month: "April", startDate: "2023-04-01", endDate: "2023-04-30", title: "Test content random text describing the latest news update 3.", createdAt: "2023-04-01" },
-    { month: "April", startDate: "2023-04-01", endDate: "2023-04-30", title: "Test content random text describing the latest news update 4.", createdAt: "2023-04-01" },
+    
   ],
   quotes: [
-    { name: "Jasim", specialized:"He is mandan" ,quotes: "Test content random text describing the latest news update 1." },
-    { name: "Jasim", specialized:"He is mandan" ,quotes: "Test content random text describing the latest news update 1." },
-    { name: "Jasim", specialized:"He is mandan" ,quotes: "Test content random text describing the latest news update 1." },
-    { name: "Jasim", specialized:"He is mandan" ,quotes: "Test content random text describing the latest news update 1." },
+   
   ],
   dkjunews: [
-    { month: "May", startDate: "2023-05-01", endDate: "2023-05-31", title: "Test content random text describing the latest news update 1.", createdAt: "2023-05-01" },
-    { month: "May", startDate: "2023-05-01", endDate: "2023-05-31", title: "Test content random text describing the latest news update 2.", createdAt: "2023-05-01" },
-    { month: "April", startDate: "2023-04-01", endDate: "2023-04-30", title: "Test content random text describing the latest news update 3.", createdAt: "2023-04-01" },
-    { month: "April", startDate: "2023-04-01", endDate: "2023-04-30", title: "Test content random text describing the latest news update 4.", createdAt: "2023-04-01" },
+    
   ],
   events: [
     {
-      title: "Annual Madrasa Conference",
-      date: "15 June 2026",
-      location: "Jonakappuram",
-      description: "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
-      image: "/buildings/eight.jpg",
+     
     },
   ],
   aboutUs: {
-    image: "/images/about.png",
-    text: "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.",
-    vision: "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
-    mission: "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."
+    
   },
   featuredNews: {
-    image: "/buildings/five.jpg",
-    text: "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
-    link: "#"
+   
   },
   youtubeVideos: [{
-        id: "123456",
-        title: "DKJU Conference 2026",
-        url: "https://www.youtube.com/watch?v=cPm-H5Xxxl4"
+       
       },
     ],
 };
