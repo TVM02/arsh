@@ -175,8 +175,8 @@ const mekhalaData = [
   },
 
   {
-    id: "kazhakkoottam",
-    name: "Kazhakkoottam Mekhala",
+    id: "POOVACHAL",
+    name: "POOVACHAL Mekhala",
     madrasas: 31,
 
     winners: [
@@ -386,8 +386,8 @@ const mekhalaData = [
   ======================================================= */
 
   {
-    id: "varkala",
-    name: "Varkala Mekhala",
+    id: "Navayikkulam",
+    name: "Navayikkulam Mekhala",
     madrasas: 27,
     winners: [
       { item: "Speech", category: "Junior", student: "Afsal" },
@@ -406,8 +406,8 @@ const mekhalaData = [
   },
 
   {
-    id: "chirayinkeezhu",
-    name: "Chirayinkeezhu Mekhala",
+    id: "PERINGAMMALA",
+    name: "PERINGAMMALA Mekhala",
     madrasas: 33,
     winners: [
       { item: "Speech", category: "Senior", student: "Aman" },
@@ -426,8 +426,8 @@ const mekhalaData = [
   },
 
   {
-    id: "palode",
-    name: "Palode Mekhala",
+    id: "Tholikode",
+    name: "Tholikode Mekhala",
     madrasas: 30,
     winners: [
       { item: "Speech", category: "Junior", student: "Muneer" },
@@ -466,8 +466,8 @@ const mekhalaData = [
   },
 
   {
-    id: "venjaramoodu",
-    name: "Venjaramoodu Mekhala",
+    id: "KILIMANOOR",
+    name: "KILIMANOOR Mekhala",
     madrasas: 32,
     winners: [
       { item: "Speech", category: "Junior", student: "Afnan" },
@@ -1433,6 +1433,22 @@ Tanafus Live
             Live Auto Update
           </div>
 
+<div
+            className="
+              flex
+              items-center
+              
+              text-xs
+              font-semibold
+              text-[red]
+              text-center
+            "
+          >
+            
+
+            The results shown above are for demonstration only.<br/>
+Please share your Mekhala Fest result list with us to update the official scoreboard.
+          </div>
 
           <p
             className="
