@@ -24,8 +24,8 @@ export default function Home() {
     >
       <Navbar />
       <HeroSection />
-      <ThanfaseLiveScoreboard />
       <HijriCalendar />
+      <ThanfaseLiveScoreboard />
    
       <UpdatesSection />
       <LatestEvents />
