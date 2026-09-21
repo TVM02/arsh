@@ -25,8 +25,9 @@ export default function Home() {
       <Navbar />
       <HeroSection />
       <HijriCalendar />
+      <div className="w-full min-w-0 max-w-full overflow-hidden">
       <ThanfaseLiveScoreboard />
-   
+   </div>
       <UpdatesSection />
       <LatestEvents />
       

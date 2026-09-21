@@ -605,29 +605,33 @@ function MekhalaCard({
     aria-label={`View live score for ${mekhala.name}`}
   >
     <article
-      className="
-        mekhala-score-card
-        group
-        relative
-        flex
-        h-[470px]
-        flex-col
-        overflow-hidden
-        rounded-[24px]
-        border
-        border-[#d2b059]
-        bg-[#fffdf8]
-        shadow-[0_14px_40px_rgba(16,72,59,0.10)]
-        transition-all
-        duration-500
-        hover:-translate-y-1
-        hover:shadow-[0_24px_55px_rgba(16,72,59,0.16)]
-      "
-      style={{
-        animationDelay:
-          `${index * 120}ms`,
-      }}
-    >
+  className="
+    mekhala-score-card
+    group
+    relative
+    mx-auto
+    flex
+    h-[470px]
+    w-full
+    min-w-0
+    max-w-[340px]
+    flex-col
+    overflow-hidden
+    rounded-[22px]
+    border
+    border-[#d2b059]
+    bg-[#fffdf8]
+    shadow-[0_14px_40px_rgba(16,72,59,0.10)]
+    transition-all
+    duration-500
+    hover:-translate-y-1
+    hover:shadow-[0_24px_55px_rgba(16,72,59,0.16)]
+  "
+  style={{
+    animationDelay:
+      `${index * 120}ms`,
+  }}
+>
       {/* =====================================
           INNER GOLD BORDER
       ====================================== */}
@@ -748,7 +752,7 @@ function MekhalaCard({
         className="
           grid
           shrink-0
-          grid-cols-[1fr_.95fr_1.1fr]
+          grid-cols-[minmax(0,1fr)_minmax(0,.9fr)_minmax(0,1.1fr)]
           border-b
           border-[#e4dbc4]
           bg-[#f4f0e4]
@@ -806,7 +810,7 @@ function MekhalaCard({
                   winner-row
                   grid
                   h-[46px]
-                  grid-cols-[1fr_.95fr_1.1fr]
+                  grid-cols-[minmax(0,1fr)_minmax(0,.9fr)_minmax(0,1.1fr)]
                   items-center
                   border-b
                   border-[#eee9dc]
@@ -1113,14 +1117,17 @@ export default function ThanfaseLiveScoreboard() {
 
   return (
     <section
-      className="
-        relative
-        overflow-hidden
-        bg-[#f8f5ea]
-        py-16
-        lg:py-20
-      "
-    >
+  className="
+    relative
+    w-full
+    min-w-0
+    max-w-full
+    overflow-hidden
+    bg-[#f8f5ea]
+    py-12
+    lg:py-16
+  "
+>
       {/* BACKGROUND */}
 
       <div
@@ -1163,16 +1170,18 @@ export default function ThanfaseLiveScoreboard() {
 
 
       <div
-        className="
-          relative
-          z-10
-          mx-auto
-          max-w-[1750px]
-          px-4
-          md:px-6
-          lg:px-8
-        "
-      >
+  className="
+    relative
+    z-10
+    mx-auto
+    w-full
+    min-w-0
+    max-w-full
+    px-4
+    md:px-5
+    lg:px-6
+  "
+>
         {/* =====================================
             HEADER
         ====================================== */}
@@ -1246,14 +1255,16 @@ export default function ThanfaseLiveScoreboard() {
           >
             <h2
               className="
-                font-serif
-                text-4xl
-                font-bold
-                tracking-tight
-                text-[#07483e]
-                sm:text-5xl
-                lg:text-[58px]
-              "
+  font-serif
+  text-[30px]
+  font-bold
+  leading-tight
+  tracking-tight
+  text-[#07483e]
+  sm:text-[38px]
+  lg:text-[46px]
+  xl:text-[52px]
+"
             >
               
 Tanafus Live
@@ -1318,44 +1329,53 @@ Tanafus Live
         ====================================== */}
 
         <div
-          key={
-            pageIndex
-          }
+  className="
+    w-full
+    min-w-0
+    max-w-full
+    overflow-hidden
+  "
+>
+  <div
+    key={pageIndex}
+    className="
+      mekhala-group
+      grid
+      w-full
+      min-w-0
+      grid-cols-1
+      gap-4
+
+      sm:grid-cols-2
+      lg:grid-cols-3
+      xl:grid-cols-4
+      2xl:grid-cols-5
+    "
+  >
+    {currentMekhalas.map(
+      (mekhala, index) => (
+        <div
+          key={mekhala.id}
           className="
-            mekhala-group
-            grid
-            grid-cols-1
-            gap-4
-            sm:grid-cols-2
-            lg:grid-cols-3
-            2xl:grid-cols-5
+            min-w-0
+            w-full
           "
         >
-          {currentMekhalas.map(
-            (
-              mekhala,
-              index,
-            ) => (
-              <MekhalaCard
-                key={
-                  mekhala.id
-                }
-                mekhala={
-                  mekhala
-                }
-                index={
-                  index
-                }
-                cardNumber={
-                  pageIndex *
-                    CARDS_PER_PAGE +
-                  index +
-                  1
-                }
-              />
-            ),
-          )}
+          <MekhalaCard
+            mekhala={mekhala}
+            index={index}
+            cardNumber={
+              pageIndex *
+                CARDS_PER_PAGE +
+              index +
+              1
+            }
+          />
         </div>
+      ),
+    )}
+  </div>
+</div>
 
 
         {/* =====================================
