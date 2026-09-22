@@ -14,7 +14,9 @@ import {
   Trophy,
   Users,
 } from "lucide-react";
-
+import {
+  subscribeToPublishedMekhalaMarks,
+} from "@/lib/competitionService";
 /* =========================================================
    SETTINGS
 ========================================================= */
@@ -35,456 +37,194 @@ const MEKHALA_GROUP_TIME = 10500;
    Later replace this with Firebase data.
 ========================================================= */
 
-const mekhalaData = [
-  {
-    id: "pothencode",
-    name: "Pothencode Mekhala",
-    madrasas: 40,
+function buildMekhalaScoreboard(
+  marks,
+) {
+  const mekhalaMap =
+    new Map();
 
-    winners: [
-      {
-        item: "Speech",
-        category: "Junior",
-        student: "Muhammed Jasim",
-      },
-      {
-        item: "Quran",
-        category: "Sub Junior",
-        student: "Najin Rahman",
-      },
-      {
-        item: "Mappilappattu",
-        category: "Senior",
-        student: "Shamil",
-      },
-      {
-        item: "Arabic Song",
-        category: "Super Senior",
-        student: "Rizwan",
-      },
-      {
-        item: "Essay",
-        category: "Senior",
-        student: "Safwan",
-      },
-      {
-        item: "Quiz",
-        category: "Junior",
-        student: "Adhil",
-      },
-      {
-        item: "Story Telling",
-        category: "Sub Junior",
-        student: "Salman",
-      },
-      {
-        item: "Duff Muttu",
-        category: "Senior",
-        student: "Shihab",
-      },
-      {
-        item: "Calligraphy",
-        category: "Junior",
-        student: "Rayan",
-      },
-      {
-        item: "Hifz",
-        category: "Junior",
-        student: "Muadh",
-      },
-      {
-        item: "Elocution",
-        category: "Senior",
-        student: "Suhail",
-      },
-      {
-        item: "Nasheed",
-        category: "Super Senior",
-        student: "Hamdan",
-      },
-    ],
-  },
+  marks.forEach(
+    (mark) => {
+      const mekhalaId =
+        mark?.mekhalaId ||
+        mark?.mekhalaName;
 
-  {
-    id: "kaniyapuram",
-    name: "Kaniyapuram Mekhala",
-    madrasas: 36,
+      if (!mekhalaId) {
+        return;
+      }
 
-    winners: [
-      {
-        item: "Speech",
-        category: "Sub Junior",
-        student: "Fadil",
-      },
-      {
-        item: "Quran",
-        category: "Junior",
-        student: "Muhsin",
-      },
-      {
-        item: "Mappilappattu",
-        category: "Senior",
-        student: "Shafeek",
-      },
-      {
-        item: "Arabic Song",
-        category: "Super Senior",
-        student: "Nihal",
-      },
-      {
-        item: "Essay",
-        category: "Junior",
-        student: "Ameen",
-      },
-      {
-        item: "Quiz",
-        category: "Junior",
-        student: "Hashim",
-      },
-      {
-        item: "Story Telling",
-        category: "Sub Junior",
-        student: "Zayan",
-      },
-      {
-        item: "Duff Muttu",
-        category: "Senior",
-        student: "Sameer",
-      },
-      {
-        item: "Calligraphy",
-        category: "Junior",
-        student: "Fahad",
-      },
-      {
-        item: "Hifz",
-        category: "Junior",
-        student: "Rashid",
-      },
-      {
-        item: "Elocution",
-        category: "Senior",
-        student: "Noufal",
-      },
-      {
-        item: "Nasheed",
-        category: "Super Senior",
-        student: "Ilyas",
-      },
-    ],
-  },
+      const mekhalaName =
+        mark?.mekhalaName ||
+        "Mekhala";
 
-  {
-    id: "POOVACHAL",
-    name: "POOVACHAL Mekhala",
-    madrasas: 31,
+      if (
+        !mekhalaMap.has(
+          mekhalaId,
+        )
+      ) {
+        mekhalaMap.set(
+          mekhalaId,
+          {
+            id: mekhalaId,
+            name: mekhalaName,
+            madrasas:
+              new Set(),
+            winners:
+              new Map(),
+          },
+        );
+      }
 
-    winners: [
-      {
-        item: "Speech",
-        category: "Junior",
-        student: "Shamil",
-      },
-      {
-        item: "Quran",
-        category: "Junior",
-        student: "Ramees",
-      },
-      {
-        item: "Essay",
-        category: "Sub Junior",
-        student: "Fathima",
-      },
-      {
-        item: "Quiz",
-        category: "Senior",
-        student: "Ashraf",
-      },
-      {
-        item: "Hifz",
-        category: "Junior",
-        student: "Nihal",
-      },
-      {
-        item: "Story Telling",
-        category: "Sub Junior",
-        student: "Aysha",
-      },
-      {
-        item: "Adhan",
-        category: "Junior",
-        student: "Sajid",
-      },
-      {
-        item: "Recitation",
-        category: "Senior",
-        student: "Naseem",
-      },
-      {
-        item: "Drawing",
-        category: "Sub Junior",
-        student: "Hiba",
-      },
-      {
-        item: "Calligraphy",
-        category: "Senior",
-        student: "Adnan",
-      },
-      {
-        item: "Madh Song",
-        category: "Junior",
-        student: "Fayas",
-      },
-      {
-        item: "Arabic Song",
-        category: "Senior",
-        student: "Afnan",
-      },
-    ],
-  },
+      const mekhala =
+        mekhalaMap.get(
+          mekhalaId,
+        );
 
-  {
-    id: "nedumangad",
-    name: "Nedumangad Mekhala",
-    madrasas: 34,
 
-    winners: [
-      {
-        item: "Speech",
-        category: "Senior",
-        student: "Adhil",
-      },
-      {
-        item: "Quran",
-        category: "Sub Junior",
-        student: "Hanan",
-      },
-      {
-        item: "Story Telling",
-        category: "Junior",
-        student: "Rishal",
-      },
-      {
-        item: "Essay",
-        category: "Junior",
-        student: "Nabeel",
-      },
-      {
-        item: "Quiz",
-        category: "Senior",
-        student: "Irshad",
-      },
-      {
-        item: "Hifz",
-        category: "Junior",
-        student: "Amaan",
-      },
-      {
-        item: "Adhan",
-        category: "Junior",
-        student: "Sahil",
-      },
-      {
-        item: "Madh Song",
-        category: "Senior",
-        student: "Riyas",
-      },
-      {
-        item: "Recitation",
-        category: "Junior",
-        student: "Naufal",
-      },
-      {
-        item: "Drawing",
-        category: "Sub Junior",
-        student: "Rifa",
-      },
-      {
-        item: "Calligraphy",
-        category: "Senior",
-        student: "Shameem",
-      },
-      {
-        item: "Arabic Song",
-        category: "Senior",
-        student: "Nizam",
-      },
-    ],
-  },
+      /* =====================================
+         MADRASA COUNT
+      ====================================== */
 
-  {
-    id: "attingal",
-    name: "Attingal Mekhala",
-    madrasas: 29,
+      if (mark?.madarsaId) {
+        mekhala.madrasas.add(
+          mark.madarsaId,
+        );
+      }
 
-    winners: [
-      {
-        item: "Speech",
-        category: "Sub Junior",
-        student: "Shameem",
-      },
-      {
-        item: "Quran",
-        category: "Senior",
-        student: "Najla",
-      },
-      {
-        item: "Essay",
-        category: "Junior",
-        student: "Fawaz",
-      },
-      {
-        item: "Quiz",
-        category: "Junior",
-        student: "Basith",
-      },
-      {
-        item: "Hifz",
-        category: "Super Senior",
-        student: "Shanid",
-      },
-      {
-        item: "Story Telling",
-        category: "Sub Junior",
-        student: "Rifna",
-      },
-      {
-        item: "Adhan",
-        category: "Junior",
-        student: "Ramees",
-      },
-      {
-        item: "Recitation",
-        category: "Senior",
-        student: "Nihala",
-      },
-      {
-        item: "Drawing",
-        category: "Junior",
-        student: "Farhan",
-      },
-      {
-        item: "Calligraphy",
-        category: "Junior",
-        student: "Ashiq",
-      },
-      {
-        item: "Madh Song",
-        category: "Senior",
-        student: "Rifas",
-      },
-      {
-        item: "Arabic Song",
-        category: "Super Senior",
-        student: "Amina",
-      },
-    ],
-  },
 
-  /* =======================================================
-     SECOND 5 CARDS
-  ======================================================= */
+      /* =====================================
+         ITEM + CATEGORY KEY
+      ====================================== */
 
-  {
-    id: "Navayikkulam",
-    name: "Navayikkulam Mekhala",
-    madrasas: 27,
-    winners: [
-      { item: "Speech", category: "Junior", student: "Afsal" },
-      { item: "Quran", category: "Sub Junior", student: "Shamil" },
-      { item: "Essay", category: "Senior", student: "Rashid" },
-      { item: "Quiz", category: "Junior", student: "Favas" },
-      { item: "Hifz", category: "Junior", student: "Muhsin" },
-      { item: "Story Telling", category: "Sub Junior", student: "Rifna" },
-      { item: "Adhan", category: "Senior", student: "Shafeek" },
-      { item: "Recitation", category: "Junior", student: "Ameen" },
-      { item: "Drawing", category: "Sub Junior", student: "Hiba" },
-      { item: "Calligraphy", category: "Senior", student: "Nihal" },
-      { item: "Madh Song", category: "Junior", student: "Noufal" },
-      { item: "Arabic Song", category: "Senior", student: "Sameer" },
-    ],
-  },
+      const eventName =
+        mark?.eventName ||
+        "Competition Item";
 
-  {
-    id: "PERINGAMMALA",
-    name: "PERINGAMMALA Mekhala",
-    madrasas: 33,
-    winners: [
-      { item: "Speech", category: "Senior", student: "Aman" },
-      { item: "Quran", category: "Junior", student: "Aadil" },
-      { item: "Essay", category: "Junior", student: "Nabil" },
-      { item: "Quiz", category: "Senior", student: "Shiyas" },
-      { item: "Hifz", category: "Junior", student: "Fadil" },
-      { item: "Story Telling", category: "Sub Junior", student: "Hana" },
-      { item: "Adhan", category: "Junior", student: "Rafi" },
-      { item: "Recitation", category: "Senior", student: "Ajmal" },
-      { item: "Drawing", category: "Junior", student: "Aysha" },
-      { item: "Calligraphy", category: "Senior", student: "Anas" },
-      { item: "Madh Song", category: "Junior", student: "Navas" },
-      { item: "Arabic Song", category: "Senior", student: "Faizal" },
-    ],
-  },
+      const category =
+        mark?.category ||
+        "General";
 
-  {
-    id: "Tholikode",
-    name: "Tholikode Mekhala",
-    madrasas: 30,
-    winners: [
-      { item: "Speech", category: "Junior", student: "Muneer" },
-      { item: "Quran", category: "Senior", student: "Hafiz" },
-      { item: "Essay", category: "Sub Junior", student: "Fathima" },
-      { item: "Quiz", category: "Junior", student: "Adhil" },
-      { item: "Hifz", category: "Senior", student: "Basheer" },
-      { item: "Story Telling", category: "Junior", student: "Amina" },
-      { item: "Adhan", category: "Junior", student: "Yaseen" },
-      { item: "Recitation", category: "Senior", student: "Rashad" },
-      { item: "Drawing", category: "Sub Junior", student: "Rifa" },
-      { item: "Calligraphy", category: "Junior", student: "Fayaz" },
-      { item: "Madh Song", category: "Senior", student: "Junaid" },
-      { item: "Arabic Song", category: "Senior", student: "Sameer" },
-    ],
-  },
+      const key =
+        `${
+          mark?.eventId ||
+          eventName
+        }__${category}`;
 
-  {
-    id: "kallara",
-    name: "Kallara Mekhala",
-    madrasas: 25,
-    winners: [
-      { item: "Speech", category: "Senior", student: "Sahal" },
-      { item: "Quran", category: "Junior", student: "Rafi" },
-      { item: "Essay", category: "Sub Junior", student: "Nasrin" },
-      { item: "Quiz", category: "Senior", student: "Nizam" },
-      { item: "Hifz", category: "Junior", student: "Shamil" },
-      { item: "Story Telling", category: "Sub Junior", student: "Hana" },
-      { item: "Adhan", category: "Junior", student: "Amaan" },
-      { item: "Recitation", category: "Senior", student: "Favas" },
-      { item: "Drawing", category: "Junior", student: "Hiba" },
-      { item: "Calligraphy", category: "Senior", student: "Faris" },
-      { item: "Madh Song", category: "Junior", student: "Adnan" },
-      { item: "Arabic Song", category: "Senior", student: "Rashid" },
-    ],
-  },
 
-  {
-    id: "KILIMANOOR",
-    name: "KILIMANOOR Mekhala",
-    madrasas: 32,
-    winners: [
-      { item: "Speech", category: "Junior", student: "Afnan" },
-      { item: "Quran", category: "Sub Junior", student: "Nihal" },
-      { item: "Essay", category: "Senior", student: "Fawas" },
-      { item: "Quiz", category: "Junior", student: "Ramees" },
-      { item: "Hifz", category: "Senior", student: "Rizwan" },
-      { item: "Story Telling", category: "Junior", student: "Rinsha" },
-      { item: "Adhan", category: "Junior", student: "Ashraf" },
-      { item: "Recitation", category: "Senior", student: "Suhail" },
-      { item: "Drawing", category: "Sub Junior", student: "Amina" },
-      { item: "Calligraphy", category: "Junior", student: "Haris" },
-      { item: "Madh Song", category: "Senior", student: "Shameem" },
-      { item: "Arabic Song", category: "Senior", student: "Noufal" },
-    ],
-  },
-];
+      /* =====================================
+         STUDENT NAME
+      ====================================== */
+
+      const studentName =
+        Array.isArray(
+          mark?.students,
+        ) &&
+        mark.students.length >
+          0
+          ? mark.students
+              .map(
+                (student) =>
+                  student?.name,
+              )
+              .filter(Boolean)
+              .join(", ")
+          : mark?.studentName ||
+            "Student";
+
+
+      const score =
+        Number(
+          mark?.total ??
+            mark?.finalScore ??
+            0,
+        ) || 0;
+
+
+      const existing =
+        mekhala.winners.get(
+          key,
+        );
+
+
+      /* =====================================
+         KEEP HIGHEST SCORE
+         = FIRST PRIZE
+      ====================================== */
+
+      if (
+        !existing ||
+        score >
+          existing.score
+      ) {
+        mekhala.winners.set(
+          key,
+          {
+            id: mark.id,
+
+            item:
+              eventName,
+
+            category,
+
+            student:
+              studentName,
+
+            madarsaId:
+              mark?.madarsaId ||
+              "",
+
+            madarsaName:
+              mark?.madarsaName ||
+              "",
+
+            score,
+
+            grade:
+              mark?.grade ||
+              "",
+
+            students:
+              mark?.students ||
+              [],
+          },
+        );
+      }
+    },
+  );
+
+
+  return Array.from(
+    mekhalaMap.values(),
+  )
+    .map(
+      (mekhala) => ({
+        id:
+          mekhala.id,
+
+        name:
+          mekhala.name,
+
+        madrasas:
+          mekhala.madrasas
+            .size,
+
+        winners:
+          Array.from(
+            mekhala.winners.values(),
+          ),
+      }),
+    )
+    .filter(
+      (mekhala) =>
+        mekhala.winners
+          .length > 0,
+    )
+    .sort((a, b) =>
+      a.name.localeCompare(
+        b.name,
+      ),
+    );
+}
 
 
 /* =========================================================
@@ -493,16 +233,16 @@ const mekhalaData = [
 
 function getCategoryClass(category) {
   switch (category) {
-    case "Sub Junior":
+    case "subJunior":
       return "bg-emerald-50 text-emerald-700";
 
-    case "Junior":
+    case "junior":
       return "bg-amber-50 text-amber-700";
 
-    case "Senior":
+    case "senior":
       return "bg-blue-50 text-blue-700";
 
-    case "Super Senior":
+    case "higher":
       return "bg-violet-50 text-violet-700";
 
     default:
@@ -649,9 +389,7 @@ function MekhalaCard({
       />
 
 
-      {/* =====================================
-          NUMBER BADGE
-      ====================================== */}
+
 
      
 
@@ -671,7 +409,7 @@ function MekhalaCard({
           to-[#0b6b59]
           px-5
           pb-5
-          pt-10
+          pt-8
           text-white
         "
       >
@@ -695,7 +433,7 @@ function MekhalaCard({
             className="
               mb-3
               flex
-              h-10
+              h-5
               w-10
               items-center
               justify-center
@@ -724,22 +462,7 @@ function MekhalaCard({
           </h3>
 
 
-          <div
-            className="
-              mt-3
-              flex
-              items-center
-              gap-2
-              text-[11px]
-              text-white/70
-            "
-          >
-            <Users className="h-3.5 w-3.5" />
-
-            <span>
-              {mekhala.madrasas} Madrasas
-            </span>
-          </div>
+          
         </div>
       </div>
 
@@ -866,8 +589,16 @@ function MekhalaCard({
                         winner.category,
                       )}
                     `}
-                  >
-                    {winner.category}
+                  >{winner.category === "subJunior"
+  ? "Sub Junior"
+  : winner.category === "junior"
+  ? "Junior"
+  : winner.category === "senior"
+  ? "Senior"
+  : winner.category === "higher"
+  ? "Higher"
+  : winner.category}
+                    
                   </span>
                 </div>
 
@@ -891,16 +622,30 @@ function MekhalaCard({
                     "
                   />
 
-                  <span
-                    className="
-                      truncate
-                      text-[11px]
-                      font-bold
-                      text-[#153d34]
-                    "
-                  >
-                    {winner.student}
-                  </span>
+                <div className="min-w-0">
+  <p
+    className="
+      truncate
+      text-[11px]
+      font-bold
+      text-[#153d34]
+    "
+  >
+    {winner.student}
+  </p>
+
+  <p
+    className="
+      mt-0.5
+      truncate
+      text-[8px]
+      text-[#7d8984]
+    "
+  >
+    {winner.madarsaId ||
+      ""}
+  </p>
+</div>
                 </div>
               </div>
             ),
@@ -1039,6 +784,7 @@ function MekhalaCard({
           )}
         </div>
       </div>
+      
     </article>
     </Link>
   );
@@ -1051,17 +797,119 @@ function MekhalaCard({
 
 export default function ThanfaseLiveScoreboard() {
   const [
+    publishedMarks,
+    setPublishedMarks,
+  ] = useState([]);
+
+  const [
+    loading,
+    setLoading,
+  ] = useState(true);
+
+  const [
+    loadError,
+    setLoadError,
+  ] = useState("");
+
+  const [
     pageIndex,
     setPageIndex,
   ] = useState(0);
 
 
-  const totalPages =
-    Math.ceil(
-      mekhalaData.length /
-        CARDS_PER_PAGE,
+  /* =========================================
+     LIVE PUBLISHED RESULTS
+  ========================================= */
+
+  useEffect(() => {
+    const unsubscribe =
+      subscribeToPublishedMekhalaMarks(
+        (data) => {
+          setPublishedMarks(
+            Array.isArray(data)
+              ? data
+              : [],
+          );
+
+          setLoading(false);
+          setLoadError("");
+        },
+
+        (error) => {
+          console.error(
+            "Live Mekhala result error:",
+            error,
+          );
+
+          setPublishedMarks([]);
+          setLoading(false);
+
+          setLoadError(
+            "Unable to load live results.",
+          );
+        },
+      );
+
+    return () => {
+      if (
+        typeof unsubscribe ===
+        "function"
+      ) {
+        unsubscribe();
+      }
+    };
+  }, []);
+
+
+  /* =========================================
+     BUILD MEKHALA DATA
+     Must be declared BEFORE totalPages.
+  ========================================= */
+
+  const mekhalaData =
+    useMemo(
+      () =>
+        buildMekhalaScoreboard(
+          publishedMarks,
+        ),
+      [publishedMarks],
     );
 
+
+  /* =========================================
+     TOTAL PAGES
+  ========================================= */
+
+  const totalPages =
+    Math.max(
+      1,
+      Math.ceil(
+        mekhalaData.length /
+          CARDS_PER_PAGE,
+      ),
+    );
+
+
+  /* =========================================
+     KEEP PAGE INDEX VALID
+  ========================================= */
+
+  useEffect(() => {
+    if (
+      pageIndex >=
+      totalPages
+    ) {
+      setPageIndex(0);
+    }
+  }, [
+    pageIndex,
+    totalPages,
+  ]);
+
+
+  /* =========================================
+     CURRENT 5 MEKHALAS
+  ========================================= */
 
   const currentMekhalas =
     useMemo(() => {
@@ -1076,6 +924,7 @@ export default function ThanfaseLiveScoreboard() {
       );
     }, [
       pageIndex,
+      mekhalaData,
     ]);
 
 
@@ -1325,9 +1174,140 @@ Tanafus Live
 
 
         {/* =====================================
+            LOADING / ERROR / EMPTY STATES
+        ====================================== */}
+
+        {loading && (
+          <div
+            className="
+              mx-auto
+              mb-8
+              max-w-2xl
+              rounded-2xl
+              border
+              border-[#e1d4af]
+              bg-[#fffdf8]
+              px-6
+              py-10
+              text-center
+              shadow-sm
+            "
+          >
+            <div
+              className="
+                mx-auto
+                h-8
+                w-8
+                animate-spin
+                rounded-full
+                border-2
+                border-[#d9c27e]
+                border-t-[#075447]
+              "
+            />
+
+            <p
+              className="
+                mt-4
+                text-sm
+                font-semibold
+                text-[#49665d]
+              "
+            >
+              Loading published Mekhala results…
+            </p>
+          </div>
+        )}
+
+
+        {!loading && loadError && (
+          <div
+            className="
+              mx-auto
+              mb-8
+              max-w-2xl
+              rounded-2xl
+              border
+              border-red-200
+              bg-red-50
+              px-6
+              py-8
+              text-center
+            "
+          >
+            <p
+              className="
+                text-sm
+                font-semibold
+                text-red-700
+              "
+            >
+              {loadError}
+            </p>
+          </div>
+        )}
+
+
+        {!loading &&
+          !loadError &&
+          mekhalaData.length === 0 && (
+          <div
+            className="
+              mx-auto
+              mb-8
+              max-w-2xl
+              rounded-2xl
+              border
+              border-dashed
+              border-[#d3bd7d]
+              bg-[#fffdf8]
+              px-6
+              py-10
+              text-center
+            "
+          >
+            <Trophy
+              className="
+                mx-auto
+                h-8
+                w-8
+                text-[#b68a29]
+              "
+            />
+
+            <h3
+              className="
+                mt-3
+                font-serif
+                text-lg
+                font-bold
+                text-[#17483d]
+              "
+            >
+              Results Coming Soon
+            </h3>
+
+            <p
+              className="
+                mt-2
+                text-sm
+                text-[#74807a]
+              "
+            >
+              Published Mekhala Fest results
+              will appear here.
+            </p>
+          </div>
+        )}
+
+
+        {/* =====================================
             5 MEKHALA CARDS
         ====================================== */}
 
+        {!loading &&
+          !loadError &&
+          mekhalaData.length > 0 && (
         <div
   className="
     w-full
@@ -1376,6 +1356,7 @@ Tanafus Live
     )}
   </div>
 </div>
+        )}
 
 
         {/* =====================================
@@ -1402,7 +1383,9 @@ Tanafus Live
           >
             {Array.from({
               length:
-                totalPages,
+                mekhalaData.length > 0
+                  ? totalPages
+                  : 0,
             }).map(
               (
                 _,
@@ -1465,53 +1448,55 @@ Tanafus Live
             "
           >
             
-
-            The results shown above are for demonstration only.<br/>
-Please share your Mekhala Fest result list with us to update the official scoreboard.
+Please share your Mekhala Fest result<br/> list with us to update the official scoreboard.
           </div>
 
-          <p
-            className="
-              text-[11px]
-              text-[#89918d]
-            "
-          >
-            Showing Mekhalas{" "}
-            {pageIndex *
-              CARDS_PER_PAGE +
-              1}
-            –
-            {Math.min(
-              (pageIndex + 1) *
-                CARDS_PER_PAGE,
-              mekhalaData.length,
-            )}
-          </p>
+          {mekhalaData.length > 0 && (
+            <p
+              className="
+                text-[11px]
+                text-[#89918d]
+              "
+            >
+              Showing Mekhalas{" "}
+              {pageIndex *
+                CARDS_PER_PAGE +
+                1}
+              –
+              {Math.min(
+                (pageIndex + 1) *
+                  CARDS_PER_PAGE,
+                mekhalaData.length,
+              )}
+            </p>
+          )}
 
 
           {/* AUTO PROGRESS */}
 
-          <div
-            key={`progress-${pageIndex}`}
-            className="
-              h-[3px]
-              w-[240px]
-              overflow-hidden
-              rounded-full
-              bg-[#ddd6c4]
-            "
-          >
+          {mekhalaData.length > 0 && (
             <div
+              key={`progress-${pageIndex}`}
               className="
-                mekhala-progress
-                h-full
+                h-[3px]
+                w-[240px]
+                overflow-hidden
                 rounded-full
-                bg-gradient-to-r
-                from-[#b98b28]
-                to-[#075447]
+                bg-[#ddd6c4]
               "
-            />
-          </div>
+            >
+              <div
+                className="
+                  mekhala-progress
+                  h-full
+                  rounded-full
+                  bg-gradient-to-r
+                  from-[#b98b28]
+                  to-[#075447]
+                "
+              />
+            </div>
+          )}
         </div>
       </div>
 

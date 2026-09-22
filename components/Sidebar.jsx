@@ -826,6 +826,7 @@ const Sidebar = ({ isOpen, onClose }) => {
             ...(compVis.mekhala ? [
               { type: "separator", label: "Competition التنافس", groupKey: "competition" },
               { name: "Competition", href: "/dashboard/mekhala-portal/competition", icon: Trophy, group: "competition" },
+              { name: "Verifed-Result", href: "/dashboard/mekhala-portal/verifed-result", icon: Trophy, group: "competition" },
             ] : []),
           ];
         }

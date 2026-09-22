@@ -78,6 +78,13 @@ export default function MekhalaCompetitionPage() {
   const [savingId, setSavingId]           = useState(null);
   const [deleteMarkTarget, setDeleteMarkTarget] = useState(null);
   const [allMyMadrasas, setAllMyMadrasas] = useState([]);
+  const [selectedItem, setSelectedItem] = useState("all");
+const [openItem, setOpenItem] = useState(false);
+
+const [selectedCategory, setSelectedCategory] = useState("all");
+const [openCategory, setOpenCategory] = useState(false);
+
+const [studentSearch, setStudentSearch] = useState("");
 
   const mekhalaName = userData?.mekhalaName || userData?.mekhala || userData?.name || "";
 
@@ -184,17 +191,151 @@ export default function MekhalaCompetitionPage() {
     });
   }, [marks]);
 
+
+const uniqueItems = useMemo(() => {
+  const map = new Map();
+
+  registrations.forEach((reg) => {
+    const id =
+      reg.eventId ||
+      reg.itemId ||
+      reg.eventName ||
+      reg.itemName;
+
+    const name =
+      reg.eventName ||
+      reg.itemName ||
+      reg.event ||
+      reg.item;
+
+    if (id && name) {
+      map.set(id, {
+        id,
+        name,
+      });
+    }
+  });
+
+  return Array.from(map.values()).sort((a, b) =>
+    a.name.localeCompare(b.name),
+  );
+}, [registrations]);
+
+
+const uniqueCategories = useMemo(() => {
+  return [
+    ...new Set(
+      registrations
+        .map((reg) => reg.category)
+        .filter(Boolean),
+    ),
+  ].sort();
+}, [registrations]);
+
+
   // Madrasa dropdown: ALL madarsas in the mekhala, sorted by name
   const uniqueMadarsas = useMemo(() =>
     allMyMadrasas
-      .map((m) => ({ id: m.id, name: m.madarsaName || m.name, midCode: m.midNumber || m.midCode }))
+      .map((m) => ({ id: m.id, name: m.madarsaName || m.name, midCode: m.madarsaId || m.midCode }))
       .sort((a, b) => a.name.localeCompare(b.name)),
     [allMyMadrasas]
   );
 
-  const filteredRegs = selectedMadrasa === "all"
-    ? registrations
-    : registrations.filter((r) => r.madarsaId === selectedMadrasa);
+const filteredRegistrations = useMemo(() => {
+  const search = studentSearch
+    .trim()
+    .toLowerCase();
+
+  return registrations.filter((reg) => {
+    /* =====================================
+       MADRASA
+    ====================================== */
+
+    if (
+      selectedMadrasa !== "all" &&
+      reg.madarsaId !== selectedMadrasa
+    ) {
+      return false;
+    }
+
+
+    /* =====================================
+       ITEM
+    ====================================== */
+
+    const registrationItemId =
+      reg.eventId ||
+      reg.itemId ||
+      reg.eventName ||
+      reg.itemName;
+
+    if (
+      selectedItem !== "all" &&
+      registrationItemId !== selectedItem
+    ) {
+      return false;
+    }
+
+
+    /* =====================================
+       CATEGORY
+    ====================================== */
+
+    if (
+      selectedCategory !== "all" &&
+      reg.category !== selectedCategory
+    ) {
+      return false;
+    }
+
+
+    /* =====================================
+       STUDENT SEARCH
+    ====================================== */
+
+    if (search) {
+      const studentText = Array.isArray(reg.students)
+        ? reg.students
+            .map((student) =>
+              [
+                student?.name,
+                student?.studentName,
+                student?.id,
+                student?.studentId,
+              ]
+                .filter(Boolean)
+                .join(" "),
+            )
+            .join(" ")
+        : "";
+
+      const searchableText = [
+        studentText,
+        reg.studentName,
+        reg.participantName,
+        reg.studentId,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      if (!searchableText.includes(search)) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+}, [
+  registrations,
+  selectedMadrasa,
+  selectedItem,
+  selectedCategory,
+  studentSearch,
+]);
+
+
+  
 
   const existingMark = (regId) => marks.find((m) => m.registrationId === regId);
   const getInput     = (regId) => markInputs[regId] || { mark1: "", mark2: "", mark3: "" };
@@ -303,89 +444,467 @@ export default function MekhalaCompetitionPage() {
         </div>
 
         {/* Madrasa filter */}
-        <div className="flex items-center gap-3 flex-wrap bg-gray-50 border rounded-lg px-4 py-3">
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-500">Filter by Madrasa:</span>
-              <Popover open={openMadrasa} onOpenChange={setOpenMadrasa}>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    role="combobox"
-                    aria-expanded={openMadrasa}
-                    className="w-[300px] justify-between bg-white text-sm md:text-base border-teal-200 hover:border-teal-300 hover:bg-teal-50 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-teal-600 focus-visible:border-teal-600 font-normal text-slate-700"
+        <div
+  className="
+    flex
+    flex-wrap
+    items-end
+    gap-3
+    rounded-xl
+    border
+    border-slate-200
+    bg-gradient-to-r
+    from-slate-50
+    to-teal-50/40
+    px-4
+    py-4
+    shadow-sm
+  "
+>
+  {/* =====================================
+      MADRASA FILTER
+  ====================================== */}
+
+  <div className="flex flex-col gap-1.5">
+    <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+      Madrasa
+    </span>
+
+    <Popover
+      open={openMadrasa}
+      onOpenChange={setOpenMadrasa}
+    >
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={openMadrasa}
+          className="
+            w-[280px]
+            justify-between
+            border-teal-200
+            bg-white
+            font-normal
+            text-slate-700
+            hover:border-teal-300
+            hover:bg-teal-50
+          "
+        >
+          <span className="truncate">
+            {selectedMadrasa === "all"
+              ? `All Madrasas (${uniqueMadarsas.length})`
+              : (() => {
+                  const madrasa =
+                    uniqueMadarsas.find(
+                      (m) =>
+                        m.id ===
+                        selectedMadrasa,
+                    );
+
+                  return madrasa
+                    ? `${madrasa.name}${
+                        madrasa.midCode
+                          ? ` (${madrasa.midCode})`
+                          : ""
+                      }`
+                    : "Select Madrasa...";
+                })()}
+          </span>
+
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+
+      <PopoverContent className="w-[300px] p-0">
+        <Command>
+          <CommandInput
+            className="bg-white"
+            placeholder="Search madrasa..."
+          />
+
+          <CommandList className="bg-white">
+            <CommandEmpty>
+              No madrasas found.
+            </CommandEmpty>
+
+            <CommandGroup>
+              <CommandItem
+                value="all"
+                onSelect={() => {
+                  setSelectedMadrasa("all");
+                  setOpenMadrasa(false);
+                }}
+              >
+                <Check
+                  className={cn(
+                    "mr-2 h-4 w-4",
+                    selectedMadrasa === "all"
+                      ? "opacity-100"
+                      : "opacity-0",
+                  )}
+                />
+
+                All Madrasas ({uniqueMadarsas.length})
+              </CommandItem>
+
+              {uniqueMadarsas.map((m) => (
+                <CommandItem
+                  key={m.id}
+                  value={`${m.id} ${m.name} ${m.midCode || ""}`}
+                  className="flex flex-col items-start gap-1 py-2"
+                  onSelect={() => {
+                    setSelectedMadrasa(m.id);
+                    setOpenMadrasa(false);
+                  }}
+                >
+                  <div className="flex w-full items-center">
+                    <Check
+                      className={cn(
+                        "mr-2 h-4 w-4 shrink-0",
+                        selectedMadrasa === m.id
+                          ? "opacity-100"
+                          : "opacity-0",
+                      )}
+                    />
+
+                    <span className="whitespace-normal break-words text-sm font-medium text-slate-800">
+                      {m.name}
+                    </span>
+                  </div>
+
+                  {m.midCode && (
+                    <span
+                      className="
+                        ml-6
+                        rounded-md
+                        border
+                        border-amber-200
+                        bg-amber-50
+                        px-2
+                        py-0.5
+                        text-[10px]
+                        font-semibold
+                        text-amber-700
+                      "
+                    >
+                      {m.midCode}
+                    </span>
+                  )}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  </div>
+
+
+  {/* =====================================
+      ITEM FILTER
+  ====================================== */}
+
+  <div className="flex flex-col gap-1.5">
+    <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+      Item
+    </span>
+
+    <Popover
+      open={openItem}
+      onOpenChange={setOpenItem}
+    >
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          className="
+            w-[220px]
+            justify-between
+            border-teal-200
+            bg-white
+            font-normal
+            text-slate-700
+            hover:bg-teal-50
+          "
+        >
+          <span className="truncate">
+            {selectedItem === "all"
+              ? `All Items (${uniqueItems.length})`
+              : uniqueItems.find(
+                    (item) =>
+                      item.id === selectedItem,
+                  )?.name || "Select Item"}
+          </span>
+
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+
+      <PopoverContent className="w-[260px] p-0">
+        <Command>
+          <CommandInput placeholder="Search item..." />
+
+          <CommandList>
+            <CommandEmpty>
+              No items found.
+            </CommandEmpty>
+
+            <CommandGroup>
+              <CommandItem
+                value="all"
+                onSelect={() => {
+                  setSelectedItem("all");
+                  setOpenItem(false);
+                }}
+              >
+                <Check
+                  className={cn(
+                    "mr-2 h-4 w-4",
+                    selectedItem === "all"
+                      ? "opacity-100"
+                      : "opacity-0",
+                  )}
+                />
+
+                All Items ({uniqueItems.length})
+              </CommandItem>
+
+              {uniqueItems.map((item) => (
+                <CommandItem
+                  key={item.id}
+                  value={`${item.id} ${item.name}`}
+                  onSelect={() => {
+                    setSelectedItem(item.id);
+                    setOpenItem(false);
+                  }}
+                >
+                  <Check
+                    className={cn(
+                      "mr-2 h-4 w-4",
+                      selectedItem === item.id
+                        ? "opacity-100"
+                        : "opacity-0",
+                    )}
+                  />
+
+                  {item.name}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  </div>
+
+
+  {/* =====================================
+      CATEGORY FILTER
+  ====================================== */}
+
+  <div className="flex flex-col gap-1.5">
+    <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+      Category
+    </span>
+
+    <Popover
+      open={openCategory}
+      onOpenChange={setOpenCategory}
+    >
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          className="
+            w-[190px]
+            justify-between
+            border-teal-200
+            bg-white
+            font-normal
+            text-slate-700
+            hover:bg-teal-50
+          "
+        >
+          <span className="truncate">
+            {selectedCategory === "all"
+              ? `All Categories (${uniqueCategories.length})`
+              : CATEGORIES?.[selectedCategory]
+                  ?.label ||
+                selectedCategory}
+          </span>
+
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+
+      <PopoverContent className="w-[220px] p-0">
+        <Command>
+          <CommandInput placeholder="Search category..." />
+
+          <CommandList>
+            <CommandEmpty>
+              No categories found.
+            </CommandEmpty>
+
+            <CommandGroup>
+              <CommandItem
+                value="all"
+                onSelect={() => {
+                  setSelectedCategory("all");
+                  setOpenCategory(false);
+                }}
+              >
+                <Check
+                  className={cn(
+                    "mr-2 h-4 w-4",
+                    selectedCategory === "all"
+                      ? "opacity-100"
+                      : "opacity-0",
+                  )}
+                />
+
+                All Categories
+              </CommandItem>
+
+              {uniqueCategories.map(
+                (category) => (
+                  <CommandItem
+                    key={category}
+                    value={`${category} ${
+                      CATEGORIES?.[category]
+                        ?.label || ""
+                    }`}
+                    onSelect={() => {
+                      setSelectedCategory(
+                        category,
+                      );
+                      setOpenCategory(false);
+                    }}
                   >
-                    {selectedMadrasa === "all"
-                      ? `All Madarsas (${uniqueMadarsas.length})`
-                      : (() => {
-                          const m = uniqueMadarsas.find((m) => m.id === selectedMadrasa);
-                          return m ? `${m.name} ${m.midCode ? `(${m.midCode})` : ""}` : "Select Madrasa...";
-                        })()
-                    }
-                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-[300px] p-0">
-                  <Command>
-                    <CommandInput className="bg-white" placeholder="Search madrasa..." />
-                    <CommandList className="bg-white scrollbar-hide">
-                      <CommandEmpty>No madrasas found.</CommandEmpty>
-                      <CommandGroup>
-                        <CommandItem
-                          value="all"
-                          className="bg-white"
-                          onSelect={() => {
-                            setSelectedMadrasa("all");
-                            setOpenMadrasa(false);
-                          }}
-                        >
-                          <Check
-                            className={cn(
-                              "mr-2 h-4 w-4",
-                              selectedMadrasa === "all" ? "opacity-100" : "opacity-0"
-                            )}
-                          />
-                          All Madarsas ({uniqueMadarsas.length})
-                        </CommandItem>
-                        {uniqueMadarsas.map((m) => (
-                          <CommandItem
-                            key={m.id}
-                            value={`${m.id} ${m.name} ${m.midCode || ""}`}
-                            className="bg-white flex flex-col items-start gap-1 py-2"
-                            onSelect={() => {
-                              setSelectedMadrasa(m.id);
-                              setOpenMadrasa(false);
-                            }}
-                          >
-                            <div className="flex items-center w-full">
-                              <Check
-                                className={cn(
-                                  "mr-2 h-4 w-4 shrink-0",
-                                  selectedMadrasa === m.id ? "opacity-100" : "opacity-0"
-                                )}
-                              />
-                              <span className="font-medium text-sm text-gray-800 break-words whitespace-normal">{m.name}</span>
-                            </div>
-                            {m.midCode && (
-                              <div className="ml-6 px-2 py-0.5 bg-yellow-100 text-yellow-800 border border-yellow-200 text-xs rounded-md font-semibold shrink-0">
-                                {m.midCode}
-                              </div>
-                            )}
-                          </CommandItem>
-                        ))}
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
-            </div>{selectedMadrasa !== "all" && (
-            <Button variant="ghost" size="sm" onClick={() => setSelectedMadrasa("all")} className="text-gray-500">
-              Clear
-            </Button>
-          )}
-        </div>
+                    <Check
+                      className={cn(
+                        "mr-2 h-4 w-4",
+                        selectedCategory ===
+                          category
+                          ? "opacity-100"
+                          : "opacity-0",
+                      )}
+                    />
+
+                    {CATEGORIES?.[category]
+                      ?.label ||
+                      category}
+                  </CommandItem>
+                ),
+              )}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  </div>
+
+
+  {/* =====================================
+      STUDENT SEARCH
+  ====================================== */}
+
+  <div className="flex min-w-[220px] flex-1 flex-col gap-1.5">
+    <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+      Student Search
+    </span>
+
+    <div className="relative">
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        className="
+          absolute
+          left-3
+          top-1/2
+          h-4
+          w-4
+          -translate-y-1/2
+          text-slate-400
+        "
+      >
+        <circle
+          cx="11"
+          cy="11"
+          r="7"
+          stroke="currentColor"
+          strokeWidth="1.8"
+        />
+
+        <path
+          d="M20 20L16.5 16.5"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+        />
+      </svg>
+
+      <input
+        type="text"
+        value={studentSearch}
+        onChange={(e) =>
+          setStudentSearch(e.target.value)
+        }
+        placeholder="Search student name or ID..."
+        className="
+          h-10
+          w-full
+          rounded-md
+          border
+          border-teal-200
+          bg-white
+          pl-9
+          pr-3
+          text-sm
+          text-slate-700
+          outline-none
+          transition
+          placeholder:text-slate-400
+          focus:border-teal-500
+          focus:ring-2
+          focus:ring-teal-500/10
+        "
+      />
+    </div>
+  </div>
+
+
+  {/* =====================================
+      CLEAR ALL
+  ====================================== */}
+
+  {(selectedMadrasa !== "all" ||
+    selectedItem !== "all" ||
+    selectedCategory !== "all" ||
+    studentSearch) && (
+    <Button
+      variant="ghost"
+      size="sm"
+      onClick={() => {
+        setSelectedMadrasa("all");
+        setSelectedItem("all");
+        setSelectedCategory("all");
+        setStudentSearch("");
+      }}
+      className="
+        h-10
+        text-slate-500
+        hover:bg-red-50
+        hover:text-red-600
+      "
+    >
+      Clear All
+    </Button>
+  )}
+</div>
 
         {/* Registrations + mark entry */}
-        {filteredRegs.length === 0 ? (
+        {filteredRegistrations.length === 0 ? (
           <Card>
             <CardContent className="py-10 text-center text-gray-400">
               {registrations.length === 0
@@ -397,7 +916,7 @@ export default function MekhalaCompetitionPage() {
           <Card>
             <CardHeader>
               <CardTitle className="text-sm">
-                Registrations — Enter Marks ({filteredRegs.length})
+                Registrations — Enter Marks ({filteredRegistrations.length})
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0 overflow-x-auto scrollbar-hide">
@@ -417,7 +936,7 @@ export default function MekhalaCompetitionPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredRegs.map((reg) => {
+                  {filteredRegistrations.map((reg) => {
                     const existing    = existingMark(reg.id);
                     const inp         = getInput(reg.id);
                     const m1          = Number(inp.mark1) || 0;
@@ -429,7 +948,35 @@ export default function MekhalaCompetitionPage() {
 
                     return (
                       <TableRow key={reg.id} className={existing ? "bg-emerald-50/40" : ""}>
-                        <TableCell className="text-sm text-gray-600 font-medium whitespace-nowrap">{reg.madarsaName}</TableCell>
+                        <TableCell className="whitespace-nowrap">
+  <div className="flex flex-col gap-1">
+    <span className="text-sm font-semibold text-slate-800">
+      {reg.madarsaName || "—"}
+    </span>
+
+    {reg.madarsaId && (
+      <span
+        className="
+          inline-flex
+          w-fit
+          items-center
+          rounded-md
+          border
+          border-teal-100
+          bg-teal-50
+          px-2
+          py-0.5
+          text-[10px]
+          font-semibold
+          tracking-wide
+          text-teal-700
+        "
+      >
+        ID: {reg.madarsaId}
+      </span>
+    )}
+  </div>
+</TableCell>
                         <TableCell className="font-medium">{reg.eventName}</TableCell>
                         <TableCell>
                           <Badge variant="outline">{CATEGORIES[reg.category]?.label}</Badge>
