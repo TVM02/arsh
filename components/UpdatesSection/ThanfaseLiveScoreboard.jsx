@@ -45,6 +45,22 @@ function buildMekhalaScoreboard(
 
   marks.forEach(
     (mark) => {
+      /* =====================================
+         HOME PAGE
+         ONLY PUBLISHED A GRADE RESULTS
+      ====================================== */
+
+      const grade = String(
+        mark?.grade || "",
+      )
+        .trim()
+        .toUpperCase();
+
+      if (grade !== "A") {
+        return;
+      }
+
+
       const mekhalaId =
         mark?.mekhalaId ||
         mark?.mekhalaName;
@@ -53,9 +69,11 @@ function buildMekhalaScoreboard(
         return;
       }
 
+
       const mekhalaName =
         mark?.mekhalaName ||
         "Mekhala";
+
 
       if (
         !mekhalaMap.has(
@@ -67,8 +85,10 @@ function buildMekhalaScoreboard(
           {
             id: mekhalaId,
             name: mekhalaName,
+
             madrasas:
               new Set(),
+
             winners:
               new Map(),
           },
@@ -81,20 +101,12 @@ function buildMekhalaScoreboard(
         );
 
 
-      /* =====================================
-         MADRASA COUNT
-      ====================================== */
-
       if (mark?.madarsaId) {
         mekhala.madrasas.add(
           mark.madarsaId,
         );
       }
 
-
-      /* =====================================
-         ITEM + CATEGORY KEY
-      ====================================== */
 
       const eventName =
         mark?.eventName ||
@@ -111,16 +123,11 @@ function buildMekhalaScoreboard(
         }__${category}`;
 
 
-      /* =====================================
-         STUDENT NAME
-      ====================================== */
-
       const studentName =
         Array.isArray(
           mark?.students,
         ) &&
-        mark.students.length >
-          0
+        mark.students.length > 0
           ? mark.students
               .map(
                 (student) =>
@@ -146,11 +153,6 @@ function buildMekhalaScoreboard(
         );
 
 
-      /* =====================================
-         KEEP HIGHEST SCORE
-         = FIRST PRIZE
-      ====================================== */
-
       if (
         !existing ||
         score >
@@ -169,6 +171,10 @@ function buildMekhalaScoreboard(
             student:
               studentName,
 
+            students:
+              mark?.students ||
+              [],
+
             madarsaId:
               mark?.madarsaId ||
               "",
@@ -180,12 +186,7 @@ function buildMekhalaScoreboard(
             score,
 
             grade:
-              mark?.grade ||
-              "",
-
-            students:
-              mark?.students ||
-              [],
+              grade,
           },
         );
       }
@@ -205,8 +206,7 @@ function buildMekhalaScoreboard(
           mekhala.name,
 
         madrasas:
-          mekhala.madrasas
-            .size,
+          mekhala.madrasas.size,
 
         winners:
           Array.from(
@@ -216,8 +216,8 @@ function buildMekhalaScoreboard(
     )
     .filter(
       (mekhala) =>
-        mekhala.winners
-          .length > 0,
+        mekhala.winners.length >
+        0,
     )
     .sort((a, b) =>
       a.name.localeCompare(
@@ -225,7 +225,6 @@ function buildMekhalaScoreboard(
       ),
     );
 }
-
 
 /* =========================================================
    CATEGORY STYLE
@@ -336,7 +335,7 @@ function MekhalaCard({
 
   return (
       <Link
-    href="/live-score"
+    href="/mekala-live-score"
     className="
       block
       h-full
