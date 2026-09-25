@@ -9,11 +9,11 @@ import {
 
 export async function POST(request) {
   try {
-    console.log("1. Digital registration started");
+  
 
     const body = await request.json();
 
-    console.log("2. Request body:", body);
+
 
     const {
       studentId,
@@ -107,7 +107,7 @@ export async function POST(request) {
 
     const db = getAdminDb();
 
-    console.log("3. Firebase Admin ready");
+
 
     // ------------------------------------
     // 2. Optional duplicate check
@@ -142,21 +142,11 @@ const testRef = db
 
 const testSnap = await testRef.get();
 
-console.log(
-  "COUNTER READ WORKING:",
-  testSnap.exists
-);
-    console.log(
-      "4. Generating digital admission number"
-    );
 
     const digitalAdmissionNumber =
       await generateDigitalAdmissionNumber();
 
-    console.log(
-      "5. Generated:",
-      digitalAdmissionNumber
-    );
+   
 
     // ------------------------------------
     // 4. Prepare registration
@@ -246,10 +236,7 @@ console.log(
       )
       .add(registrationData);
 
-    console.log(
-      "6. Registration saved:",
-      docRef.id
-    );
+    
 
     // ------------------------------------
     // 6. Response

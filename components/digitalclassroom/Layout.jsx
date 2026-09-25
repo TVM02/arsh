@@ -7,8 +7,9 @@ import { Badge } from "@/components/ui/badge";
 import { Menu, X, Clock, Timer, AlertTriangle } from "lucide-react";
 import useAuthStore from "@/lib/authStore";
 import { useRoleGuard } from "@/lib/useRoleGuard";
-import SessionTimer from "@/components/SessionTimer";
-import SessionAnalytics from "@/components/SessionAnalytics";
+import DigitalSessionTimer from "@/components/digitalclassroom/DigitalSessionTimer";
+import DigitalSessionAnalytics from "@/components/digitalclassroom/DigitalSessionAnalytics"
+
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -194,14 +195,89 @@ const Layout = ({
           </div>
         )}
 
-        <div className="flex items-center justify-center px-8 py-4 space-x-4 bg-teal-900">
-          <span className="text-sm text-white">
-            {"Contact technical Support : 8891177850"}
-          </span>
-        </div>
+        <div
+  className="
+    flex
+    flex-col
+    items-center
+    justify-center
+    gap-2
+    border-t
+    border-teal-700
+    bg-gradient-to-r
+    from-teal-950
+    via-teal-900
+    to-emerald-950
+    px-6
+    py-4
+    text-center
+    sm:flex-row
+    sm:gap-3
+  "
+>
+  <div
+    className="
+      flex
+      h-9
+      w-9
+      items-center
+      justify-center
+      rounded-full
+      bg-white/10
+      text-emerald-300
+      ring-1
+      ring-white/10
+    "
+  >
+    <svg
+      className="h-4 w-4"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M3 5a2 2 0 012-2h2.28a2 2 0 011.94 1.515l.518 2.072a2 2 0 01-.55 1.906l-1.257 1.257a16.042 16.042 0 006.32 6.32l1.257-1.257a2 2 0 011.906-.55l2.072.518A2 2 0 0121 16.72V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"
+      />
+    </svg>
+  </div>
+
+  <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2">
+    <span
+      className="
+        text-[11px]
+        font-semibold
+        uppercase
+        tracking-[0.14em]
+        text-teal-200
+      "
+    >
+      Technical Support
+    </span>
+
+    <span className="hidden text-teal-500 sm:inline">
+      •
+    </span>
+
+    <a
+      href="tel:8891177850"
+      className="
+        text-sm
+        font-bold
+        text-white
+        transition
+        hover:text-emerald-300
+      "
+    >
+      8891177850
+    </a>
+  </div>
+</div>
       </div>{" "}
-      <SessionTimer />{" "}
-      <SessionAnalytics />{" "}
+      <DigitalSessionTimer />{" "}
+      <DigitalSessionAnalytics />{" "}
     </div>
   );
 };

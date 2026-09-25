@@ -496,6 +496,59 @@ export default function StudentLoginPage() {
       // PRODUCTION
       // NORMAL OTP LOGIN
       // ==========================================
+if (
+        process.env.NODE_ENV ===
+        "development"
+      ) {
+
+        let sessionUser =
+          login.user;
+
+
+        if (
+          login.restoreCustomToken
+        ) {
+
+          sessionUser =
+            (
+              await restorePortalFirebaseSession(
+                login.restoreCustomToken
+              )
+            ) || sessionUser;
+        }
+
+
+        setUser(
+          sessionUser
+        );
+
+
+        // IMPORTANT:
+        // Don't mark OTP as verified
+        // because localhost is bypassing OTP.
+        setUserData(
+          login.userData
+        );
+
+
+        resetLoginFailures(
+          PORTAL_KEY,
+          formData.email
+        );
+
+
+        toast.success(
+          "Development login successful"
+        );
+
+
+        router.push(
+          "/dashboard/digital-student"
+        );
+
+
+        return;
+      }
 
       await startOtpChallenge({
 

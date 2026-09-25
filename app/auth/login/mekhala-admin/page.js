@@ -148,60 +148,7 @@ export default function MekhalaAdminLogin() {
         return;
       }
 
-       if (
-        process.env.NODE_ENV ===
-        "development"
-      ) {
-
-        let sessionUser =
-          login.user;
-
-
-        if (
-          login.restoreCustomToken
-        ) {
-
-          sessionUser =
-            (
-              await restorePortalFirebaseSession(
-                login.restoreCustomToken
-              )
-            ) || sessionUser;
-        }
-
-
-        setUser(
-          sessionUser
-        );
-
-
-        // IMPORTANT:
-        // Don't mark OTP as verified
-        // because localhost is bypassing OTP.
-        setUserData(
-          login.userData
-        );
-
-
-        resetLoginFailures(
-          PORTAL_KEY,
-          formData.email
-        );
-
-
-        toast.success(
-          "Development login successful"
-        );
-
-
-        router.push(
-          "/dashboard/mekhala-portal"
-        );
-
-
-        return;
-      }
-
+      
 
       const otpPayload = {
         portal: "Mekhala Portal",

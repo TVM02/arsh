@@ -6,20 +6,16 @@ import { getAdminDb } from "@/lib/firebase-admin";
 
 export async function GET() {
   try {
-    console.log("DIGITAL STUDENT GET API HIT");
+   
 
     const db = getAdminDb();
 
-    console.log("Firebase Admin DB loaded");
 
     const snapshot = await db
       .collection("digitalClassStudentRegistrations")
       .get();
 
-    console.log(
-      "Digital registrations found:",
-      snapshot.size
-    );
+    
 
     const students = snapshot.docs.map((doc) => {
       const data = doc.data();

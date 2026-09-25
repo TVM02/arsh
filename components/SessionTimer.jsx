@@ -96,9 +96,16 @@ export default function SessionTimer() {
           loginUrl = "/auth/login/pariksha-board-convener";
         } else if (userRole === "teacher") {
           loginUrl = "/auth/login/teacher";
-        } else if (userRole === "student") {
+        }else if (userRole === "digital_teacher") {
+          loginUrl = "/auth/login/digital-teacher";
+        }
+         else if (userRole === "student") {
           loginUrl = "/auth/login/student";
-        } else if (userRole === "manager") {
+        }
+        else if (userRole === "digital_student") {
+          loginUrl = "/auth/login/digital-student";
+        }
+         else if (userRole === "manager") {
           loginUrl = "/auth/login/manager";
         } else if (userRole === "mekhala_admin") {
           if (mekhalaType === "sub_mekhala" || path.includes("/dashboard/mekhala-portal")) {
@@ -119,6 +126,9 @@ export default function SessionTimer() {
         else if (path.includes("/dashboard/pariksha-board-convener")) loginUrl = "/auth/login/pariksha-board-convener";
         else if (path.includes("/dashboard/mekhala-portal")) loginUrl = "/auth/login/mekhala-admin";
         else if (path.includes("/dashboard/district")) loginUrl = "/auth/login/district";
+        else if (path.includes("/dashboard/digital-teacher")) loginUrl = "/auth/login/digital-teacher";
+        else if (path.includes("/dashboard/digital-student")) loginUrl = "/auth/login/digital-student";
+
       }
 
       window.location.href = loginUrl;

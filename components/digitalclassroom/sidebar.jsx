@@ -16,6 +16,7 @@ import {
   BookOpen,
   Users,
   UserCheck,
+  Video
 } from "lucide-react";
 
 import { usePathname, useRouter } from "next/navigation";
@@ -105,17 +106,17 @@ const dcRole = pathname.includes("/dashboard/digital-teacher")
         },
         {
           name: "My Student",
-          href: "/dashboard/digital-teacher/student",
-          icon: BookOpen,
-        },
-        {
-          name: "Live Classes",
-          href: "/dashboard/digital-teacher/class",
+          href: "/dashboard/digital-teacher/students",
           icon: Users,
         },
         {
+          name: "Live Classes",
+          href: "/dashboard/digital-teacher/live-classes",
+          icon: Video,
+        },
+        {
           name: "Study Materials",
-          href: "/dashboard/digital-teacher/materials",
+          href: "/dashboard/digital-teacher/study-materials",
           icon: FolderOpen,
         },
         {

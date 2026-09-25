@@ -1,4 +1,7 @@
 import { NextResponse } from "next/server";
+import {
+  FieldValue,
+} from "firebase-admin/firestore";
 
 import {
   getAdminAuth,
@@ -94,6 +97,11 @@ export async function DELETE(
     const cleanStudentUid =
       cleanText(studentUid);
 
+
+    /* ========================================
+       VALIDATION
+    ======================================== */
+
     if (!teacherApplicationId) {
       return NextResponse.json(
         {
@@ -120,11 +128,17 @@ export async function DELETE(
       );
     }
 
+
     const auth =
       getAdminAuth();
 
     const db =
       getAdminDb();
+
+
+    /* ========================================
+       VERIFY CENTRAL ADMIN
+    ======================================== */
 
     const admin =
       await verifyCentralAdmin(
@@ -138,7 +152,7 @@ export async function DELETE(
         {
           success: false,
           message:
-            "Unauthorized.",
+            "Unauthorized. Central Admin access required.",
         },
         {
           status: 401,
@@ -176,14 +190,17 @@ export async function DELETE(
       );
     }
 
+
     const teacher =
       teacherSnap.data() || {};
+
 
     const teacherUid =
       cleanText(
         teacher?.sourceTeacherUid ||
         teacher?.digitalTeacherUid,
       );
+
 
     if (!teacherUid) {
       return NextResponse.json(
@@ -200,30 +217,26 @@ export async function DELETE(
 
 
     /* ========================================
-       FIND ACTIVE ASSIGNMENT
+       LOAD STUDENT FROM USERS
+
+       THIS IS THE SOURCE OF TRUTH
     ======================================== */
 
-    const assignmentId =
-      `${teacherUid}_${cleanStudentUid}`;
-
-    const assignmentRef =
+    const studentRef =
       db
-        .collection(
-          "digitalTeacherStudentAssignments",
-        )
-        .doc(
-          assignmentId,
-        );
+        .collection("users")
+        .doc(cleanStudentUid);
 
-    const assignmentSnap =
-      await assignmentRef.get();
+    const studentSnap =
+      await studentRef.get();
 
-    if (!assignmentSnap.exists) {
+
+    if (!studentSnap.exists) {
       return NextResponse.json(
         {
           success: false,
           message:
-            "Student assignment not found.",
+            "Digital Student user document not found.",
         },
         {
           status: 404,
@@ -232,11 +245,85 @@ export async function DELETE(
     }
 
 
+    const student =
+      studentSnap.data() || {};
+
+
     /* ========================================
-       FIND DIGITAL STUDENT REGISTRATION
+       VERIFY DIGITAL STUDENT
     ======================================== */
 
-    const studentQuery =
+    if (
+      student?.role !== "student" ||
+      student?.userType !==
+        "digital_student"
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "This account is not a Digital Student.",
+        },
+        {
+          status: 400,
+        },
+      );
+    }
+
+
+    /* ========================================
+       VERIFY CURRENT ASSIGNMENT
+    ======================================== */
+
+    if (
+      student?.teacherAssigned !==
+      true
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "This student is not currently assigned.",
+        },
+        {
+          status: 409,
+        },
+      );
+    }
+
+
+    const currentTeacherUid =
+      cleanText(
+        student
+          ?.assignedDigitalTeacherUid,
+      );
+
+
+    if (
+      currentTeacherUid !==
+      teacherUid
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "This student is assigned to another Digital Teacher.",
+        },
+        {
+          status: 409,
+        },
+      );
+    }
+
+
+    /* ========================================
+       FIND OLD REGISTRATION DOCUMENT
+
+       Only for cleanup.
+       NOT source of truth.
+    ======================================== */
+
+    const registrationQuery =
       await db
         .collection(
           "digitalClassStudentRegistrations",
@@ -249,125 +336,167 @@ export async function DELETE(
         .limit(1)
         .get();
 
+
     const batch =
       db.batch();
 
-    const now =
-      new Date();
-
 
     /* ========================================
-       MARK ASSIGNMENT INACTIVE
+       UNASSIGN FROM USERS
+
+       MAIN FIREBASE DOCUMENT
     ======================================== */
 
-    batch.set(
-      assignmentRef,
+    batch.update(
+      studentRef,
       {
-        status:
-          "inactive",
+        teacherAssigned:
+          false,
 
-        unassignedAt:
-          now,
+        assignedDigitalTeacherApplicationId:
+          FieldValue.delete(),
 
-        unassignedBy:
+        assignedDigitalTeacherUid:
+          FieldValue.delete(),
+
+        assignedDigitalTeacherName:
+          FieldValue.delete(),
+
+        assignedDigitalTeacherEmail:
+          FieldValue.delete(),
+
+        assignedDigitalTeacherMhrId:
+          FieldValue.delete(),
+
+        assignedDigitalTeacherClass:
+          FieldValue.delete(),
+
+        teacherAssignedAt:
+          FieldValue.delete(),
+
+        teacherAssignedBy:
+          FieldValue.delete(),
+
+        teacherUnassignedAt:
+          FieldValue.serverTimestamp(),
+
+        teacherUnassignedBy:
           admin.uid,
 
         updatedAt:
-          now,
-      },
-      {
-        merge: true,
+          FieldValue.serverTimestamp(),
       },
     );
 
 
     /* ========================================
-       CLEAR STUDENT ASSIGNED TEACHER
+       CLEAN OLD REGISTRATION DATA
     ======================================== */
 
-    if (!studentQuery.empty) {
-      const studentDoc =
-        studentQuery.docs[0];
+    if (
+      !registrationQuery.empty
+    ) {
+      const registrationRef =
+        registrationQuery
+          .docs[0]
+          .ref;
 
-      const studentData =
-        studentDoc.data() || {};
+      batch.update(
+        registrationRef,
+        {
+          teacherAssigned:
+            false,
 
-      /*
-        Safety:
-        clear only if this is the
-        currently assigned teacher.
-      */
-      const currentAssignedTeacherUid =
-        cleanText(
-          studentData
-            ?.assignedDigitalTeacherUid,
-        );
+          assignedDigitalTeacherApplicationId:
+            FieldValue.delete(),
 
-      if (
-        !currentAssignedTeacherUid ||
-        currentAssignedTeacherUid ===
-          teacherUid
-      ) {
-        batch.set(
-          studentDoc.ref,
-          {
-            teacherAssigned:
-              false,
+          assignedDigitalTeacherUid:
+            FieldValue.delete(),
 
-            assignedDigitalTeacherUid:
-              null,
+          assignedDigitalTeacherName:
+            FieldValue.delete(),
 
-            assignedDigitalTeacherApplicationId:
-              null,
+          assignedDigitalTeacherEmail:
+            FieldValue.delete(),
 
-            assignedDigitalTeacherMhrId:
-              null,
+          assignedDigitalTeacherMhrId:
+            FieldValue.delete(),
 
-            assignedDigitalTeacherName:
-              null,
+          assignedDigitalTeacherClass:
+            FieldValue.delete(),
 
-            assignedDigitalTeacherEmail:
-              null,
+          teacherAssignedAt:
+            FieldValue.delete(),
 
-            assignedDigitalTeacherClass:
-              null,
+          teacherAssignedBy:
+            FieldValue.delete(),
 
-            teacherAssignedAt:
-              null,
+          teacherUnassignedAt:
+            FieldValue.serverTimestamp(),
 
-            teacherUnassignedAt:
-              now,
+          teacherUnassignedBy:
+            admin.uid,
 
-            teacherUnassignedBy:
-              admin.uid,
-
-            updatedAt:
-              now,
-          },
-          {
-            merge: true,
-          },
-        );
-      }
+          updatedAt:
+            FieldValue.serverTimestamp(),
+        },
+      );
     }
 
+
+    /* ========================================
+       COMMIT SERVER-SIDE FIREBASE UPDATE
+    ======================================== */
 
     await batch.commit();
 
 
-    return NextResponse.json({
-      success: true,
+    /* ========================================
+       VERIFY RESULT
+    ======================================== */
 
-      message:
-        "Digital Student unassigned successfully.",
+    const updatedSnap =
+      await studentRef.get();
 
-      studentUid:
-        cleanStudentUid,
+    const updatedStudent =
+      updatedSnap.data() || {};
 
-      teacherUid,
 
-      teacherApplicationId,
-    });
+    
+
+
+    /* ========================================
+       SUCCESS
+    ======================================== */
+
+    return NextResponse.json(
+      {
+        success: true,
+
+        message:
+          "Digital Student unassigned successfully.",
+
+        studentUid:
+          cleanStudentUid,
+
+        teacherUid,
+
+        teacherApplicationId,
+
+        teacherAssigned:
+          updatedStudent
+            ?.teacherAssigned ===
+          true,
+
+        assignedDigitalTeacherUid:
+          updatedStudent
+            ?.assignedDigitalTeacherUid ??
+          null,
+      },
+      {
+        status: 200,
+      },
+    );
 
   } catch (error) {
     console.error(

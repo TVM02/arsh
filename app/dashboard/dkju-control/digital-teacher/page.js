@@ -588,16 +588,14 @@ const handleViewAssignStudent = (student) => {
 
 
 
-   const loadDigitalTeacherStudents =
+const loadDigitalTeacherStudents =
   async (teacher) => {
     if (!teacher?.id) {
       return;
     }
 
     try {
-      setDigitalStudentsLoading(
-        true,
-      );
+      setDigitalStudentsLoading(true);
 
       const result =
         await getAssignedDigitalStudents(
@@ -634,9 +632,7 @@ const handleViewAssignStudent = (student) => {
         [],
       );
     } finally {
-      setDigitalStudentsLoading(
-        false,
-      );
+      setDigitalStudentsLoading(false);
     }
   };
 
@@ -651,9 +647,9 @@ const handleViewAssignStudent = (student) => {
       return;
     }
 
-    const studentUid =
-      student?.uid ||
-      student?.id;
+   const studentUid =
+  student?.id ||
+  student?.uid;
 
     if (!studentUid) {
       toast.error(

@@ -14,6 +14,8 @@ const ROLE_LOGIN_PATHS = {
   mekhala_admin: "/auth/login/district",
   convener_admin: "/auth/login/convener",
   pariksha_board_convener: "/auth/login/pariksha-board-convener",
+  digital_teacher:"/auth/login/digital_teacher",
+  digital_student:"/auth/login/digital_student",
   teacher: "/auth/login/teacher",
   student: "/auth/login/student",
   manager: "/auth/login/manager",

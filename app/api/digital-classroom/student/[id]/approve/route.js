@@ -22,15 +22,7 @@ export async function PATCH(request, { params }) {
     const password =
       body.password?.trim();
 
-    console.log("DIGITAL APPROVAL REQUEST:", {
-      id,
-      adminUid,
-      email,
-      hasPassword: Boolean(password),
-      passwordLength:
-        password?.length || 0,
-    });
-
+   
     // -------------------------------------
     // 1. Validation
     // -------------------------------------
@@ -171,13 +163,7 @@ export async function PATCH(request, { params }) {
     const uid =
       authUser.uid;
 
-    console.log(
-      "DIGITAL STUDENT AUTH USER CREATED:",
-      {
-        uid,
-        email,
-      }
-    );
+    
 
     // -------------------------------------
     // 5. Create Users document
@@ -224,10 +210,7 @@ export async function PATCH(request, { params }) {
       }
     );
 
-    console.log(
-      "USERS DOCUMENT CREATED:",
-      uid
-    );
+  
 
     // -------------------------------------
     // 6. Update digital registration

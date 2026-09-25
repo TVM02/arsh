@@ -8,9 +8,15 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+
 function cleanText(value) {
   return String(value ?? "").trim();
 }
+
+
+/* ============================================
+   VERIFY CENTRAL ADMIN
+============================================ */
 
 async function verifyCentralAdmin(
   request,
@@ -22,19 +28,38 @@ async function verifyCentralAdmin(
       "authorization",
     ) || "";
 
-  if (!header.startsWith("Bearer ")) {
+  if (
+    !header.startsWith(
+      "Bearer ",
+    )
+  ) {
     return null;
   }
 
   try {
+    const token =
+      header
+        .slice(7)
+        .trim();
+
+    if (!token) {
+      return null;
+    }
+
     const decoded =
       await auth.verifyIdToken(
-        header.slice(7).trim(),
+        token,
       );
 
+    if (!decoded?.uid) {
+      return null;
+    }
+
     if (
-      decoded?.role === "central_admin" ||
-      decoded?.role === "admin"
+      decoded?.role ===
+        "central_admin" ||
+      decoded?.role ===
+        "admin"
     ) {
       return decoded;
     }
@@ -55,7 +80,8 @@ async function verifyCentralAdmin(
     if (
       userData?.role !==
         "central_admin" &&
-      userData?.role !== "admin"
+      userData?.role !==
+        "admin"
     ) {
       return null;
     }
@@ -71,20 +97,153 @@ async function verifyCentralAdmin(
   }
 }
 
+
+/* ============================================
+   LOAD DIGITAL STUDENT REGISTRATION PROFILE
+
+   users/{uid} is assignment source of truth.
+
+   Registration collection is used only to
+   enrich student profile/details.
+============================================ */
+
+async function getDigitalStudentProfile(
+  db,
+  studentUid,
+) {
+  if (!studentUid) {
+    return null;
+  }
+
+  try {
+    /* ----------------------------------------
+       CURRENT
+       uid === Firebase UID
+    ---------------------------------------- */
+
+    const byUid =
+      await db
+        .collection(
+          "digitalClassStudentRegistrations",
+        )
+        .where(
+          "uid",
+          "==",
+          studentUid,
+        )
+        .limit(1)
+        .get();
+
+    if (!byUid.empty) {
+      const docSnap =
+        byUid.docs[0];
+
+      return {
+        id:
+          docSnap.id,
+
+        ...docSnap.data(),
+      };
+    }
+
+
+    /* ----------------------------------------
+       LEGACY PROFILE FIELD
+    ---------------------------------------- */
+
+    const byStudentUid =
+      await db
+        .collection(
+          "digitalClassStudentRegistrations",
+        )
+        .where(
+          "studentUid",
+          "==",
+          studentUid,
+        )
+        .limit(1)
+        .get();
+
+    if (
+      !byStudentUid.empty
+    ) {
+      const docSnap =
+        byStudentUid.docs[0];
+
+      return {
+        id:
+          docSnap.id,
+
+        ...docSnap.data(),
+      };
+    }
+
+
+    /* ----------------------------------------
+       DOCUMENT ID FALLBACK
+    ---------------------------------------- */
+
+    const directSnap =
+      await db
+        .collection(
+          "digitalClassStudentRegistrations",
+        )
+        .doc(studentUid)
+        .get();
+
+    if (
+      directSnap.exists
+    ) {
+      return {
+        id:
+          directSnap.id,
+
+        ...directSnap.data(),
+      };
+    }
+
+    return null;
+  } catch (error) {
+    console.error(
+      "LOAD DIGITAL STUDENT PROFILE ERROR:",
+      studentUid,
+      error,
+    );
+
+    return null;
+  }
+}
+
+
+/* ============================================
+   GET ASSIGNED DIGITAL STUDENTS
+
+   VIEW ONLY:
+   - show assigned students
+   - student details
+   - used before unassign
+
+   Assignment source:
+   users/{studentUid}
+============================================ */
+
 export async function GET(
   request,
   { params },
 ) {
   try {
-    const { id } = await params;
+    const { id } =
+      await params;
 
     const teacherApplicationId =
       cleanText(id);
+
 
     if (!teacherApplicationId) {
       return NextResponse.json(
         {
           success: false,
+
           message:
             "Digital Teacher ID is required.",
         },
@@ -94,11 +253,17 @@ export async function GET(
       );
     }
 
+
     const auth =
       getAdminAuth();
 
     const db =
       getAdminDb();
+
+
+    /* ========================================
+       CENTRAL ADMIN AUTH
+    ======================================== */
 
     const admin =
       await verifyCentralAdmin(
@@ -107,10 +272,12 @@ export async function GET(
         db,
       );
 
+
     if (!admin?.uid) {
       return NextResponse.json(
         {
           success: false,
+
           message:
             "Unauthorized.",
         },
@@ -120,9 +287,10 @@ export async function GET(
       );
     }
 
-    /* ==========================================
-       LOAD TEACHER
-    ========================================== */
+
+    /* ========================================
+       LOAD SELECTED DIGITAL TEACHER
+    ======================================== */
 
     const teacherSnap =
       await db
@@ -134,10 +302,12 @@ export async function GET(
         )
         .get();
 
+
     if (!teacherSnap.exists) {
       return NextResponse.json(
         {
           success: false,
+
           message:
             "Digital Teacher not found.",
         },
@@ -147,299 +317,321 @@ export async function GET(
       );
     }
 
+
     const teacher =
       teacherSnap.data() || {};
 
-    const sourceTeacherUid =
-      cleanText(
-        teacher?.sourceTeacherUid,
-      );
 
+    /*
+     * New Digital Teacher architecture:
+     *
+     * Normal Teacher Firebase UID
+     * is also the Digital Teacher UID.
+     *
+     * sourceTeacherUid is preferred.
+     */
     const digitalTeacherUid =
       cleanText(
+        teacher?.sourceTeacherUid ||
         teacher?.digitalTeacherUid,
       );
 
-    const legacyTeacherUid =
-      cleanText(
-        teacher?.legacyDigitalTeacherUid,
-      );
 
-    const possibleTeacherUids =
-      [
-        sourceTeacherUid,
-        digitalTeacherUid,
-        legacyTeacherUid,
-      ].filter(
-        (value, index, array) =>
-          value &&
-          array.indexOf(value) ===
-            index,
-      );
+    if (!digitalTeacherUid) {
+      return NextResponse.json(
+        {
+          success: false,
 
-    /* ==========================================
-       LOAD ASSIGNMENTS
-
-       Application ID is most important.
-       This also survives UID migration.
-    ========================================== */
-
-    const assignmentsCollection =
-      db.collection(
-        "digitalTeacherStudentAssignments",
-      );
-
-    const assignmentMap =
-      new Map();
-
-    const applicationQuery =
-      await assignmentsCollection
-        .where(
-          "digitalTeacherApplicationId",
-          "==",
-          teacherApplicationId,
-        )
-        .get();
-
-    applicationQuery.docs.forEach(
-      (docSnap) => {
-        const data =
-          docSnap.data() || {};
-
-        if (
-          data?.status ===
-          "active"
-        ) {
-          assignmentMap.set(
-            docSnap.id,
-            {
-              id: docSnap.id,
-              ...data,
-            },
-          );
-        }
-      },
-    );
-
-    /*
-      Also search by Teacher UID.
-
-      Covers old records where
-      application ID may be missing.
-    */
-
-    for (
-      const teacherUid of
-      possibleTeacherUids
-    ) {
-      const uidQuery =
-        await assignmentsCollection
-          .where(
-            "digitalTeacherUid",
-            "==",
-            teacherUid,
-          )
-          .get();
-
-      uidQuery.docs.forEach(
-        (docSnap) => {
-          const data =
-            docSnap.data() || {};
-
-          if (
-            data?.status ===
-            "active"
-          ) {
-            assignmentMap.set(
-              docSnap.id,
-              {
-                id: docSnap.id,
-                ...data,
-              },
-            );
-          }
+          message:
+            "Digital Teacher Firebase UID not found.",
+        },
+        {
+          status: 400,
         },
       );
     }
 
-    const assignments =
-      Array.from(
-        assignmentMap.values(),
+
+    /* ========================================
+       LOAD ASSIGNED STUDENTS
+
+       IMPORTANT:
+       No digitalTeacherStudentAssignments.
+
+       Assignment is directly stored in:
+
+       users/{studentUid}
+
+       teacherAssigned === true
+
+       assignedDigitalTeacherUid
+         === digitalTeacherUid
+    ======================================== */
+
+    const assignedSnapshot =
+      await db
+        .collection("users")
+        .where(
+          "assignedDigitalTeacherUid",
+          "==",
+          digitalTeacherUid,
+        )
+        .get();
+
+
+    const assignedUserDocs =
+      assignedSnapshot.docs.filter(
+        (docSnap) => {
+          const student =
+            docSnap.data() || {};
+
+          return (
+            student?.role ===
+              "student" &&
+            student?.userType ===
+              "digital_student" &&
+            student?.teacherAssigned ===
+              true &&
+            cleanText(
+              student
+                ?.assignedDigitalTeacherUid,
+            ) ===
+              digitalTeacherUid
+          );
+        },
       );
 
-    /* ==========================================
-       LOAD STUDENT PROFILES
-    ========================================== */
 
-    const students = [];
+    /* ========================================
+       BUILD STUDENT DETAILS
+    ======================================== */
 
-    for (
-      const assignment of
-      assignments
-    ) {
-      const studentUid =
-        cleanText(
-          assignment?.studentUid,
-        );
+    const students =
+      await Promise.all(
+        assignedUserDocs.map(
+          async (userDoc) => {
+            const userData =
+              userDoc.data() ||
+              {};
 
-      if (!studentUid) {
-        continue;
-      }
+            const studentUid =
+              cleanText(
+                userData?.uid ||
+                userDoc.id,
+              );
 
-      let studentDoc = null;
 
-      /*
-        Current records:
-        uid = Firebase student UID
-      */
+            /*
+             * Registration is only
+             * additional profile data.
+             *
+             * Assignment data always
+             * comes from users document.
+             */
+            const registration =
+              await getDigitalStudentProfile(
+                db,
+                studentUid,
+              );
 
-      const byUid =
-        await db
-          .collection(
-            "digitalClassStudentRegistrations",
-          )
-          .where(
-            "uid",
-            "==",
-            studentUid,
-          )
-          .limit(1)
-          .get();
 
-      if (!byUid.empty) {
-        studentDoc =
-          byUid.docs[0];
-      }
+            const profile =
+              registration || {};
 
-      /*
-        Legacy fallback:
-        studentUid field
-      */
 
-      if (!studentDoc) {
-        const byStudentUid =
-          await db
-            .collection(
-              "digitalClassStudentRegistrations",
-            )
-            .where(
-              "studentUid",
-              "==",
-              studentUid,
-            )
-            .limit(1)
-            .get();
+            const fullName =
+              cleanText(
+                userData?.fullName ||
+                profile?.fullName ||
+                userData?.studentName ||
+                profile?.studentName ||
+                userData?.name ||
+                profile?.name,
+              );
 
-        if (
-          !byStudentUid.empty
-        ) {
-          studentDoc =
-            byStudentUid.docs[0];
-        }
-      }
 
-      /*
-        Final fallback:
-        UID may be document ID
-      */
+            const studentClass =
+              cleanText(
+                userData
+                  ?.assignedDigitalTeacherClass ||
+                userData?.className ||
+                userData?.currentClass ||
+                userData?.class ||
+                userData?.classLevel ||
+                profile?.applyingclass ||
+                profile?.className ||
+                profile?.currentClass ||
+                profile?.class ||
+                profile?.classLevel,
+              );
 
-      if (!studentDoc) {
-        const directSnap =
-          await db
-            .collection(
-              "digitalClassStudentRegistrations",
-            )
-            .doc(studentUid)
-            .get();
 
-        if (
-          directSnap.exists
-        ) {
-          studentDoc =
-            directSnap;
-        }
-      }
+            return {
+              /*
+               * Registration/profile fields
+               */
+              ...profile,
 
-      /*
-        IMPORTANT:
-        Even if student profile is
-        missing, do not silently lose
-        the assignment.
-      */
+              /*
+               * users document fields
+               *
+               * Keep this AFTER profile
+               * because users is source
+               * of truth for assignment.
+               */
+              ...userData,
 
-      if (!studentDoc) {
-        students.push({
-          id:
-            studentUid,
 
-          uid:
-            studentUid,
+              /* =================================
+                 IDENTIFIERS
+              ================================= */
 
-          studentUid,
+              id:
+                userDoc.id,
 
-          fullName:
-            "Student Profile Not Found",
+              uid:
+                studentUid,
 
-          alreadyAssigned:
-            true,
+              studentUid:
+                studentUid,
 
-          assignmentId:
-            assignment.id,
 
-          assignment:
-            assignment,
+              /* =================================
+                 DISPLAY FIELDS
+              ================================= */
 
-          assignedDigitalTeacherUid:
-            assignment
-              ?.digitalTeacherUid ||
-            null,
+              fullName:
+                fullName ||
+                "Digital Student",
 
-          assignedDigitalTeacherApplicationId:
-            assignment
-              ?.digitalTeacherApplicationId ||
-            teacherApplicationId,
-        });
+              name:
+                fullName ||
+                "Digital Student",
 
-        continue;
-      }
+              studentClass,
 
-      const studentData =
-        studentDoc.data() || {};
+              className:
+                studentClass,
 
-      students.push({
-        id:
-          studentDoc.id,
+              class:
+                studentClass,
 
-        ...studentData,
+              digitalAdmissionNumber:
+                userData
+                  ?.digitalAdmissionNumber ||
+                profile
+                  ?.digitalAdmissionNumber ||
+                null,
 
-        /*
-          Always preserve Firebase UID.
-        */
-        uid:
-          studentData?.uid ||
-          studentData?.studentUid ||
-          studentUid,
+              phone:
+                userData?.phone ||
+                profile?.phone ||
+                userData
+                  ?.mobileNumber ||
+                profile
+                  ?.mobileNumber ||
+                userData
+                  ?.guardianPhone ||
+                profile
+                  ?.guardianPhone ||
+                null,
 
-        alreadyAssigned:
-          true,
+              gender:
+                userData?.gender ||
+                profile?.gender ||
+                null,
 
-        assignmentId:
-          assignment.id,
+              profilePicture:
+                userData
+                  ?.profilePicture ||
+                userData
+                  ?.profilePictureUrl ||
+                profile
+                  ?.profilePicture ||
+                profile
+                  ?.profilePictureUrl ||
+                null,
 
-        assignment:
-          assignment,
+              madrasaName:
+                userData
+                  ?.madarsaName ||
+                userData
+                  ?.madrasaName ||
+                profile
+                  ?.madarsaName ||
+                profile
+                  ?.madrasaName ||
+                null,
 
-        assignedDigitalTeacherUid:
-          assignment
-            ?.digitalTeacherUid ||
-          studentData
-            ?.assignedDigitalTeacherUid ||
-          null,
+              status:
+                userData
+                  ?.accountStatus ||
+                userData?.status ||
+                profile
+                  ?.accountStatus ||
+                profile?.status ||
+                "active",
 
-        assignedDigitalTeacherApplicationId:
-          teacherApplicationId,
-      });
-    }
+
+              /* =================================
+                 CURRENT ASSIGNMENT
+              ================================= */
+
+              teacherAssigned:
+                true,
+
+              alreadyAssigned:
+                true,
+
+              assignedDigitalTeacherApplicationId:
+                userData
+                  ?.assignedDigitalTeacherApplicationId ||
+                teacherApplicationId,
+
+              assignedDigitalTeacherUid:
+                userData
+                  ?.assignedDigitalTeacherUid ||
+                digitalTeacherUid,
+
+              assignedDigitalTeacherName:
+                userData
+                  ?.assignedDigitalTeacherName ||
+                null,
+
+              assignedDigitalTeacherEmail:
+                userData
+                  ?.assignedDigitalTeacherEmail ||
+                null,
+
+              assignedDigitalTeacherMhrId:
+                userData
+                  ?.assignedDigitalTeacherMhrId ||
+                null,
+
+              assignedDigitalTeacherClass:
+                userData
+                  ?.assignedDigitalTeacherClass ||
+                studentClass ||
+                null,
+
+              teacherAssignedAt:
+                userData
+                  ?.teacherAssignedAt ||
+                null,
+
+              teacherAssignedBy:
+                userData
+                  ?.teacherAssignedBy ||
+                null,
+            };
+          },
+        ),
+      );
+
+
+    /* ========================================
+       RESPONSE
+    ======================================== */
 
     return NextResponse.json({
       success: true,
@@ -447,9 +639,32 @@ export async function GET(
       teacherApplicationId,
 
       teacherUid:
-        sourceTeacherUid ||
-        digitalTeacherUid ||
-        null,
+        digitalTeacherUid,
+
+      teacher: {
+        id:
+          teacherApplicationId,
+
+        uid:
+          digitalTeacherUid,
+
+        fullName:
+          teacher?.fullName ||
+          teacher?.teacherName ||
+          teacher?.name ||
+          "",
+
+        email:
+          teacher
+            ?.digitalTeacherEmail ||
+          teacher?.email ||
+          "",
+
+        mhrId:
+          teacher?.mhrId ||
+          teacher?.teacherId ||
+          "",
+      },
 
       assignedCount:
         students.length,

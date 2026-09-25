@@ -125,9 +125,7 @@ async function verifyCentralAdmin(
 
 export async function GET(request) {
   try {
-    console.log(
-      "GET DIGITAL TEACHERS API HIT",
-    );
+ 
 
     const auth =
       getAdminAuth();

@@ -26,22 +26,20 @@ import {
   CalendarDays,
   Bell,
   Clock3,
-  TrendingUp,
+
   ChevronRight,
-  ClipboardList,
-  GraduationCap,
-  Megaphone,
+ 
   Video,
   ArrowRight,
   CheckCircle2,
-  User,
+
   Users,
   MoreVertical,
   Play,
   Scale,
   Landmark,
   Languages,
-  PalmTree,
+
 } from "lucide-react";
 import {
   collection,
@@ -108,7 +106,7 @@ const classes = [
     students: 5,
     nextSession: "28 Aug 2025",
     time: "01:00 PM",
-    icon: PalmTree,
+    icon: Users,
     iconClass: "bg-lime-700",
   },
 ];
