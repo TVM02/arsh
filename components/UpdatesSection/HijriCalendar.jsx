@@ -22,7 +22,64 @@ const PRAYER_LIST = [
   { id: "Maghrib", label: "Maghrib", icon: Sunset },
   { id: "Isha", label: "Isha", icon: Moon }
 ];
-const CITIES = ["Kollam", "Kozhikode", "Malappuram", "Kochi"];
+const KERALA_DISTRICTS = [
+  {
+    name: "Thiruvananthapuram",
+    apiCity: "Thiruvananthapuram",
+  },
+  {
+    name: "Kollam",
+    apiCity: "Kollam",
+  },
+  {
+    name: "Pathanamthitta",
+    apiCity: "Pathanamthitta",
+  },
+  {
+    name: "Alappuzha",
+    apiCity: "Alappuzha",
+  },
+  {
+    name: "Kottayam",
+    apiCity: "Kottayam",
+  },
+  {
+    name: "Idukki",
+    apiCity: "Painavu",
+  },
+  {
+    name: "Ernakulam",
+    apiCity: "Kochi",
+  },
+  {
+    name: "Thrissur",
+    apiCity: "Thrissur",
+  },
+  {
+    name: "Palakkad",
+    apiCity: "Palakkad",
+  },
+  {
+    name: "Malappuram",
+    apiCity: "Malappuram",
+  },
+  {
+    name: "Kozhikode",
+    apiCity: "Kozhikode",
+  },
+  {
+    name: "Wayanad",
+    apiCity: "Kalpetta",
+  },
+  {
+    name: "Kannur",
+    apiCity: "Kannur",
+  },
+  {
+    name: "Kasaragod",
+    apiCity: "Kasaragod",
+  },
+];
 
 function formatGregorianDate(dateStr) {
   const [day, month, year] = dateStr.split("-").map(Number);
@@ -40,7 +97,8 @@ const KAABA_LNG = 39.826206;
 export default function HijriCalendar() {
   const [calendar, setCalendar] = useState(null);
   const [prayerData, setPrayerData] = useState(null);
-  const [city, setCity] = useState("Kollam");
+ const [district, setDistrict] =
+  useState("Kollam");
   const [nextPrayerName, setNextPrayerName] = useState("");
   const [countdown, setCountdown] = useState("");
   const [modalUrl, setModalUrl] = useState("");
@@ -98,18 +156,47 @@ export default function HijriCalendar() {
     return () => unsub();
   }, []);
 
-  useEffect(() => {
-    const fetchPrayerTimes = async () => {
-      try {
-        const data = await getPrayerTimes(city);
-        setPrayerData(data);
-      } catch (error) {
-        console.error(error);
-      }
-    };
+useEffect(() => {
+  const fetchPrayerTimes = async () => {
+    try {
+      const selectedDistrict =
+        KERALA_DISTRICTS.find(
+          (item) =>
+            item.name === district,
+        );
 
-    fetchPrayerTimes();
-  }, [city]);
+      if (!selectedDistrict) {
+        return;
+      }
+
+      console.log(
+        "PRAYER DISTRICT:",
+        selectedDistrict.name,
+      );
+
+      console.log(
+        "PRAYER API CITY:",
+        selectedDistrict.apiCity,
+      );
+
+      const data =
+        await getPrayerTimes(
+          selectedDistrict.apiCity,
+        );
+
+      setPrayerData(data);
+
+    } catch (error) {
+      console.error(
+        "PRAYER TIMES ERROR:",
+        error,
+      );
+    }
+  };
+
+  fetchPrayerTimes();
+}, [district]);
+
   const getQibla = async (lat, lng) => {
     try {
       const response = await fetch(
@@ -402,30 +489,48 @@ export default function HijriCalendar() {
                 )}
               </div>
 
-              <div className="flex items-end gap-3 w-full md:w-auto">
-                <div className="flex-1 md:w-[180px]">
-                  <label className="block mb-1.5 text-[0.75rem] font-semibold text-[#4a5568]" htmlFor="prayer-city">
-                    Select City
-                  </label>
-                  <div className="relative">
-                    <select
-                      id="prayer-city"
-                      className="w-full px-3 py-[0.5rem] bg-white border-2 border-[#0f766e] rounded-md text-[#2d3748] text-[0.9rem] font-medium cursor-pointer appearance-none focus:outline-none"
-                      value={city}
-                      onChange={(e) => setCity(e.target.value)}
-                    >
-                      {CITIES.map((cityName) => (
-                        <option key={cityName} value={cityName}>
-                          {cityName}
-                        </option>
-                      ))}
-                    </select>
-                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-[#0f766e]">
-                      <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <div className="flex-1 md:w-[220px]">
+  <label
+    className="block mb-1.5 text-[0.75rem] font-semibold text-[#4a5568]"
+    htmlFor="prayer-district"
+  >
+    Select District
+  </label>
+
+  <div className="relative">
+    <select
+      id="prayer-district"
+      className="w-full px-3 py-[0.5rem] bg-white border-2 border-[#0f766e] rounded-md text-[#2d3748] text-[0.9rem] font-medium cursor-pointer appearance-none focus:outline-none"
+      value={district}
+      onChange={(e) =>
+        setDistrict(
+          e.target.value,
+        )
+      }
+    >
+      {KERALA_DISTRICTS.map(
+        (item) => (
+          <option
+            key={item.name}
+            value={item.name}
+          >
+            {item.name}
+          </option>
+        ),
+      )}
+    </select>
+
+    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-[#0f766e]">
+      <svg
+        className="fill-current h-4 w-4"
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 20 20"
+      >
+        <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
+      </svg>
+    </div>
+  </div>
+</div>
             </div>
 
             <hr className="border-t border-[#e2e8f0] mb-5" />

@@ -69,6 +69,7 @@ const DEFAULT_CONFIG = {
     district: false,
     state:    false,
   },
+  homeThanfasLiveScoreVisible: true,
 };
 
 const PORTAL_LABELS = {
@@ -110,6 +111,9 @@ export default function CompetitionAdminPage() {
         setConfig({
           categories: { ...DEFAULT_CONFIG.categories, ...data.categories },
           portalVisibility: { ...DEFAULT_CONFIG.portalVisibility, ...data.portalVisibility },
+          homeThanfasLiveScoreVisible:
+    data?.homeThanfasLiveScoreVisible ??
+    DEFAULT_CONFIG.homeThanfasLiveScoreVisible,
         });
       }
     } catch {
@@ -446,75 +450,169 @@ export default function CompetitionAdminPage() {
           </TabsContent>
 
           {/* ── TAB 3: Portal Visibility ── */}
-          <TabsContent value="visibility" className="space-y-4 mt-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">
-                  Show Competition Menu In
-                </CardTitle>
-                <p className="text-sm text-gray-500">
-                  Toggle the Competition menu on or off for each portal.
-                </p>
-              </CardHeader>
-              <CardContent>
-                {loadingConfig ? (
-                  <div className="flex items-center gap-2 text-gray-400 py-4">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Loading…
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {Object.keys(PORTAL_LABELS).map((key) => {
-                      const enabled = config.portalVisibility[key] ?? false;
-                      return (
-                        <div
-                          key={key}
-                          className="flex items-center justify-between rounded-lg border p-4"
-                        >
-                          <div className="flex items-center gap-3">
-                            {enabled ? (
-                              <Eye className="h-4 w-4 text-teal-600" />
-                            ) : (
-                              <EyeOff className="h-4 w-4 text-gray-400" />
-                            )}
-                            <div>
-                              <p className="font-medium text-sm">
-                                {PORTAL_LABELS[key]}
-                              </p>
-                              <p className="text-xs text-gray-400">
-                                {enabled
-                                  ? "Competition menu is visible"
-                                  : "Competition menu is hidden"}
-                              </p>
-                            </div>
-                          </div>
-                          <Switch
-                            checked={enabled}
-                            onCheckedChange={() => handleVisibilityToggle(key)}
-                          />
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+          <TabsContent
+  value="visibility"
+  className="space-y-4 mt-4"
+>
+  {/* ========================================
+      PORTAL VISIBILITY
+  ======================================== */}
 
-            <div className="flex justify-end">
-              <Button
-                onClick={handleSaveConfig}
-                disabled={savingConfig}
-                className="bg-teal-700 hover:bg-teal-800"
+  <Card>
+    <CardHeader>
+      <CardTitle className="text-base">
+        Show Competition Menu In
+      </CardTitle>
+
+      <p className="text-sm text-gray-500">
+        Toggle the Competition menu on or off for each portal.
+      </p>
+    </CardHeader>
+
+    <CardContent>
+      {loadingConfig ? (
+        <div className="flex items-center gap-2 text-gray-400 py-4">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading…
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {Object.keys(
+            PORTAL_LABELS,
+          ).map((key) => {
+            const enabled =
+              config.portalVisibility[
+                key
+              ] ?? false;
+
+            return (
+              <div
+                key={key}
+                className="flex items-center justify-between rounded-lg border p-4"
               >
-                {savingConfig ? (
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                ) : (
-                  <Save className="h-4 w-4 mr-2" />
-                )}
-                Save Visibility Settings
-              </Button>
-            </div>
-          </TabsContent>
+                <div className="flex items-center gap-3">
+                  {enabled ? (
+                    <Eye className="h-4 w-4 text-teal-600" />
+                  ) : (
+                    <EyeOff className="h-4 w-4 text-gray-400" />
+                  )}
+
+                  <div>
+                    <p className="font-medium text-sm">
+                      {
+                        PORTAL_LABELS[
+                          key
+                        ]
+                      }
+                    </p>
+
+                    <p className="text-xs text-gray-400">
+                      {enabled
+                        ? "Competition menu is visible"
+                        : "Competition menu is hidden"}
+                    </p>
+                  </div>
+                </div>
+
+                <Switch
+                  checked={
+                    enabled
+                  }
+                  onCheckedChange={() =>
+                    handleVisibilityToggle(
+                      key,
+                    )
+                  }
+                />
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </CardContent>
+  </Card>
+
+
+  {/* ========================================
+      HOME SCREEN THANFAS LIVE SCORE
+  ======================================== */}
+
+  <Card>
+    <CardHeader>
+      <CardTitle className="text-base">
+        Home Screen Live Score Board
+      </CardTitle>
+
+      <p className="text-sm text-gray-500">
+        Show or hide the THANFAS Live Score Board on the home screen.
+      </p>
+    </CardHeader>
+
+    <CardContent>
+      <div className="flex items-center justify-between rounded-lg border p-4">
+        <div className="flex items-center gap-3">
+          {config
+            ?.homeThanfasLiveScoreVisible ? (
+            <Eye className="h-4 w-4 text-teal-600" />
+          ) : (
+            <EyeOff className="h-4 w-4 text-gray-400" />
+          )}
+
+          <div>
+            <p className="font-medium text-sm">
+              THANFAS Live Score Board
+            </p>
+
+            <p className="text-xs text-gray-400">
+              {config
+                ?.homeThanfasLiveScoreVisible
+                ? "Live Score Board is visible on the home screen"
+                : "Live Score Board is hidden from the home screen"}
+            </p>
+          </div>
+        </div>
+
+       <Switch
+  checked={
+    config?.homeThanfasLiveScoreVisible ??
+    true
+  }
+  onCheckedChange={(checked) => {
+    setConfig((prev) => ({
+      ...prev,
+      homeThanfasLiveScoreVisible: checked,
+    }));
+  }}
+/>
+      </div>
+    </CardContent>
+  </Card>
+
+
+  {/* ========================================
+      SAVE
+  ======================================== */}
+
+  <div className="flex justify-end">
+    <Button
+      onClick={
+        handleSaveConfig
+      }
+      disabled={
+        savingConfig
+      }
+      className="bg-teal-700 hover:bg-teal-800"
+    >
+      {savingConfig ? (
+        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+      ) : (
+        <Save className="h-4 w-4 mr-2" />
+      )}
+
+      Save Visibility Settings
+    </Button>
+  </div>
+</TabsContent>
         </Tabs>
       </div>
 

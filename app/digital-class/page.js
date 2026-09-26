@@ -128,7 +128,7 @@ export default function PortalsPage() {
     sm:rounded-2xl
   "
 >
-  <BookOpen className="h-5 w-5 text-white sm:h-6 sm:w-6" />
+  <a href="/"><BookOpen className="h-5 w-5 text-white sm:h-6 sm:w-6" /></a>
 </div>
 
           <div>
