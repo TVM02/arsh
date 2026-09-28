@@ -457,7 +457,9 @@ useEffect(() => {
 
   return (
     <section className="pt-[1.75rem] pb-[2.5rem] md:pt-[2.5rem] mb-10 md:pb-0 sm:pt-[2.5rem] sm:pb-0">
+      
       <div className="relative z-10 w-[calc(100%-4rem)] max-w-[1400px] mx-auto">
+        
         <div className="grid grid-cols-1 md:grid-cols-[1.6fr_1fr] gap-5 items-start">
           <div className="bg-white border border-[#e5e5e5] rounded-xl p-5 sm:p-6 h-full text-[#274629] shadow-sm">
             <div className="flex flex-col md:flex-row items-stretch md:items-end justify-between gap-6 mb-5">
@@ -552,6 +554,7 @@ useEffect(() => {
                 }
 
                 return (
+
                   <div
                     key={prayer.id}
                     className={`flex flex-row items-center justify-between px-4 py-3 rounded-lg transition-all duration-300 ${
@@ -602,7 +605,7 @@ useEffect(() => {
               Quran
             </button>
             <a
-              href="https://www.awqaf.gov.ae/?lang=en"
+              href="/#"
               target="_blank"
               rel="noopener noreferrer"
               style={{ transition: "all 0.2s ease", width: "100%" }}
@@ -622,7 +625,7 @@ useEffect(() => {
               }}
               className="flex items-center justify-center min-h-[64px] bg-white border border-[#c9b37e]/45 border-t-2 border-t-[#c9b37e] rounded text-[#274629] no-underline text-[0.95rem] font-medium cursor-pointer"
             >
-              Prayer Timings
+              أذكار — Adhkar
             </a>
             <a
               href="https://www.awqaf.gov.ae/en/mosque/mosquelesson"
@@ -645,7 +648,7 @@ useEffect(() => {
               }}
               className="flex items-center justify-center min-h-[64px] bg-white border border-[#c9b37e]/45 border-t-2 border-t-[#c9b37e] rounded text-[#274629] no-underline text-[0.95rem] font-medium cursor-pointer"
             >
-              Mosque Lessons
+              Broadcast Live
             </a>
             <button
               onClick={() => setModalUrl("https://shamela.ws")}

@@ -4,6 +4,7 @@ import { Toaster } from "sonner";
 import AuthProvider from "@/components/AuthProvider";
 import DateFormatOverride from "@/components/DateFormatOverride";
 import SessionAnalytics from "@/components/SessionAnalytics";
+import WhatsAppSupport from "@/components/WhatsAppSupport";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -99,6 +100,7 @@ export default function RootLayout({ children }) {
         <AuthProvider>
           <SessionAnalytics />
           {children}
+           <WhatsAppSupport />
         </AuthProvider>
         <Toaster position="top-right" richColors />
       </body>

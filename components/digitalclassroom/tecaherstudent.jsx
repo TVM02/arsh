@@ -6,7 +6,7 @@ import {
   Clock3, 
   MoreVertical,
   Play,
-
+FileImage,
   Users,
   Video,
 
@@ -14,6 +14,9 @@ import {
   FileText,
   Folder,
   Headphones,
+  Eye,
+  Trash2,
+  Loader2,
 } from "lucide-react";
 
 function FilterSelect({
@@ -907,10 +910,13 @@ function MaterialPreview({
 
 function MaterialRow({
   material,
+  onView,
+  onDelete,
+  deleting = false,
 }) {
   const type =
     getMaterialType(
-      material.type,
+      material.materialType,
     );
 
   return (
@@ -980,7 +986,7 @@ function MaterialRow({
             </span>
 
             <span>
-              {material.subject}
+              {material.subjectName}
             </span>
 
             <span className="text-slate-300">
@@ -988,21 +994,11 @@ function MaterialRow({
             </span>
 
             <span>
-              {material.date}
+              {material.createdAt}
             </span>
           </div>
 
-          <p
-            className="
-              mt-2
-              max-w-[620px]
-              text-[11px]
-              leading-5
-              text-slate-500
-            "
-          >
-            {material.description}
-          </p>
+          
 
           <div
             className="
@@ -1027,14 +1023,7 @@ function MaterialRow({
               {type.label}
             </span>
 
-            <span
-              className="
-                text-[9px]
-                text-slate-400
-              "
-            >
-              {material.size}
-            </span>
+           
           </div>
         </div>
 
@@ -1080,7 +1069,7 @@ function MaterialRow({
 
             <span>
               Shared with{" "}
-              {material.sharedClasses}{" "}
+              {material.className}{" "}
               {material.sharedClasses ===
               1
                 ? "class"
@@ -1090,24 +1079,71 @@ function MaterialRow({
         </div>
 
 
-        <button
-          type="button"
-          className="
-            flex
-            h-9
-            w-9
-            shrink-0
-            items-center
-            justify-center
-            rounded-lg
-            text-slate-400
-            transition
-            hover:bg-slate-100
-            hover:text-slate-700
-          "
-        >
-          <MoreVertical className="h-4 w-4" />
-        </button>
+        {/* ACTIONS */}
+<div className="ml-auto flex shrink-0 items-center gap-2">
+
+  {/* VIEW */}
+  <button
+    type="button"
+    onClick={() =>
+      onView?.(material)
+    }
+    title="View Material"
+    className="
+      inline-flex
+      h-9
+      w-9
+      items-center
+      justify-center
+      rounded-lg
+      border
+      border-teal-200
+      bg-teal-50
+      text-teal-600
+      transition
+      hover:border-teal-300
+      hover:bg-teal-100
+      hover:text-teal-700
+    "
+  >
+    <Eye className="h-4 w-4" />
+  </button>
+
+  {/* DELETE */}
+  <button
+    type="button"
+    disabled={deleting}
+    onClick={() =>
+      onDelete?.(material)
+    }
+    title="Delete Material"
+    className="
+      inline-flex
+      h-9
+      w-9
+      items-center
+      justify-center
+      rounded-lg
+      border
+      border-red-200
+      bg-red-50
+      text-red-500
+      transition
+      hover:border-red-300
+      hover:bg-red-100
+      hover:text-red-600
+      disabled:cursor-not-allowed
+      disabled:opacity-50
+    "
+  >
+    {deleting ? (
+      <Loader2 className="h-4 w-4 animate-spin" />
+    ) : (
+      <Trash2 className="h-4 w-4" />
+    )}
+  </button>
+
+</div>
       </div>
     </div>
   );
@@ -1232,7 +1268,7 @@ function getMaterialType(type) {
         "border-red-100 bg-red-50 text-red-600",
     },
 
-    video: {
+    youtube: {
       label: "Video",
       icon: Video,
       container:
@@ -1243,9 +1279,9 @@ function getMaterialType(type) {
         "border-violet-100 bg-violet-50 text-violet-600",
     },
 
-    record: {
-      label: "Record",
-      icon: Headphones,
+    image: {
+      label: "Image",
+      icon: FileImage,
       container:
         "bg-gradient-to-br from-emerald-50 to-teal-50",
       iconStyle:

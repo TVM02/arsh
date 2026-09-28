@@ -24,7 +24,13 @@ import {
   Users,
   Plus,
 } from "lucide-react";
-
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 
 import useAuthStore from "@/lib/authStore";
 
@@ -46,7 +52,9 @@ export default function DigitalTeacherStudentsPage() {
     search,
     setSearch,
   ] = useState("");
-
+  const [selectedStudent, setSelectedStudent] = useState(null);
+  const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
+  const [viewLoading, setViewLoading] = useState(false);
  
 
   const [
@@ -84,7 +92,7 @@ export default function DigitalTeacherStudentsPage() {
     setCurrentPage,
   ] = useState(1);
  const { user, userData } = useAuthStore();
-  const PAGE_SIZE = 8;
+  const PAGE_SIZE = 10;
 
 
   /* =====================================================
@@ -408,7 +416,11 @@ useEffect(() => {
         PAGE_SIZE,
     );
 
-
+const handleViewStudent = (student) => {
+  setSelectedStudent(student);
+  setViewLoading(false);
+  setIsViewDialogOpen(true);
+};
   /* =====================================================
      TAB DATA
   ===================================================== */
@@ -1215,12 +1227,32 @@ useEffect(() => {
                                 gap-2
                               "
                             >
-                              <ActionButton
-                                icon={
-                                  Eye
-                                }
-                                type="view"
-                              />
+ <button
+  type="button"
+  onClick={() => {
+    console.log("VIEW STUDENT:", student);
+    handleViewStudent(student);
+  }}
+  className="
+    inline-flex
+    h-9
+    w-9
+    items-center
+    justify-center
+    rounded-lg
+    border
+    border-slate-200
+    bg-white
+    text-slate-500
+    transition
+    hover:border-teal-300
+    hover:bg-teal-50
+    hover:text-teal-600
+  "
+  title="View Student"
+>
+  <Eye className="h-4 w-4" />
+</button>
                     
                               
                             </div>
@@ -1576,10 +1608,325 @@ useEffect(() => {
     </div>
   </div>
 )}
+<Dialog
+  open={isViewDialogOpen}
+  onOpenChange={(open) => {
+    setIsViewDialogOpen(open);
+
+    if (!open) {
+      setSelectedStudent(null);
+      setViewLoading(false);
+    }
+  }}
+>
+  <DialogContent
+    className="
+      max-h-[90vh]
+      overflow-y-auto
+      sm:max-w-[850px]
+      p-0
+    "
+  >
+    <DialogHeader className="border-b border-slate-100 px-6 py-5">
+      <DialogTitle className="text-lg font-bold text-slate-900">
+        Student Details
+      </DialogTitle>
+
+      <DialogDescription className="text-sm text-slate-500">
+        View complete Digital Student information.
+      </DialogDescription>
+    </DialogHeader>
+
+    <div className="px-6 pb-6">
+      {viewLoading ? (
+        <div className="space-y-5 py-4">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-5">
+            <div className="h-6 w-48 animate-pulse rounded bg-slate-200" />
+            <div className="mt-3 h-4 w-32 animate-pulse rounded bg-slate-200" />
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {Array.from({
+              length: 8,
+            }).map((_, index) => (
+              <div
+                key={index}
+                className="rounded-xl border border-slate-200 p-4"
+              >
+                <div className="h-3 w-24 animate-pulse rounded bg-slate-200" />
+
+                <div className="mt-2 h-5 w-36 animate-pulse rounded bg-slate-200" />
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : selectedStudent ? (
+        <div className="space-y-5 pt-5">
+
+          {/* HEADER */}
+          <div
+            className="
+              rounded-2xl
+              border
+              border-teal-100
+              bg-gradient-to-r
+              from-teal-50
+              via-white
+              to-emerald-50
+              p-5
+            "
+          >
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-teal-600">
+                  Digital Student
+                </p>
+
+                <h2 className="mt-1 text-xl font-bold text-slate-900">
+                  {selectedStudent?.name ||
+                    selectedStudent?.fullName ||
+                    selectedStudent?.studentName ||
+                    "Student"}
+                </h2>
+
+                <p className="mt-1 text-sm text-slate-500">
+                  Admission No:{" "}
+                  <span className="font-semibold text-slate-700">
+                    {selectedStudent?.digitalAdmissionNumber ||
+                      selectedStudent?.admissionNumber ||
+                      "-"}
+                  </span>
+                </p>
+              </div>
+
+              <span
+                className={`
+                  inline-flex
+                  w-fit
+                  rounded-full
+                  px-3
+                  py-1.5
+                  text-xs
+                  font-semibold
+
+                  ${
+                    selectedStudent?.accountStatus === "active"
+                      ? "bg-emerald-100 text-emerald-700"
+                      : "bg-amber-100 text-amber-700"
+                  }
+                `}
+              >
+                {selectedStudent?.accountStatus === "active"
+                  ? "Active"
+                  : "Inactive"}
+              </span>
+            </div>
+          </div>
+
+
+          {/* ACADEMIC */}
+          <div>
+            <div className="mb-3 flex items-center gap-2">
+              <BookOpen className="h-4 w-4 text-teal-600" />
+
+              <h3 className="text-sm font-bold text-slate-800">
+                Academic Information
+              </h3>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <StudentInfoItem
+                label="Admission Number"
+                value={
+                  selectedStudent?.digitalAdmissionNumber ||
+                  selectedStudent?.admissionNumber
+                }
+              />
+
+              <StudentInfoItem
+                label="Class"
+                value={
+                  selectedStudent?.applyingclass ||
+                  selectedStudent?.className ||
+                  selectedStudent?.studentClass
+                }
+              />
+
+              <StudentInfoItem
+                label="Madrasa"
+                value={
+                  selectedStudent?.madrasa ||
+                  selectedStudent?.madrasaName ||
+                  selectedStudent?.madarsaName
+                }
+              />
+
+              <StudentInfoItem
+                label="Status"
+                value={
+                  selectedStudent?.accountStatus ||
+                  selectedStudent?.status
+                }
+              />
+            </div>
+          </div>
+
+
+          {/* PERSONAL */}
+          <div className="border-t border-slate-100 pt-5">
+            <div className="mb-3 flex items-center gap-2">
+              <UserRound className="h-4 w-4 text-teal-600" />
+
+              <h3 className="text-sm font-bold text-slate-800">
+                Personal Information
+              </h3>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <StudentInfoItem
+                label="Full Name"
+                value={
+                  selectedStudent?.fullName ||
+                  selectedStudent?.name
+                }
+              />
+
+              <StudentInfoItem
+                label="Gender"
+                value={
+                  selectedStudent?.gender === "male"
+                    ? "Male"
+                    : selectedStudent?.gender === "female"
+                    ? "Female"
+                    : selectedStudent?.gender
+                }
+              />
+
+              <StudentInfoItem
+                label="Date of Birth"
+                value={
+                  selectedStudent?.dateOfBirth
+                }
+              />
+
+              <StudentInfoItem
+                label="Phone Number"
+                value={
+                  selectedStudent?.phone
+                }
+              />              
+            </div>
+          </div>
+
+
+          {/* GUARDIAN */}
+          <div className="border-t border-slate-100 pt-5">
+            <div className="mb-3 flex items-center gap-2">
+              <Users className="h-4 w-4 text-teal-600" />
+
+              <h3 className="text-sm font-bold text-slate-800">
+                Guardian Information
+              </h3>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <StudentInfoItem
+                label="Guardian Name"
+                value={
+                  selectedStudent?.guardianName
+                }
+              />
+
+              <StudentInfoItem
+                label="Guardian Phone"
+                value={
+                  selectedStudent?.guardianPhone
+                }
+              />
+            </div>
+          </div>
+
+
+          {/* ADDRESS */}
+          <div className="border-t border-slate-100 pt-5">
+            <h3 className="mb-3 text-sm font-bold text-slate-800">
+              Address
+            </h3>
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-sm leading-6 text-slate-700">
+                {selectedStudent?.address ||
+                  "Not available"}
+              </p>
+            </div>
+          </div>
+
+        </div>
+      ) : (
+        <div className="py-10 text-center">
+          <UserRound className="mx-auto h-10 w-10 text-slate-300" />
+
+          <p className="mt-3 text-sm text-slate-500">
+            Student details not available.
+          </p>
+        </div>
+      )}
+    </div>
+  </DialogContent>
+</Dialog>
     </Layout>
   );
 }
 
+function StudentInfoItem({
+  label,
+  value,
+}) {
+  const displayValue =
+    value === undefined ||
+    value === null ||
+    value === ""
+      ? "-"
+      : String(value);
 
+  return (
+    <div
+      className="
+        rounded-xl
+        border
+        border-slate-200
+        bg-white
+        px-4
+        py-3.5
+        transition
+        hover:border-teal-200
+        hover:bg-teal-50/20
+      "
+    >
+      <p
+        className="
+          text-[10px]
+          font-semibold
+          uppercase
+          tracking-[0.08em]
+          text-slate-400
+        "
+      >
+        {label}
+      </p>
 
+      <p
+        className="
+          mt-1.5
+          break-words
+          text-sm
+          font-semibold
+          text-slate-800
+        "
+      >
+        {displayValue}
+      </p>
+    </div>
+  );
+}
 

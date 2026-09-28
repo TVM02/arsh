@@ -518,3 +518,20 @@ html {
 .animate-event-text {
   animation: eventText 0.8s ease-out;
 }
+
+@keyframes whatsappBlink {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.35;
+    transform: scale(1.12);
+  }
+}
+
+.whatsapp-blink {
+  animation: whatsappBlink 1.2s infinite;
+}
