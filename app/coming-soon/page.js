@@ -94,7 +94,7 @@ export default function ComingSoonPage() {
             margin: 0,
           }}
         >
-          Digital E-Learning platform is being developed. Stay tuned.
+          IT Coordinators platform is being developed. Stay tuned.
         </p>
 
         {/* Back link */}

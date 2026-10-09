@@ -1,6 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import {
   Search,
   BookOpen,
@@ -28,94 +32,34 @@ import {
   MaterialCard,
   MaterialListItem,
   EmptyMaterials,
+  getYouTubeEmbedUrl,
 } from "@/components/digitalclassroom/dashborad";
 
 import useAuthStore from "@/lib/authStore";
+import {
+  getMyDigitalStudentStudyMaterials,
+  downloadDigitalStudentStudyMaterial,
+} from "@/lib/digitalClassStudentService";
 
-const MATERIALS = [
-  {
-    id: 1,
-    title: "Surah Al-Baqarah – Lesson Notes",
-    subject: "Quran Studies",
-    teacher: "Usthad Abdul Rahman",
-    type: "PDF",
-    size: "2.4 MB",
-    date: "12 Sep 2026",
-    description:
-      "Detailed lesson notes, meanings and important points from the class.",
-  },
-  {
-    id: 2,
-    title: "Arabic Grammar – Lesson 5",
-    subject: "Arabic Language",
-    teacher: "Usthad Muhammad",
-    type: "PDF",
-    size: "1.8 MB",
-    date: "11 Sep 2026",
-    description:
-      "Arabic grammar notes with simple examples and exercises.",
-  },
-  {
-    id: 3,
-    title: "Purity and Prayer",
-    subject: "Fiqh",
-    teacher: "Usthad Hamza",
-    type: "Document",
-    size: "1.2 MB",
-    date: "10 Sep 2026",
-    description:
-      "Study notes covering Taharah, Wudu and basic prayer rules.",
-  },
-  {
-    id: 4,
-    title: "The Early Muslim Community",
-    subject: "Islamic History",
-    teacher: "Usthad Salim",
-    type: "PDF",
-    size: "3.1 MB",
-    date: "09 Sep 2026",
-    description:
-      "Important events and lessons from the early Muslim community.",
-  },
-  {
-    id: 5,
-    title: "Arabic Vocabulary Practice",
-    subject: "Arabic Language",
-    teacher: "Usthad Muhammad",
-    type: "Video",
-    size: "18 Min",
-    date: "08 Sep 2026",
-    description:
-      "Vocabulary practice lesson with pronunciation and examples.",
-  },
-  {
-    id: 6,
-    title: "Daily Duas",
-    subject: "Islamic Studies",
-    teacher: "Usthad Kareem",
-    type: "PDF",
-    size: "900 KB",
-    date: "07 Sep 2026",
-    description:
-      "Collection of important daily duas for students.",
-  },
-];
 
-const SUBJECTS = [
-  "All",
-  "Quran Studies",
-  "Arabic Language",
-  "Fiqh",
-  "Islamic History",
-  "Islamic Studies",
-];
 
 export default function StudyMaterialsPage() {
   const { userData, user } = useAuthStore();
-
+  const [materials, setMaterials] = useState([]);
+  const [materialsLoading, setMaterialsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [subject, setSubject] = useState("All");
   const [viewMode, setViewMode] = useState("grid");
+  const [
+  selectedMaterial,
+  setSelectedMaterial,
+] = useState(null);
+
+const [
+  isViewMaterialOpen,
+  setIsViewMaterialOpen,
+] = useState(false);
+const [downloadingMaterialId, setDownloadingMaterialId,] = useState(null);
 
   const studentName =
     userData?.fullName ||
@@ -124,7 +68,7 @@ export default function StudyMaterialsPage() {
     "Student";
 
   const filteredMaterials = useMemo(() => {
-    return MATERIALS.filter((item) => {
+    return materials.filter((item) => {
       const matchesSearch =
         item.title
           .toLowerCase()
@@ -142,8 +86,263 @@ export default function StudyMaterialsPage() {
 
       return matchesSearch && matchesSubject;
     });
-  }, [searchTerm, subject]);
+  }, [materials, searchTerm, subject]);
 
+  const handleViewMaterial = (
+  material
+) => {
+  setSelectedMaterial(
+    material
+  );
+
+  setIsViewMaterialOpen(
+    true
+  );
+};
+
+  function formatFileSize(bytes) {
+  const value =
+    Number(bytes);
+
+  if (
+    !value ||
+    value <= 0
+  ) {
+    return null;
+  }
+
+  const kb =
+    value / 1024;
+
+  if (kb < 1024) {
+    return `${kb.toFixed(
+      1
+    )} KB`;
+  }
+
+  const mb =
+    kb / 1024;
+
+  return `${mb.toFixed(
+    1
+  )} MB`;
+}
+
+useEffect(() => {
+  let active = true;
+
+  const loadMaterials =
+    async () => {
+      if (!user?.uid) {
+        if (active) {
+          setMaterials([]);
+          setMaterialsLoading(
+            false
+          );
+        }
+
+        return;
+      }
+
+      try {
+        setMaterialsLoading(
+          true
+        );
+
+        const result =
+          await getMyDigitalStudentStudyMaterials();
+
+        if (!active) {
+          return;
+        }
+
+        const loadedMaterials =
+          Array.isArray(
+            result?.materials
+          )
+            ? result.materials.map(
+                (item) => ({
+                  ...item,
+
+                  
+             
+
+                  teacher:
+                    item?.teacherName ||
+                    item?.ustadName ||
+                    result?.teacherName ||
+                    "Ustad",
+
+                  type:
+                    getMaterialDisplayType(
+                      item?.materialType ||
+                        item?.type
+                    ),
+
+                  size:
+                    formatFileSize(
+                      item?.fileSize
+                    ),
+
+                  date:
+                    formatMaterialDate(
+                      item?.createdAt
+                    ),
+
+                  subject:
+                    item?.subject ||
+                    item?.subjectName ||
+                    "",
+                })
+              )
+            : [];
+
+        setMaterials(
+          loadedMaterials
+        );
+
+        console.log(
+          "DIGITAL STUDENT STUDY MATERIALS:",
+          loadedMaterials
+        );
+      } catch (error) {
+        console.error(
+          "LOAD DIGITAL STUDENT STUDY MATERIALS ERROR:",
+          error
+        );
+
+        if (active) {
+          setMaterials([]);
+        }
+      } finally {
+        if (active) {
+          setMaterialsLoading(
+            false
+          );
+        }
+      }
+    };
+
+  loadMaterials();
+
+  return () => {
+    active = false;
+  };
+}, [user?.uid]);
+
+function formatMaterialDate(
+  value
+) {
+  if (!value) {
+    return "-";
+  }
+
+  try {
+    const date =
+      new Date(value);
+
+    if (
+      Number.isNaN(
+        date.getTime()
+      )
+    ) {
+      return "-";
+    }
+
+    return date.toLocaleDateString(
+      "en-GB",
+      {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      }
+    );
+  } catch {
+    return "-";
+  }
+}
+
+const handleDownloadMaterial =
+  async (materialOrId) => {
+    const materialId =
+      typeof materialOrId === "string"
+        ? materialOrId
+        : materialOrId?.id;
+
+    if (!materialId) {
+      alert(
+        "Study material ID is missing."
+      );
+
+      return;
+    }
+
+    try {
+      setDownloadingMaterialId(
+        materialId
+      );
+
+      await downloadDigitalStudentStudyMaterial(
+        materialId
+      );
+    } catch (error) {
+      console.log(
+        "DOWNLOAD ERROR:",
+        error?.message
+      );
+
+      alert(
+        error?.message ||
+        "Unable to download material."
+      );
+    } finally {
+      setDownloadingMaterialId(
+        null
+      );
+    }
+  };
+
+function getMaterialDisplayType(
+  type
+) {
+  const value =
+    String(type || "")
+      .trim()
+      .toLowerCase();
+
+  if (value === "pdf") {
+    return "PDF";
+  }
+
+  if (
+    value === "youtube" ||
+    value === "video"
+  ) {
+    return "Video";
+  }
+
+  if (value === "image") {
+    return "Image";
+  }
+
+  return "Document";
+}
+
+const subjectOptions =
+  useMemo(() => {
+    const subjects =
+      materials
+        .map(
+          (item) =>
+            item?.subject
+        )
+        .filter(Boolean);
+
+    return [
+      "All",
+      ...new Set(subjects),
+    ];
+  }, [materials]);
   return (
   <Layout user={user}>
   <main className="min-h-screen bg-[#f8faf8]">
@@ -197,7 +396,7 @@ export default function StudyMaterialsPage() {
 
             <StatCard
               icon={FolderOpen}
-              value={MATERIALS.length}
+              value={materials.length}
               label="Total Materials"
               iconClass="bg-teal-100 text-teal-700"
             />
@@ -205,7 +404,7 @@ export default function StudyMaterialsPage() {
             <StatCard
               icon={FileText}
               value={
-                MATERIALS.filter(
+                materials.filter(
                   (item) => item.type === "PDF"
                 ).length
               }
@@ -216,7 +415,7 @@ export default function StudyMaterialsPage() {
             <StatCard
               icon={Video}
               value={
-                MATERIALS.filter(
+                materials.filter(
                   (item) => item.type === "Video"
                 ).length
               }
@@ -226,7 +425,12 @@ export default function StudyMaterialsPage() {
 
             <StatCard
               icon={BookMarked}
-              value="5"
+              value={
+  subjectOptions.filter(
+    (item) =>
+      item !== "All"
+  ).length
+}
               label="Subjects"
               iconClass="bg-amber-100 text-amber-700"
             />
@@ -279,7 +483,7 @@ export default function StudyMaterialsPage() {
                   }
                   className="h-12 w-full appearance-none rounded-2xl border border-slate-200 bg-slate-50 pl-11 pr-4 text-sm font-medium text-slate-700 outline-none focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10"
                 >
-                  {SUBJECTS.map((item) => (
+                  {subjectOptions.map((item) => (
                     <option key={item} value={item}>
                       {item}
                     </option>
@@ -342,36 +546,374 @@ export default function StudyMaterialsPage() {
               MATERIALS
           ====================================== */}
 
-          {filteredMaterials.length === 0 ? (
-            <EmptyMaterials />
-          ) : viewMode === "grid" ? (
-            <div className="grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
-              {filteredMaterials.map((material) => (
-                <MaterialCard
-                  key={material.id}
-                  material={material}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
-              {filteredMaterials.map(
-                (material, index) => (
-                  <MaterialListItem
-                    key={material.id}
-                    material={material}
-                    last={
-                      index ===
-                      filteredMaterials.length - 1
-                    }
-                  />
-                )
-              )}
-            </div>
-          )}
+          {materialsLoading ? (
+
+  <div className="flex min-h-[260px] items-center justify-center rounded-[24px] border border-slate-200 bg-white">
+
+    <div className="text-center">
+
+      <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-teal-100 border-t-teal-600" />
+
+      <p className="mt-3 text-sm font-medium text-slate-500">
+        Loading study materials...
+      </p>
+
+    </div>
+
+  </div>
+
+) : filteredMaterials.length === 0 ? (
+
+  <div className="rounded-[24px] border border-slate-200 bg-white px-6 py-16 text-center">
+
+    <FolderOpen className="mx-auto h-10 w-10 text-slate-300" />
+
+    <p className="mt-3 text-sm font-semibold text-slate-700">
+      No study materials found
+    </p>
+
+    <p className="mt-1 text-xs text-slate-400">
+      Materials shared by your assigned Digital Teacher will appear here.
+    </p>
+
+  </div>
+
+) : viewMode === "grid" ? (
+
+  <div className="grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
+
+    {filteredMaterials.map(
+      (material) => (
+        <MaterialCard
+          key={material.id}
+          material={material}
+           onView={
+    handleViewMaterial
+  }
+  onDownload={
+    handleDownloadMaterial
+  }
+  downloading={
+    downloadingMaterialId ===
+    material.id
+  }
+
+        />
+      )
+    )}
+
+  </div>
+
+) : (
+
+  <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
+
+    {filteredMaterials.map(
+      (
+        material,
+        index
+      ) => (
+        <MaterialListItem
+  key={material.id}
+  material={material}
+  onView={
+    handleViewMaterial
+  }
+  onDownload={
+    handleDownloadMaterial
+  }
+   downloading={
+    downloadingMaterialId ===
+    material.id
+  }
+  last={
+    index ===
+    filteredMaterials.length - 1
+  }
+/>
+      )
+    )}
+
+  </div>
+
+)}
         </div>
       </div>
     </main>
+    {isViewMaterialOpen &&
+  selectedMaterial && (
+    <div
+      className="fixed inset-0 z-[10000] overflow-y-auto bg-slate-950/50 p-4 backdrop-blur-sm"
+      onClick={() => {
+        setIsViewMaterialOpen(
+          false
+        );
+
+        setSelectedMaterial(
+          null
+        );
+      }}
+    >
+      <div
+        className="mx-auto my-6 w-full max-w-5xl overflow-hidden rounded-3xl bg-white shadow-2xl"
+        onClick={(
+          event
+        ) =>
+          event.stopPropagation()
+        }
+      >
+
+        {/* HEADER */}
+
+        <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4 sm:px-6">
+
+          <div className="min-w-0">
+
+            <p className="text-xs font-semibold uppercase tracking-wide text-teal-600">
+              Study Material
+            </p>
+
+            <h2 className="mt-1 truncate text-xl font-bold text-slate-900">
+              {
+                selectedMaterial.title
+              }
+            </h2>
+
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+
+              {selectedMaterial.subject && (
+                <span>
+                  {
+                    selectedMaterial.subject
+                  }
+                </span>
+              )}
+
+              {selectedMaterial.className && (
+                <>
+                  <span>•</span>
+
+                  <span>
+                    {
+                      selectedMaterial.className
+                    }
+                  </span>
+                </>
+              )}
+
+              {selectedMaterial.teacher && (
+                <>
+                  <span>•</span>
+
+                  <span>
+                    Ustad:{" "}
+                    {
+                      selectedMaterial.teacher
+                    }
+                  </span>
+                </>
+              )}
+
+            </div>
+
+          </div>
+
+
+          <button
+            type="button"
+            onClick={() => {
+              setIsViewMaterialOpen(
+                false
+              );
+
+              setSelectedMaterial(
+                null
+              );
+            }}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-500 transition hover:bg-slate-200 hover:text-slate-800"
+          >
+            <X className="h-5 w-5" />
+          </button>
+
+        </div>
+
+
+        {/* PREVIEW */}
+
+        <div className="bg-slate-50 p-4 sm:p-6">
+
+          {/* YOUTUBE */}
+
+          {(
+            selectedMaterial
+              ?.materialType ===
+              "youtube" ||
+            selectedMaterial
+              ?.type ===
+              "Video" ||
+            selectedMaterial
+              ?.youtubeUrl
+          ) ? (
+
+            getYouTubeEmbedUrl(
+              selectedMaterial
+                ?.youtubeUrl
+            ) ? (
+
+              <div className="overflow-hidden rounded-2xl bg-black shadow-sm">
+
+                <div className="aspect-video">
+
+                  <iframe
+                    src={getYouTubeEmbedUrl(
+                      selectedMaterial
+                        .youtubeUrl
+                    )}
+                    title={
+                      selectedMaterial.title
+                    }
+                    className="h-full w-full"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    allowFullScreen
+                  />
+
+                </div>
+
+              </div>
+
+            ) : (
+
+              <div className="flex min-h-[350px] items-center justify-center rounded-2xl border border-slate-200 bg-white text-center">
+
+                <div>
+                  <Video className="mx-auto h-10 w-10 text-slate-300" />
+
+                  <p className="mt-3 text-sm font-semibold text-slate-600">
+                    Video unavailable
+                  </p>
+                </div>
+
+              </div>
+
+            )
+
+          ) : selectedMaterial
+              ?.materialType ===
+              "image" ? (
+
+            /* IMAGE */
+
+            selectedMaterial
+              ?.fileUrl ? (
+
+              <div className="flex min-h-[400px] items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-4">
+
+                <img
+                  src={
+                    selectedMaterial.fileUrl
+                  }
+                  alt={
+                    selectedMaterial.title ||
+                    "Study material"
+                  }
+                  className="max-h-[70vh] max-w-full rounded-xl object-contain"
+                />
+
+              </div>
+
+            ) : null
+
+          ) : (
+
+            /* PDF / DOCUMENT */
+
+            selectedMaterial
+              ?.fileUrl ? (
+
+              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+
+                <iframe
+                  src={
+                    selectedMaterial.fileUrl
+                  }
+                  title={
+                    selectedMaterial.title
+                  }
+                  className="h-[70vh] w-full"
+                />
+
+              </div>
+
+            ) : (
+
+              <div className="flex min-h-[350px] items-center justify-center rounded-2xl border border-slate-200 bg-white">
+
+                <div className="text-center">
+
+                  <FileText className="mx-auto h-10 w-10 text-slate-300" />
+
+                  <p className="mt-3 text-sm font-semibold text-slate-600">
+                    Preview unavailable
+                  </p>
+
+                </div>
+
+              </div>
+
+            )
+
+          )}
+
+        </div>
+
+
+        {/* DESCRIPTION / ACTION */}
+
+        <div className="flex flex-col gap-4 border-t border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+
+          <div>
+
+            {selectedMaterial.description && (
+              <p className="max-w-2xl text-sm leading-6 text-slate-500">
+                {
+                  selectedMaterial.description
+                }
+              </p>
+            )}
+
+          </div>
+
+
+          {/* NO DOWNLOAD FOR YOUTUBE */}
+
+          {!selectedMaterial
+              ?.youtubeUrl &&
+            selectedMaterial
+              ?.fileUrl && (
+
+              <button
+                type="button"
+                onClick={() =>
+                  window.open(
+                    selectedMaterial.fileUrl,
+                    "_blank",
+                    "noopener,noreferrer"
+                  )
+                }
+                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-700"
+              >
+                <Download className="h-4 w-4" />
+
+                Open File
+              </button>
+
+            )}
+
+        </div>
+
+      </div>
+    </div>
+  )}
     </Layout>
   );
 }

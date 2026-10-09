@@ -1,473 +1,1232 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Bell, AlertCircle, Calendar } from "lucide-react";
-import { collection, getDocs, query, where, orderBy } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import useAuthStore from "@/lib/authStore";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+
+import {
+  Bell,
+  CheckCheck,
+  Clock3,
+  Inbox,
+  Mail,
+  MailOpen,
+  MessageCircle,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+  UserRound,
+  X,
+} from "lucide-react";
+
 import Layout from "@/components/digitalclassroom/Layout";
-import { format } from "date-fns";
 
-export default function StudentNoticesPage() {
-  const { user, userData } = useAuthStore();
-  const [notices, setNotices] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+import useAuthStore from "@/lib/authStore";
 
-  useEffect(() => {
-    const fetchNotices = async () => {
-      try {
-        setLoading(true);
-        setError("");
+import {
+  getMyDigitalStudentMessages,
+  markDigitalStudentMessageRead,
+} from "@/lib/digitalClassStudentService";
 
-        if (!user?.email) {
-          setError("User not logged in");
+
+/* =========================================================
+   FORMAT DATE
+========================================================= */
+
+function formatMessageDate(
+  value
+) {
+  if (!value) {
+    return {
+      date: "-",
+      time: "",
+    };
+  }
+
+  try {
+    const date =
+      new Date(value);
+
+    if (
+      Number.isNaN(
+        date.getTime()
+      )
+    ) {
+      return {
+        date: "-",
+        time: "",
+      };
+    }
+
+    const now =
+      new Date();
+
+    const today =
+      new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate()
+      );
+
+    const messageDay =
+      new Date(
+        date.getFullYear(),
+        date.getMonth(),
+        date.getDate()
+      );
+
+    const difference =
+      Math.round(
+        (
+          today.getTime() -
+          messageDay.getTime()
+        ) /
+          86400000
+      );
+
+    let dateText;
+
+    if (
+      difference === 0
+    ) {
+      dateText =
+        "Today";
+    } else if (
+      difference === 1
+    ) {
+      dateText =
+        "Yesterday";
+    } else {
+      dateText =
+        date.toLocaleDateString(
+          "en-IN",
+          {
+            day:
+              "2-digit",
+
+            month:
+              "short",
+
+            year:
+              "numeric",
+          }
+        );
+    }
+
+    const timeText =
+      date.toLocaleTimeString(
+        "en-IN",
+        {
+          hour:
+            "2-digit",
+
+          minute:
+            "2-digit",
+
+          hour12:
+            true,
+        }
+      );
+
+    return {
+      date:
+        dateText,
+
+      time:
+        timeText,
+    };
+  } catch {
+    return {
+      date: "-",
+      time: "",
+    };
+  }
+}
+
+
+/* =========================================================
+   SUMMARY CARD
+========================================================= */
+
+function SummaryCard({
+  icon: Icon,
+  title,
+  value,
+  description,
+  iconClass,
+}) {
+  return (
+    <div className="rounded-[22px] border border-slate-200 bg-white p-5 shadow-sm">
+
+      <div className="flex items-center gap-4">
+
+        <div
+          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${iconClass}`}
+        >
+          <Icon className="h-5 w-5" />
+        </div>
+
+        <div className="min-w-0">
+
+          <p className="text-2xl font-bold text-slate-900">
+            {value}
+          </p>
+
+          <p className="mt-0.5 text-sm font-semibold text-slate-700">
+            {title}
+          </p>
+
+          <p className="mt-0.5 text-xs text-slate-400">
+            {description}
+          </p>
+
+        </div>
+
+      </div>
+
+    </div>
+  );
+}
+
+
+/* =========================================================
+   PAGE
+========================================================= */
+
+export default function DigitalStudentMessagesPage() {
+  const {
+    user,
+    userData,
+  } = useAuthStore();
+
+
+  const [
+    messages,
+    setMessages,
+  ] = useState([]);
+
+  const [
+    loading,
+    setLoading,
+  ] = useState(true);
+
+  const [
+    refreshing,
+    setRefreshing,
+  ] = useState(false);
+
+  const [
+    activeTab,
+    setActiveTab,
+  ] = useState("all");
+
+  const [
+    search,
+    setSearch,
+  ] = useState("");
+
+  const [
+    selectedMessage,
+    setSelectedMessage,
+  ] = useState(null);
+
+  const [
+    markingReadId,
+    setMarkingReadId,
+  ] = useState(null);
+
+
+  const studentName =
+    userData?.fullName ||
+    userData?.studentName ||
+    user?.displayName ||
+    "Student";
+
+
+  /* =====================================================
+     LOAD MESSAGES
+  ===================================================== */
+
+  const loadMessages =
+    useCallback(
+      async (
+        silent = false
+      ) => {
+        if (!user?.uid) {
+          setMessages([]);
           setLoading(false);
+
           return;
         }
 
-        // First try to use userData if available
-        let studentData = userData;
-
-        // If userData doesn't have all required fields, fetch from students collection
-        if (!studentData || !studentData.madarsaId) {
-          const q = query(
-            collection(db, "students"),
-            where("email", "==", user.email)
-          );
-          const querySnapshot = await getDocs(q);
-
-          if (querySnapshot.empty) {
-            setError("Student not found");
-            return;
+        try {
+          if (silent) {
+            setRefreshing(
+              true
+            );
+          } else {
+            setLoading(
+              true
+            );
           }
 
-          const studentDoc = querySnapshot.docs[0];
-          studentData = studentDoc.data();
-        }
+          const result =
+            await getMyDigitalStudentMessages();
 
-        if (!studentData.madarsaId) {
-          setError("Student information not complete - missing madarsa ID");
-          return;
-        }
+          const loaded =
+            Array.isArray(
+              result?.messages
+            )
+              ? result.messages
+              : [];
 
-        if (studentData.status && studentData.status !== "active") {
-          setError(
-            "Your account is not active. Please contact the administrator."
+          setMessages(
+            loaded
           );
-          return;
+        } catch (error) {
+          console.log(
+            "LOAD STUDENT MESSAGES ERROR:",
+            error?.message
+          );
+
+          setMessages([]);
+        } finally {
+          setLoading(
+            false
+          );
+
+          setRefreshing(
+            false
+          );
         }
+      },
+      [user?.uid]
+    );
 
-        // Get class level
-        const classLevel =
-          studentData.classLevel || studentData.class || studentData.grade;
 
-        // Fetch madarsa details to get district and document ID
-        let madarsaData = null;
-        let madarsaDocId = "";
-        const madarsaQuery = query(
-          collection(db, "madarsas"),
-          where("madarsaId", "==", studentData.madarsaId)
-        );
-        const madarsaSnapshot = await getDocs(madarsaQuery);
-        if (!madarsaSnapshot.empty) {
-          madarsaData = madarsaSnapshot.docs[0].data();
-          madarsaDocId = madarsaSnapshot.docs[0].id;
-        }
+  useEffect(() => {
+    loadMessages();
+  }, [loadMessages]);
 
-        // 1. Local Notices Query
-        const localQuery = query(
-          collection(db, "notices"),
-          where("madarsaId", "==", studentData.madarsaId),
-          where("targetAudience", "in", ["students", "all"])
-        );
 
-        // 2. Central Notices Query
-        const centralQuery = query(
-          collection(db, "notices"),
-          where("targetAudience", "in", ["students", "all"])
-        );
+  /* =====================================================
+     COUNTS
+  ===================================================== */
 
-        // 3. Mekhala Notices Query
-        const mekhalaQuery = query(
-          collection(db, "notices"),
-          where("createdByRole", "==", "mekhala_admin")
-        );
+  const unreadCount =
+    useMemo(
+      () =>
+        messages.filter(
+          (message) =>
+            !message?.read
+        ).length,
+      [messages]
+    );
 
-        const [localSnapshot, centralSnapshot, mekhalaSnapshot] = await Promise.all([
-          getDocs(localQuery),
-          getDocs(centralQuery),
-          getDocs(mekhalaQuery),
-        ]);
 
-        const localDocs = localSnapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        }));
+  const centralCount =
+    useMemo(
+      () =>
+        messages.filter(
+          (message) =>
+            message?.source ===
+            "central_admin"
+        ).length,
+      [messages]
+    );
 
-        const centralDocs = centralSnapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        }));
 
-        const mekhalaDocs = mekhalaSnapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        }));
+  const teacherCount =
+    useMemo(
+      () =>
+        messages.filter(
+          (message) =>
+            message?.source ===
+            "teacher"
+        ).length,
+      [messages]
+    );
 
-        // Merge and deduplicate by ID
-        const allNoticesMap = new Map();
 
-        [...localDocs, ...centralDocs, ...mekhalaDocs].forEach((notice) => {
-          allNoticesMap.set(notice.id, notice);
-        });
+  /* =====================================================
+     FILTER
+  ===================================================== */
 
-        const mergedNotices = Array.from(allNoticesMap.values());
+  const filteredMessages =
+    useMemo(() => {
+      const query =
+        search
+          .trim()
+          .toLowerCase();
 
-        console.log(mergedNotices)
-
-        // Apply filters
-        const filteredNotices = mergedNotices.filter((notice) => {
-          // 1. Active Check
-          if (notice.isActive === false) return false;
-          if (notice.deleted === true) return false;
-
-          // 2. Mekhala Notice Target Check
-          if (notice.createdByRole === "mekhala_admin") {
-            if (notice.targetType === "all" || notice.targetType === "students_portal") {
-              return madarsaData && notice.targetDistricts?.includes(madarsaData.district);
-            }
-            if (notice.targetType === "specific_districts") {
-              return madarsaData && notice.targetDistricts?.includes(madarsaData.district);
-            }
-            if (notice.targetType === "specific_madarsas") {
-              return notice.targetMadarsas?.includes(studentData.madarsaId) || (madarsaDocId && notice.targetMadarsas?.includes(madarsaDocId));
-            }
+      return messages.filter(
+        (message) => {
+          if (
+            activeTab ===
+              "central" &&
+            message?.source !==
+              "central_admin"
+          ) {
             return false;
           }
 
-          // 3. Central Notice Target Check
-          if (notice.type === "central") {
-            // If targetMahals is active/present and NOT empty, check if student's madarsa is included
-            if (notice.targetMahals && notice.targetMahals.length > 0) {
-              if (!notice.targetMahals.includes(studentData.madarsaId)) {
-                return false;
-              }
-            }
-            // If targetMahals is empty or undefined, it's for everyone -> Match
+          if (
+            activeTab ===
+              "teacher" &&
+            message?.source !==
+              "teacher"
+          ) {
+            return false;
           }
 
-          // 4. Class Level Check
-          // If notice doesn't specify classLevel, it's for all classes
-          if (!notice.classLevel) return true;
-          // If notice is for "All" classes
-          if (notice.classLevel === "All" || notice.classLevel === "all")
+          if (
+            activeTab ===
+              "unread" &&
+            message?.read
+          ) {
+            return false;
+          }
+
+          if (!query) {
             return true;
-          // If student has no class level, show all notices (permissive)
-          if (!classLevel) return true;
-          // Check if notice is for student's specific class
-          if (Array.isArray(notice.classLevel)) {
-            return (
-              notice.classLevel.includes(classLevel) ||
-              notice.classLevel.includes("All")
-            );
           }
-          return notice.classLevel === classLevel;
-        });
 
-        // Sort by createdAt descending
-        filteredNotices.sort((a, b) => {
-          const dateA = a.createdAt?.seconds
-            ? a.createdAt.seconds
-            : a.createdAt
-            ? new Date(a.createdAt).getTime() / 1000
-            : 0;
-          const dateB = b.createdAt?.seconds
-            ? b.createdAt.seconds
-            : b.createdAt
-            ? new Date(b.createdAt).getTime() / 1000
-            : 0;
-          return dateB - dateA;
-        });
+          return (
+            String(
+              message?.title ||
+              ""
+            )
+              .toLowerCase()
+              .includes(query) ||
 
-        setNotices(filteredNotices);
-      } catch (err) {
-        console.error("Error fetching notices:", err);
-        setError("Failed to load notices. Please try again.");
+            String(
+              message?.message ||
+              ""
+            )
+              .toLowerCase()
+              .includes(query) ||
+
+            String(
+              message?.senderName ||
+              ""
+            )
+              .toLowerCase()
+              .includes(query)
+          );
+        }
+      );
+    }, [
+      messages,
+      activeTab,
+      search,
+    ]);
+
+
+  /* =====================================================
+     OPEN MESSAGE
+  ===================================================== */
+
+  const handleOpenMessage =
+    async (
+      message
+    ) => {
+      if (!message) {
+        return;
+      }
+
+      setSelectedMessage(
+        message
+      );
+
+      if (
+        message?.read
+      ) {
+        return;
+      }
+
+      const readKey =
+        `${message.source}_${message.id}`;
+
+      try {
+        setMarkingReadId(
+          readKey
+        );
+
+        /*
+         * Update UI immediately.
+         */
+
+        setMessages(
+          (previous) =>
+            previous.map(
+              (item) =>
+                item.id ===
+                  message.id &&
+                item.source ===
+                  message.source
+                  ? {
+                      ...item,
+                      read:
+                        true,
+                    }
+                  : item
+            )
+        );
+
+        setSelectedMessage(
+          (current) =>
+            current
+              ? {
+                  ...current,
+                  read:
+                    true,
+                }
+              : current
+        );
+
+        await markDigitalStudentMessageRead(
+          message.source,
+          message.id
+        );
+      } catch (error) {
+        console.log(
+          "MARK MESSAGE READ ERROR:",
+          error?.message
+        );
       } finally {
-        setLoading(false);
+        setMarkingReadId(
+          null
+        );
       }
     };
 
-    if (user?.email) {
-      fetchNotices();
-    }
-  }, [user, userData]);
 
-  const isExpired = (notice) => {
-    if (!notice.expiryDate) return false;
-    const expiryDate = notice.expiryDate.seconds
-      ? new Date(notice.expiryDate.seconds * 1000)
-      : new Date(notice.expiryDate);
-    return expiryDate < new Date();
-  };
+  /* =====================================================
+     TAB
+  ===================================================== */
 
-  const getPriorityColor = (priority) => {
-    switch (priority) {
-      case "high":
-        return "bg-red-100 text-red-800 border-red-200";
-      case "medium":
-        return "bg-yellow-100 text-yellow-800 border-yellow-200";
-      case "low":
-        return "bg-green-100 text-green-800 border-green-200";
-      default:
-        return "bg-gray-100 text-gray-800 border-gray-200";
-    }
-  };
+  const tabs = [
+    {
+      id:
+        "all",
 
-  const activeNotices = notices.filter((notice) => !isExpired(notice));
-  const expiredNotices = notices.filter((notice) => isExpired(notice));
+      label:
+        "All",
 
-  const formatContentWithLinks = (content) => {
-    if (!content) return "";
-    const urlRegex = /(https?:\/\/[^\s]+)/g;
-    return content.split(urlRegex).map((part, index) => {
-      if (part.match(urlRegex)) {
-        return (
-          <a
-            key={index}
-            href={part}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-blue-600 hover:underline break-all"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {part}
-          </a>
-        );
-      }
-      return part;
-    });
-  };
+      count:
+        messages.length,
+    },
 
-  const formatDate = (timestamp) => {
-    if (!timestamp) return "";
-    const date = timestamp.seconds
-      ? new Date(timestamp.seconds * 1000)
-      : new Date(timestamp);
-    return format(date, "MMM d, yyyy");
-  };
+    {
+      id:
+        "central",
+
+      label:
+        "Central Admin",
+
+      count:
+        centralCount,
+    },
+
+    {
+      id:
+        "teacher",
+
+      label:
+        "Teacher",
+
+      count:
+        teacherCount,
+    },
+
+    {
+      id:
+        "unread",
+
+      label:
+        "Unread",
+
+      count:
+        unreadCount,
+    },
+  ];
+
 
   return (
     <Layout user={user}>
-      <div className="p-4 md:p-6 space-y-4 md:space-y-6">
-        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
-              Notices
-            </h1>
-            <p className="text-gray-600 mt-1 md:mt-2 text-sm md:text-base">
-              Important announcements
-              {userData?.classLevel || userData?.class
-                ? ` for Class ${userData.classLevel || userData.class}`
-                : ""}
-            </p>
-          </div>
-        </div>
 
-        {/* Statistics */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
-          <Card>
-            <CardContent className="p-3 md:p-4">
-              <div className="flex items-center space-x-3">
-                <Bell className="w-6 h-6 md:w-8 md:h-8 text-blue-500 flex-shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs md:text-sm text-gray-600">
-                    Active Notices
-                  </p>
-                  <p className="text-lg md:text-xl font-bold">
-                    {activeNotices.length}
-                  </p>
+      <main className="min-h-screen bg-[#f7faf9]">
+
+        <div className="mx-auto max-w-[1500px] space-y-6 p-4 sm:p-6 lg:p-8">
+
+
+          {/* =====================================
+              HEADER
+          ====================================== */}
+
+          <section className="relative overflow-hidden rounded-[30px] border border-teal-100 bg-gradient-to-r from-white via-[#f5fbf8] to-[#dff5ef] p-6 shadow-sm sm:p-8">
+
+            <div className="absolute -right-12 -top-12 h-44 w-44 rounded-full border-[24px] border-teal-700/5" />
+
+            <Bell className="absolute right-12 top-8 h-20 w-20 text-teal-700/5" />
+
+            <div className="relative z-10 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+
+              <div>
+
+                <div className="mb-3 inline-flex items-center gap-2 text-sm font-semibold text-teal-700">
+
+                  <MessageCircle className="h-4 w-4" />
+
+                  Digital Classroom
+
                 </div>
-              </div>
-            </CardContent>
-          </Card>
 
-          <Card>
-            <CardContent className="p-3 md:p-4">
-              <div className="flex items-center space-x-3">
-                <AlertCircle className="w-6 h-6 md:w-8 md:h-8 text-gray-500 flex-shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs md:text-sm text-gray-600">
-                    Past Notices
-                  </p>
-                  <p className="text-lg md:text-xl font-bold">
-                    {expiredNotices.length}
-                  </p>
+                <h1 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
+                  Messages
+                </h1>
+
+                <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600 sm:text-base">
+                  Assalamu Alaikum{" "}
+                  {studentName}. View
+                  important messages from
+                  Central Admin and your
+                  assigned Digital Teacher.
+                </p>
+
+              </div>
+
+
+              <button
+                type="button"
+                onClick={() =>
+                  loadMessages(true)
+                }
+                disabled={
+                  refreshing
+                }
+                className="inline-flex h-11 shrink-0 items-center justify-center gap-2 self-start rounded-xl border border-teal-200 bg-white px-4 text-sm font-semibold text-teal-700 shadow-sm transition hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <RefreshCw
+                  className={`h-4 w-4 ${
+                    refreshing
+                      ? "animate-spin"
+                      : ""
+                  }`}
+                />
+
+                Refresh
+              </button>
+
+            </div>
+
+          </section>
+
+
+          {/* =====================================
+              SUMMARY
+          ====================================== */}
+
+          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+
+            <SummaryCard
+              icon={Inbox}
+              value={
+                messages.length
+              }
+              title="Total Messages"
+              description="Central Admin + Teacher"
+              iconClass="bg-teal-100 text-teal-700"
+            />
+
+            <SummaryCard
+              icon={Mail}
+              value={
+                unreadCount
+              }
+              title="Unread"
+              description="Needs your attention"
+              iconClass="bg-amber-100 text-amber-700"
+            />
+
+            <SummaryCard
+              icon={ShieldCheck}
+              value={
+                centralCount
+              }
+              title="Central Admin"
+              description="DKJU announcements"
+              iconClass="bg-blue-100 text-blue-700"
+            />
+
+            <SummaryCard
+              icon={UserRound}
+              value={
+                teacherCount
+              }
+              title="Teacher Messages"
+              description="From your Digital Teacher"
+              iconClass="bg-violet-100 text-violet-700"
+            />
+
+          </section>
+
+
+          {/* =====================================
+              TOOLBAR
+          ====================================== */}
+
+          <section className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+
+
+              {/* TABS */}
+
+              <div className="flex flex-wrap gap-2">
+
+                {tabs.map(
+                  (tab) => {
+                    const active =
+                      activeTab ===
+                      tab.id;
+
+                    return (
+                      <button
+                        key={
+                          tab.id
+                        }
+                        type="button"
+                        onClick={() =>
+                          setActiveTab(
+                            tab.id
+                          )
+                        }
+                        className={`inline-flex h-10 items-center gap-2 rounded-xl px-4 text-sm font-semibold transition ${
+                          active
+                            ? "bg-teal-700 text-white shadow-sm"
+                            : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+                        }`}
+                      >
+                        {
+                          tab.label
+                        }
+
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[11px] ${
+                            active
+                              ? "bg-white/15 text-white"
+                              : "bg-white text-slate-500"
+                          }`}
+                        >
+                          {
+                            tab.count
+                          }
+                        </span>
+
+                      </button>
+                    );
+                  }
+                )}
+
+              </div>
+
+
+              {/* SEARCH */}
+
+              <div className="relative w-full xl:max-w-sm">
+
+                <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+
+                <input
+                  type="text"
+                  value={
+                    search
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    setSearch(
+                      event.target
+                        .value
+                    )
+                  }
+                  placeholder="Search messages..."
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-11 pr-10 text-sm text-slate-700 outline-none transition focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10"
+                />
+
+                {search && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSearch("")
+                    }
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 transition hover:text-slate-700"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+
+              </div>
+
+            </div>
+
+          </section>
+
+
+          {/* =====================================
+              MESSAGE LIST
+          ====================================== */}
+
+          <section className="overflow-hidden rounded-[26px] border border-slate-200 bg-white shadow-sm">
+
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-5 sm:px-6">
+
+              <div>
+
+                <h2 className="font-bold text-slate-900">
+                  Inbox
+                </h2>
+
+                <p className="mt-1 text-xs text-slate-500">
+                  {
+                    filteredMessages.length
+                  }{" "}
+                  messages found
+                </p>
+
+              </div>
+
+              {unreadCount >
+                0 && (
+                <div className="inline-flex items-center gap-2 rounded-full bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700">
+
+                  <Mail className="h-3.5 w-3.5" />
+
+                  {
+                    unreadCount
+                  }{" "}
+                  unread
+
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+              )}
 
-        {error && (
-          <Alert variant="destructive">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
+            </div>
 
-        {/* Active Notices */}
-        <Card>
-          <CardHeader className="p-4 md:p-6">
-            <CardTitle className="flex items-center space-x-2 text-lg md:text-xl">
-              <Bell className="w-4 h-4 md:w-5 md:h-5 text-blue-500" />
-              <span>Current Notices ({activeNotices.length})</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-4 md:p-6 pt-0">
+
             {loading ? (
-              <div className="text-center py-6 md:py-8">
-                <div className="animate-spin rounded-full h-8 w-8 md:h-12 md:w-12 border-4 border-blue-600 border-t-transparent mx-auto"></div>
-                <p className="text-gray-600 mt-4 text-sm md:text-base">
-                  Loading notices...
-                </p>
+
+              <div className="flex min-h-[360px] items-center justify-center">
+
+                <div className="text-center">
+
+                  <div className="mx-auto h-9 w-9 animate-spin rounded-full border-2 border-teal-100 border-t-teal-600" />
+
+                  <p className="mt-4 text-sm font-medium text-slate-500">
+                    Loading messages...
+                  </p>
+
+                </div>
+
               </div>
-            ) : activeNotices.length === 0 ? (
-              <div className="text-center py-6 md:py-8">
-                <Bell className="w-12 h-12 md:w-16 md:h-16 text-gray-300 mx-auto mb-4" />
-                <p className="text-gray-600 text-sm md:text-base">
-                  No current notices available
+
+            ) : filteredMessages
+                .length ===
+              0 ? (
+
+              <div className="px-6 py-20 text-center">
+
+                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-slate-50">
+
+                  <Inbox className="h-8 w-8 text-slate-300" />
+
+                </div>
+
+                <h3 className="mt-4 font-bold text-slate-700">
+                  No messages found
+                </h3>
+
+                <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-slate-400">
+                  Messages from Central
+                  Admin and your assigned
+                  Digital Teacher will
+                  appear here.
                 </p>
+
               </div>
+
             ) : (
-              <div className="space-y-3 md:space-y-4">
-                {activeNotices.map((notice) => (
-                  <Card
-                    key={notice.id}
-                    className="border-l-4 border-l-blue-500 hover:none-md transition-none"
-                  >
-                    <CardContent className="p-3 md:p-4">
-                      <div className="space-y-2 md:space-y-3">
-                        <div className="flex flex-col sm:flex-row sm:items-start gap-2">
-                          <h3 className="text-base md:text-lg font-semibold break-words flex-1 text-gray-900 leading-tight">
-                            {formatContentWithLinks(notice.title)}
-                          </h3>
-                          <div className="flex flex-wrap gap-2 flex-shrink-0">
-                            {notice.type === "central" && (
-                              <Badge className="bg-teal-600 hover:bg-teal-700 text-xs text-white">
-                                Central
-                              </Badge>
-                            )}
-                            <Badge
-                              className={`${getPriorityColor(
-                                notice.priority
-                              )} text-xs`}
+
+              <div className="divide-y divide-slate-100">
+
+                {filteredMessages.map(
+                  (
+                    message
+                  ) => {
+                    const {
+                      date,
+                      time,
+                    } =
+                      formatMessageDate(
+                        message
+                          ?.createdAt
+                      );
+
+                    const isCentral =
+                      message
+                        ?.source ===
+                      "central_admin";
+
+                    const readKey =
+                      `${message.source}_${message.id}`;
+
+                    const isMarking =
+                      markingReadId ===
+                      readKey;
+
+                    return (
+                      <button
+                        key={
+                          readKey
+                        }
+                        type="button"
+                        onClick={() =>
+                          handleOpenMessage(
+                            message
+                          )
+                        }
+                        className={`group flex w-full flex-col gap-4 px-5 py-5 text-left transition hover:bg-slate-50/80 sm:px-6 lg:flex-row lg:items-center ${
+                          !message.read
+                            ? "bg-teal-50/30"
+                            : "bg-white"
+                        }`}
+                      >
+
+                        {/* ICON */}
+
+                        <div
+                          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${
+                            isCentral
+                              ? "bg-blue-50 text-blue-700"
+                              : "bg-violet-50 text-violet-700"
+                          }`}
+                        >
+                          {isCentral ? (
+                            <ShieldCheck className="h-5 w-5" />
+                          ) : (
+                            <UserRound className="h-5 w-5" />
+                          )}
+                        </div>
+
+
+                        {/* CONTENT */}
+
+                        <div className="min-w-0 flex-1">
+
+                          <div className="flex flex-wrap items-center gap-2">
+
+                            <h3
+                              className={`truncate text-sm text-slate-900 sm:text-base ${
+                                !message.read
+                                  ? "font-bold"
+                                  : "font-semibold"
+                              }`}
                             >
-                              {notice.priority} priority
-                            </Badge>
+                              {
+                                message.title
+                              }
+                            </h3>
+
+                            {!message
+                              .read && (
+                              <span className="h-2 w-2 shrink-0 rounded-full bg-teal-500" />
+                            )}
+
+                            {message
+                              ?.priority ===
+                              "high" && (
+                              <span className="rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-red-600">
+                                Important
+                              </span>
+                            )}
+
                           </div>
+
+
+                          <p className="mt-1 text-xs font-semibold text-slate-500">
+                            {
+                              message.senderName
+                            }
+                          </p>
+
+
+                          <p className="mt-2 line-clamp-2 text-sm leading-6 text-slate-500">
+                            {
+                              message.message
+                            }
+                          </p>
+
                         </div>
 
-                        <p className="text-gray-600 whitespace-pre-wrap text-sm md:text-base break-words">
-                          {formatContentWithLinks(notice.content)}
-                        </p>
 
-                        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-xs md:text-sm text-gray-500 pt-2 border-t border-gray-100">
-                          <div className="flex items-center space-x-1">
-                            <span className="font-medium text-gray-600">
-                              Posted:
+                        {/* META */}
+
+                        <div className="flex shrink-0 items-center gap-4 lg:flex-col lg:items-end">
+
+                          <div className="flex items-center gap-1.5 text-xs text-slate-400">
+
+                            <Clock3 className="h-3.5 w-3.5" />
+
+                            <span>
+                              {date}
+
+                              {time
+                                ? ` • ${time}`
+                                : ""}
                             </span>
-                            <span>{formatDate(notice.createdAt)}</span>
-                            {notice.createdByName && (
-                              <span className="ml-1 text-gray-500">
-                                by {notice.createdByName}
-                              </span>
-                            )}
+
                           </div>
-                          {notice.expiryDate && (
-                            <div className="flex items-center space-x-1 sm:ml-auto">
-                              <Calendar className="w-3 h-3 md:w-4 md:h-4 flex-shrink-0" />
-                              <span>
-                                Valid until: {formatDate(notice.expiryDate)}
-                              </span>
-                            </div>
-                          )}
+
+
+                          <div
+                            className={`inline-flex items-center gap-1.5 text-xs font-semibold ${
+                              message.read
+                                ? "text-slate-400"
+                                : "text-teal-700"
+                            }`}
+                          >
+                            {isMarking ? (
+
+                              <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-teal-200 border-t-teal-600" />
+
+                            ) : message
+                                .read ? (
+
+                              <CheckCheck className="h-4 w-4" />
+
+                            ) : (
+
+                              <Mail className="h-4 w-4" />
+
+                            )}
+
+                            {message.read
+                              ? "Read"
+                              : "Unread"}
+
+                          </div>
+
                         </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+
+                      </button>
+                    );
+                  }
+                )}
+
               </div>
+
             )}
-          </CardContent>
-        </Card>
 
-        {/* Expired Notices */}
-        {expiredNotices.length > 0 && (
-          <Card>
-            <CardHeader className="p-4 md:p-6">
-              <CardTitle className="flex items-center space-x-2 text-lg md:text-xl">
-                <AlertCircle className="w-4 h-4 md:w-5 md:h-5 text-gray-500" />
-                <span>Past Notices ({expiredNotices.length})</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-4 md:p-6 pt-0">
-              <div className="space-y-3 md:space-y-4">
-                {expiredNotices.map((notice) => (
-                  <Card
-                    key={notice.id}
-                    className="border-l-4 border-l-gray-300 opacity-75 bg-gray-50"
+          </section>
+
+        </div>
+
+
+        {/* =====================================
+            MESSAGE VIEW MODAL
+        ====================================== */}
+
+        {selectedMessage && (
+
+          <div
+            className="fixed inset-0 z-[10000] overflow-y-auto bg-slate-950/50 p-4 backdrop-blur-sm"
+            onClick={() =>
+              setSelectedMessage(
+                null
+              )
+            }
+          >
+
+            <div
+              className="mx-auto my-10 w-full max-w-2xl overflow-hidden rounded-[28px] bg-white shadow-2xl"
+              onClick={(
+                event
+              ) =>
+                event.stopPropagation()
+              }
+            >
+
+              {/* MODAL HEADER */}
+
+              <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-5 sm:px-6">
+
+                <div className="flex min-w-0 items-start gap-3">
+
+                  <div
+                    className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${
+                      selectedMessage
+                        ?.source ===
+                      "central_admin"
+                        ? "bg-blue-50 text-blue-700"
+                        : "bg-violet-50 text-violet-700"
+                    }`}
                   >
-                    <CardContent className="p-3 md:p-4">
-                      <div className="space-y-2 md:space-y-3">
-                        <div className="flex flex-col sm:flex-row sm:items-start gap-2">
-                          <h3 className="text-base md:text-lg font-semibold break-words flex-1 text-gray-700">
-                            {formatContentWithLinks(notice.title)}
-                          </h3>
-                          <div className="flex flex-wrap gap-2">
-                            {notice.type === "central" && (
-                              <Badge variant="secondary" className="text-xs">
-                                Central
-                              </Badge>
-                            )}
-                            <Badge variant="secondary" className="text-xs">
-                              EXPIRED
-                            </Badge>
-                          </div>
-                        </div>
 
-                        <p className="text-gray-500 whitespace-pre-wrap text-sm md:text-base break-words">
-                          {formatContentWithLinks(notice.content)}
-                        </p>
+                    {selectedMessage
+                      ?.source ===
+                    "central_admin" ? (
 
-                        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-xs md:text-sm text-gray-400">
-                          <div className="flex items-center space-x-1">
-                            <span>Posted: {formatDate(notice.createdAt)}</span>
-                            {notice.createdByName && (
-                              <span>by {notice.createdByName}</span>
-                            )}
-                          </div>
-                          {notice.expiryDate && (
-                            <div className="flex items-center space-x-1 sm:ml-auto text-red-400">
-                              <Calendar className="w-3 h-3 md:w-4 md:h-4 flex-shrink-0" />
-                              <span>
-                                Expired on: {formatDate(notice.expiryDate)}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                      <ShieldCheck className="h-5 w-5" />
+
+                    ) : (
+
+                      <UserRound className="h-5 w-5" />
+
+                    )}
+
+                  </div>
+
+                  <div className="min-w-0">
+
+                    <p className="text-xs font-semibold uppercase tracking-wide text-teal-600">
+                      {selectedMessage
+                        ?.source ===
+                      "central_admin"
+                        ? "Central Admin"
+                        : "Digital Teacher"}
+                    </p>
+
+                    <h2 className="mt-1 text-xl font-bold text-slate-900">
+                      {
+                        selectedMessage.title
+                      }
+                    </h2>
+
+                  </div>
+
+                </div>
+
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSelectedMessage(
+                      null
+                    )
+                  }
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-500 transition hover:bg-slate-200 hover:text-slate-800"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+
               </div>
-            </CardContent>
-          </Card>
+
+
+              {/* SENDER */}
+
+              <div className="border-b border-slate-100 bg-slate-50/70 px-5 py-4 sm:px-6">
+
+                <div className="flex flex-wrap items-center justify-between gap-3">
+
+                  <div>
+
+                    <p className="text-xs text-slate-400">
+                      From
+                    </p>
+
+                    <p className="mt-1 text-sm font-bold text-slate-700">
+                      {
+                        selectedMessage.senderName
+                      }
+                    </p>
+
+                  </div>
+
+
+                  <div className="text-right">
+
+                    <p className="text-xs text-slate-400">
+                      Received
+                    </p>
+
+                    <p className="mt-1 text-sm font-semibold text-slate-600">
+
+                      {
+                        formatMessageDate(
+                          selectedMessage
+                            .createdAt
+                        ).date
+                      }
+
+                      {" • "}
+
+                      {
+                        formatMessageDate(
+                          selectedMessage
+                            .createdAt
+                        ).time
+                      }
+
+                    </p>
+
+                  </div>
+
+                </div>
+
+              </div>
+
+
+              {/* BODY */}
+
+              <div className="px-5 py-7 sm:px-6">
+
+                <p className="whitespace-pre-wrap text-[15px] leading-8 text-slate-600">
+                  {
+                    selectedMessage.message
+                  }
+                </p>
+
+              </div>
+
+
+              {/* FOOTER */}
+
+              <div className="flex items-center justify-between border-t border-slate-100 px-5 py-4 sm:px-6">
+
+                <div className="inline-flex items-center gap-2 text-xs font-semibold text-emerald-600">
+
+                  <MailOpen className="h-4 w-4" />
+
+                  Message read
+
+                </div>
+
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSelectedMessage(
+                      null
+                    )
+                  }
+                  className="inline-flex h-10 items-center justify-center rounded-xl bg-teal-700 px-5 text-sm font-semibold text-white transition hover:bg-teal-800"
+                >
+                  Close
+                </button>
+
+              </div>
+
+            </div>
+
+          </div>
+
         )}
-      </div>
+
+      </main>
+
     </Layout>
   );
 }

@@ -502,9 +502,12 @@ function QuickAction({
     </button>
   );
 }
-function MaterialCard({ material }) {
+function MaterialCard({ material, onView, onDownload, downloading = false, }) {
   const Icon = getMaterialIcon(material.type);
-
+const isYouTube =
+  material?.materialType === "youtube" ||
+  material?.type === "Video" ||
+  Boolean(material?.youtubeUrl);
   return (
     <article className="group overflow-hidden rounded-[26px] border border-slate-200 bg-white shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-lg">
 
@@ -558,20 +561,63 @@ function MaterialCard({ material }) {
         <div className="mt-5 grid grid-cols-2 gap-3">
 
           <button
-            type="button"
-            className="flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
-          >
-            <Eye className="h-4 w-4" />
-            View
-          </button>
+  type="button"
+  onClick={() =>
+    onView?.(
+      material
+    )
+  }
+  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+>
+  <Eye className="h-4 w-4" />
 
-          <button
-            type="button"
-            className="flex h-11 items-center justify-center gap-2 rounded-xl bg-teal-700 text-sm font-semibold text-white transition hover:bg-teal-800"
-          >
-            <Download className="h-4 w-4" />
-            Download
-          </button>
+  View
+</button>
+
+         {isYouTube ? (
+
+  <button
+    type="button"
+    
+    onClick={() =>
+    onView?.(
+      material
+    )
+  }
+    className="inline-flex items-center justify-center gap-2 rounded-xl bg-red-50 px-4 py-2.5 text-sm font-semibold text-red-600 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+  >
+    <Video className="h-4 w-4" />
+
+    Watch Video
+  </button>
+
+) : (
+
+  <button
+  type="button"
+  disabled={
+    !material?.fileUrl ||
+    downloading
+  }
+  onClick={() => {
+    onDownload?.(material);
+  }}
+  className="inline-flex items-center justify-center gap-2 rounded-xl bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
+>
+  {downloading ? (
+    <>
+      <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+      Downloading...
+    </>
+  ) : (
+    <>
+      <Download className="h-4 w-4" />
+      Download
+    </>
+  )}
+</button>
+
+)}
 
         </div>
 
@@ -587,8 +633,15 @@ function MaterialCard({ material }) {
 function MaterialListItem({
   material,
   last,
+   onView,
+   onDownload,
+   downloading = false,
 }) {
   const Icon = getMaterialIcon(material.type);
+  const isYouTube =
+  material?.materialType === "youtube" ||
+  material?.type === "Video" ||
+  Boolean(material?.youtubeUrl);
 
   return (
     <div
@@ -638,15 +691,58 @@ function MaterialListItem({
 
       <div className="flex gap-2 sm:shrink-0">
 
-        <button className="flex h-10 items-center gap-2 rounded-xl border border-slate-200 px-4 text-sm font-semibold text-slate-600 hover:bg-slate-50">
+        <button onClick={() =>
+  onView?.(
+    material
+  )
+}
+         className="flex h-10 items-center gap-2 rounded-xl border border-slate-200 px-4 text-sm font-semibold text-slate-600 hover:bg-slate-50">
           <Eye className="h-4 w-4" />
           View
         </button>
 
-        <button className="flex h-10 items-center gap-2 rounded-xl bg-teal-700 px-4 text-sm font-semibold text-white hover:bg-teal-800">
-          <Download className="h-4 w-4" />
-          Download
-        </button>
+        {isYouTube ? (
+
+  <button
+    type="button"
+    onClick={() =>
+    onView?.(
+      material
+    )
+  }
+    className="inline-flex items-center justify-center gap-2 rounded-xl bg-red-50 px-4 py-2.5 text-sm font-semibold text-red-600 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+  >
+    <Video className="h-4 w-4" />
+
+    Watch Video
+  </button>
+
+) : (
+<button
+  type="button"
+  disabled={
+    !material?.fileUrl ||
+    downloading
+  }
+  onClick={() => {
+    onDownload?.(material);
+  }}
+  className="inline-flex items-center justify-center gap-2 rounded-xl bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
+>
+  {downloading ? (
+    <>
+      <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+      Downloading...
+    </>
+  ) : (
+    <>
+      <Download className="h-4 w-4" />
+      Download
+    </>
+  )}
+</button>
+
+)}
 
       </div>
 
@@ -703,6 +799,81 @@ function getMaterialIcon(type) {
 
   return BookOpen;
 }
+
+
+function getYouTubeEmbedUrl(
+  url
+) {
+  if (!url) {
+    return null;
+  }
+
+  try {
+    const parsedUrl =
+      new URL(url);
+
+    let videoId =
+      null;
+
+    if (
+      parsedUrl.hostname.includes(
+        "youtu.be"
+      )
+    ) {
+      videoId =
+        parsedUrl.pathname
+          .replace("/", "")
+          .split("/")[0];
+    }
+
+    if (
+      parsedUrl.hostname.includes(
+        "youtube.com"
+      )
+    ) {
+      videoId =
+        parsedUrl.searchParams.get(
+          "v"
+        );
+
+      if (
+        !videoId &&
+        parsedUrl.pathname.includes(
+          "/shorts/"
+        )
+      ) {
+        videoId =
+          parsedUrl.pathname
+            .split(
+              "/shorts/"
+            )[1]
+            ?.split("/")[0];
+      }
+
+      if (
+        !videoId &&
+        parsedUrl.pathname.includes(
+          "/embed/"
+        )
+      ) {
+        videoId =
+          parsedUrl.pathname
+            .split(
+              "/embed/"
+            )[1]
+            ?.split("/")[0];
+      }
+    }
+
+    if (!videoId) {
+      return null;
+    }
+
+    return `https://www.youtube.com/embed/${videoId}`;
+  } catch {
+    return null;
+  }
+}
 // ==========================================
 // EXPORT ALL
 // ==========================================
@@ -724,4 +895,5 @@ export {
   MiniCalendar,
   MosqueSilhouette,
   IslamicPattern,
+  getYouTubeEmbedUrl,
 };

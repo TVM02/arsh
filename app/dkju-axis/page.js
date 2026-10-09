@@ -9,6 +9,7 @@ import {
   Star,
   Trophy,
   Users,
+ MonitorCog
 } from "lucide-react";
 
 import Header from "@/components/Header";
@@ -77,6 +78,12 @@ export default function PortalsPage() {
       icon: Trophy,
       title: "State Portal",
       href: "/auth/login/state",
+      color: "teal",
+    },
+    {
+      icon: MonitorCog,
+      title: "IT Coordinators",
+      href: "/coming-soon",
       color: "teal",
     },
   ];

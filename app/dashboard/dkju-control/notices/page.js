@@ -790,6 +790,8 @@ export default function CentralAdminNoticesPage() {
                       <SelectItem value="district">District</SelectItem>
                       <SelectItem value="convener">Convener Portal</SelectItem>
                       <SelectItem value="inspector">Inspector Portal</SelectItem>
+                      <SelectItem value="digitalteacher">Digital Teacher</SelectItem>
+                      <SelectItem value="digitalstudent">Digital Student</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

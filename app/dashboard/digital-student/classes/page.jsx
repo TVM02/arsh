@@ -1,6 +1,9 @@
 "use client";
-
-import { useMemo } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import {
   Search,
   Bell,
@@ -23,48 +26,14 @@ import {
       StatCard,
       QuickAction
   } from "@/components/digitalclassroom/dashborad";
+
+  import {
+  getMyDigitalStudentLiveClasses,
+} from "@/lib/digitalClassStudentService";
+
 import Layout from "@/components/digitalclassroom/Layout";
 
 import useAuthStore from "@/lib/authStore";
-
-const upcomingClasses = [
-  {
-    id: 1,
-    subject: "Quran Studies",
-    lesson: "Surah Al-Baqarah - Part 3",
-    date: "Today",
-    time: "10:00 AM",
-    status: "live",
-    icon: BookOpen,
-  },
-  {
-    id: 2,
-    subject: "Islamic History",
-    lesson: "The Early Muslim Community",
-    date: "Today",
-    time: "02:00 PM",
-    status: "live",
-    icon: GraduationCap,
-  },
-  {
-    id: 3,
-    subject: "Arabic Language",
-    lesson: "Basic Grammar - Lesson 5",
-    date: "Tomorrow",
-    time: "10:00 AM",
-    status: "scheduled",
-    icon: BookOpen,
-  },
-  {
-    id: 4,
-    subject: "Fiqh",
-    lesson: "Purity and Prayer",
-    date: "Tomorrow",
-    time: "02:00 PM",
-    status: "scheduled",
-    icon: BookOpen,
-  },
-];
 
 const announcements = [
   {
@@ -87,6 +56,10 @@ const announcements = [
 
 export default function DigitalClassroomPage() {
   const { userData, user } = useAuthStore();
+  const [liveClasses, setLiveClasses] = useState([]);
+  const [liveClassesLoading, setLiveClassesLoading] = useState(true);
+
+const [currentTime, setCurrentTime] = useState(new Date());
 
   const studentName = useMemo(() => {
     return (
@@ -96,6 +69,296 @@ export default function DigitalClassroomPage() {
       "Student"
     );
   }, [userData, user]);
+
+  useEffect(() => {
+  let active = true;
+
+  const loadLiveClasses =
+    async () => {
+      if (!user?.uid) {
+        return;
+      }
+
+      try {
+        setLiveClassesLoading(
+          true
+        );
+
+        const result =
+          await getMyDigitalStudentLiveClasses();
+
+        if (!active) {
+          return;
+        }
+
+        setLiveClasses(
+          Array.isArray(
+            result?.classes
+          )
+            ? result.classes
+            : []
+        );
+      } catch (error) {
+        console.error(
+          "LOAD STUDENT LIVE CLASSES ERROR:",
+          error
+        );
+
+        if (active) {
+          setLiveClasses([]);
+        }
+      } finally {
+        if (active) {
+          setLiveClassesLoading(
+            false
+          );
+        }
+      }
+    };
+
+  loadLiveClasses();
+
+  return () => {
+    active = false;
+  };
+}, [user?.uid]);
+
+useEffect(() => {
+  if (!user?.uid) {
+    return;
+  }
+
+  const timer =
+    setInterval(
+      async () => {
+        try {
+          const result =
+            await getMyDigitalStudentLiveClasses();
+
+          setLiveClasses(
+            Array.isArray(
+              result?.classes
+            )
+              ? result.classes
+              : []
+          );
+
+          setCurrentTime(
+            new Date()
+          );
+        } catch (error) {
+          console.error(
+            "AUTO REFRESH STUDENT CLASSES ERROR:",
+            error
+          );
+        }
+      },
+      30000
+    );
+
+  return () => {
+    clearInterval(timer);
+  };
+}, [user?.uid]);
+
+const getLocalDateString =
+  (date) => {
+    const year =
+      date.getFullYear();
+
+    const month =
+      String(
+        date.getMonth() + 1
+      ).padStart(2, "0");
+
+    const day =
+      String(
+        date.getDate()
+      ).padStart(2, "0");
+
+    return `${year}-${month}-${day}`;
+  };
+
+
+const today =
+  new Date(
+    currentTime
+  );
+
+const tomorrow =
+  new Date(
+    currentTime
+  );
+
+tomorrow.setDate(
+  tomorrow.getDate() + 1
+);
+
+const todayDate =
+  getLocalDateString(
+    today
+  );
+
+const tomorrowDate =
+  getLocalDateString(
+    tomorrow
+  );
+
+
+const upcomingClasses =
+  liveClasses.filter(
+    (item) => {
+      const validDate =
+        item.date ===
+          todayDate ||
+        item.date ===
+          tomorrowDate;
+
+      const validStatus =
+        item.status ===
+          "upcoming" ||
+        item.status ===
+          "ongoing";
+
+      return (
+        validDate &&
+        validStatus
+      );
+    }
+  );
+  const completedClasses =
+  useMemo(() => {
+    return liveClasses.filter(
+      (classItem) =>
+        classItem?.status ===
+        "completed"
+    );
+  }, [liveClasses]);
+
+  const recentCompletedClasses =
+  useMemo(() => {
+    return completedClasses
+      .sort((a, b) => {
+        const first =
+          `${a?.date || ""} ${
+            a?.startTime || ""
+          }`;
+
+        const second =
+          `${b?.date || ""} ${
+            b?.startTime || ""
+          }`;
+
+        return second.localeCompare(
+          first
+        );
+      })
+      .slice(0, 4);
+  }, [completedClasses]);
+
+  const formatClassTime =
+  (time) => {
+    if (!time) {
+      return "";
+    }
+
+    const [
+      hours,
+      minutes,
+    ] = time
+      .split(":")
+      .map(Number);
+
+    const date =
+      new Date();
+
+    date.setHours(
+      hours,
+      minutes,
+      0,
+      0
+    );
+
+    return date.toLocaleTimeString(
+      "en-IN",
+      {
+        hour:
+          "2-digit",
+
+        minute:
+          "2-digit",
+
+        hour12:
+          true,
+      }
+    );
+  };
+
+
+  const getClassDateLabel = (dateValue) => {
+  if (!dateValue) {
+    return "";
+  }
+
+  const formatDate = (date) => {
+    const year =
+      date.getFullYear();
+
+    const month =
+      String(
+        date.getMonth() + 1
+      ).padStart(2, "0");
+
+    const day =
+      String(
+        date.getDate()
+      ).padStart(2, "0");
+
+    return `${year}-${month}-${day}`;
+  };
+
+  const today =
+    new Date();
+
+  const tomorrow =
+    new Date();
+
+  tomorrow.setDate(
+    tomorrow.getDate() + 1
+  );
+
+  if (
+    dateValue ===
+    formatDate(today)
+  ) {
+    return "Today";
+  }
+
+  if (
+    dateValue ===
+    formatDate(tomorrow)
+  ) {
+    return "Tomorrow";
+  }
+
+  try {
+    const date =
+      new Date(
+        `${dateValue}T00:00:00`
+      );
+
+    return date.toLocaleDateString(
+      "en-IN",
+      {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      }
+    );
+  } catch {
+    return dateValue;
+  }
+};
 
   return (
     <Layout user={user}>
@@ -204,23 +467,18 @@ export default function DigitalClassroomPage() {
           {/* ========================================= */}
 
           <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <StatCard
-              icon={BookOpen}
-              value="5"
-              label="Enrolled Courses"
-              iconClass="bg-emerald-100 text-emerald-700"
-            />
+            
 
             <StatCard
               icon={CheckCircle2}
-              value="12"
+              value={completedClasses.length}
               label="Classes Completed"
               iconClass="bg-teal-100 text-teal-700"
             />
 
             <StatCard
               icon={CalendarDays}
-              value="3"
+              value={upcomingClasses.length}
               label="Upcoming Classes"
               iconClass="bg-amber-100 text-amber-700"
             />
@@ -257,119 +515,184 @@ export default function DigitalClassroomPage() {
                   </div>
                 </div>
 
-                <button className="text-sm font-semibold text-teal-700 hover:text-teal-900">
-                  View All
-                </button>
+                
               </div>
 
               <div>
-                {upcomingClasses.map((classItem) => {
-                  const Icon = classItem.icon;
-                  const live = classItem.status === "live";
+               {liveClassesLoading ? (
 
-                  return (
-                    <div
-                      key={classItem.id}
-                      className="grid gap-4 border-b border-slate-100 px-5 py-5 last:border-b-0 sm:px-6 lg:grid-cols-[1.2fr_0.6fr_auto] lg:items-center"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700">
-                          <Icon className="h-6 w-6" />
-                        </div>
+  <div className="flex min-h-[220px] items-center justify-center">
 
-                        <div>
-                          <h3 className="font-bold text-slate-900">
-                            {classItem.subject}
-                          </h3>
+    <div className="text-center">
 
-                          <p className="mt-1 text-sm text-slate-500">
-                            {classItem.lesson}
-                          </p>
-                        </div>
-                      </div>
+      <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-teal-100 border-t-teal-600" />
 
-                      <div>
-                        <p className="text-sm font-semibold text-slate-700">
-                          {classItem.date}, {classItem.time}
-                        </p>
+      <p className="mt-3 text-sm font-medium text-slate-500">
+        Loading classes...
+      </p>
 
-                        <div
-                          className={`mt-1 flex items-center gap-1.5 text-xs font-semibold ${
-                            live
-                              ? "text-red-500"
-                              : "text-blue-600"
-                          }`}
-                        >
-                          <span
-                            className={`h-2 w-2 rounded-full ${
-                              live
-                                ? "animate-pulse bg-red-500"
-                                : "bg-blue-500"
-                            }`}
-                          />
+    </div>
 
-                          {live ? "Live Class" : "Scheduled"}
-                        </div>
-                      </div>
+  </div>
 
-                      {live ? (
-                        <button className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-teal-700 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-800">
-                          <Video className="h-4 w-4" />
-                          Join Now
-                        </button>
-                      ) : (
-                        <button className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100">
-                          View Details
-                          <ChevronRight className="h-4 w-4" />
-                        </button>
-                      )}
-                    </div>
+) : upcomingClasses.length === 0 ? (
+
+  <div className="px-6 py-16 text-center">
+
+    <CalendarDays className="mx-auto h-9 w-9 text-slate-300" />
+
+    <p className="mt-3 text-sm font-semibold text-slate-600">
+      No upcoming classes
+    </p>
+
+    <p className="mt-1 text-xs text-slate-400">
+      Today and tomorrow&apos;s classes will appear here.
+    </p>
+
+  </div>
+
+) : (
+
+  upcomingClasses.map(
+    (classItem) => {
+
+      const live =
+        classItem.status ===
+        "ongoing";
+
+      const dateLabel =
+        classItem.date ===
+        todayDate
+          ? "Today"
+          : classItem.date ===
+              tomorrowDate
+            ? "Tomorrow"
+            : classItem.date;
+
+      return (
+        <div
+          key={
+            classItem.id
+          }
+          className="grid gap-4 border-b border-slate-100 px-5 py-5 last:border-b-0 sm:px-6 lg:grid-cols-[1.2fr_0.6fr_auto] lg:items-center"
+        >
+
+          <div className="flex items-center gap-4">
+
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700">
+              <BookOpen className="h-6 w-6" />
+            </div>
+
+            <div>
+
+              <h3 className="font-bold text-slate-900">
+                {
+                  classItem.subject
+                }
+              </h3>
+
+              <p className="mt-1 text-sm text-slate-500">
+                {
+                  classItem.title
+                }
+              </p>
+
+              {classItem.teacherName && (
+                <p className="mt-1 text-xs text-slate-400">
+                  Ustad:{" "}
+                  {
+                    classItem.teacherName
+                  }
+                </p>
+              )}
+
+            </div>
+
+          </div>
+
+
+          <div>
+
+            <p className="text-sm font-semibold text-slate-700">
+              {dateLabel},{" "}
+              {formatClassTime(
+                classItem.startTime
+              )}
+            </p>
+
+            <div
+              className={`mt-1 flex items-center gap-1.5 text-xs font-semibold ${
+                live
+                  ? "text-red-500"
+                  : "text-blue-600"
+              }`}
+            >
+
+              <span
+                className={`h-2 w-2 rounded-full ${
+                  live
+                    ? "animate-pulse bg-red-500"
+                    : "bg-blue-500"
+                }`}
+              />
+
+              {live
+                ? "Live Now"
+                : "Scheduled"}
+
+            </div>
+
+          </div>
+
+
+          {live ? (
+
+            <button
+              type="button"
+              onClick={() => {
+                if (
+                  classItem.meetLink
+                ) {
+                  window.open(
+                    classItem.meetLink,
+                    "_blank",
+                    "noopener,noreferrer"
                   );
-                })}
+                }
+              }}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-teal-700 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-800"
+            >
+              <Video className="h-4 w-4" />
+
+              Join Now
+            </button>
+
+          ) : (
+
+            <button
+              type="button"
+              disabled
+              className="inline-flex h-11 cursor-not-allowed items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-5 text-sm font-semibold text-slate-400"
+            >
+              Scheduled
+
+              <ChevronRight className="h-4 w-4" />
+            </button>
+
+          )}
+
+        </div>
+      );
+    }
+  )
+
+)}
               </div>
             </div>
 
             {/* RIGHT */}
             <div className="space-y-6">
-              {/* Quick actions */}
-              <div className="rounded-[26px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-                <div className="mb-5 flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
-                    <Sparkles className="h-5 w-5" />
-                  </div>
-
-                  <h2 className="font-bold text-slate-900">
-                    Quick Actions
-                  </h2>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <QuickAction
-                    icon={Video}
-                    label="Join Live Class"
-                    className="bg-emerald-50 text-emerald-800"
-                  />
-
-                  <QuickAction
-                    icon={PlayCircle}
-                    label="View Recordings"
-                    className="bg-blue-50 text-blue-800"
-                  />
-
-                  <QuickAction
-                    icon={Download}
-                    label="Download Notes"
-                    className="bg-violet-50 text-violet-800"
-                  />
-
-                  <QuickAction
-                    icon={ClipboardList}
-                    label="Assignments"
-                    className="bg-amber-50 text-amber-800"
-                  />
-                </div>
-              </div>
-
+              
               {/* Announcements */}
               <div className="rounded-[26px] border border-slate-200 bg-white shadow-sm">
                 <div className="flex items-center justify-between border-b border-slate-100 px-5 py-5">
@@ -420,6 +743,198 @@ export default function DigitalClassroomPage() {
               </div>
             </div>
           </section>
+          {/* ========================================= */}
+{/* RECENTLY COMPLETED CLASSES */}
+{/* ========================================= */}
+
+<section className="overflow-hidden rounded-[26px] border border-slate-200 bg-white shadow-sm">
+
+  {/* HEADER */}
+
+  <div className="flex items-center justify-between border-b border-slate-100 px-5 py-5 sm:px-6">
+
+    <div className="flex items-center gap-3">
+
+      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-teal-50 text-teal-700">
+        <CheckCircle2 className="h-5 w-5" />
+      </div>
+
+      <div>
+
+        <h2 className="font-bold text-slate-900">
+          Recently Completed Classes
+        </h2>
+
+        <p className="text-xs text-slate-500">
+          Your latest completed learning sessions
+        </p>
+
+      </div>
+
+    </div>
+
+   
+
+  </div>
+
+
+  {/* CONTENT */}
+
+  {liveClassesLoading ? (
+
+    <div className="flex min-h-[180px] items-center justify-center">
+
+      <div className="text-center">
+
+        <div className="mx-auto h-7 w-7 animate-spin rounded-full border-2 border-teal-100 border-t-teal-600" />
+
+        <p className="mt-3 text-sm text-slate-500">
+          Loading completed classes...
+        </p>
+
+      </div>
+
+    </div>
+
+  ) : recentCompletedClasses.length === 0 ? (
+
+    <div className="px-6 py-14 text-center">
+
+      <CheckCircle2 className="mx-auto h-9 w-9 text-slate-300" />
+
+      <p className="mt-3 text-sm font-semibold text-slate-600">
+        No completed classes yet
+      </p>
+
+      <p className="mt-1 text-xs text-slate-400">
+        Completed Live Classes will appear here.
+      </p>
+
+    </div>
+
+  ) : (
+
+    <div className="divide-y divide-slate-100">
+
+      {recentCompletedClasses.map(
+        (classItem) => {
+
+          const dateLabel =
+            getClassDateLabel(
+              classItem.date
+            );
+
+          const startTime =
+            formatClassTime(
+              classItem.startTime
+            );
+
+          const endTime =
+            formatClassTime(
+              classItem.endTime
+            );
+
+          return (
+            <div
+              key={classItem.id}
+              className="grid gap-4 px-5 py-5 sm:px-6 lg:grid-cols-[1.2fr_0.7fr_auto] lg:items-center"
+            >
+
+              {/* CLASS */}
+
+              <div className="flex items-center gap-4">
+
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-teal-50 text-teal-700">
+
+                  <BookOpen className="h-6 w-6" />
+
+                </div>
+
+                <div className="min-w-0">
+
+                  <h3 className="font-bold text-slate-900">
+                    {classItem.subject ||
+                      "Digital Class"}
+                  </h3>
+
+                  <p className="mt-1 text-sm text-slate-500">
+                    {classItem.title ||
+                      "Completed Class"}
+                  </p>
+
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-400">
+
+                    {classItem.className && (
+                      <span>
+                        {
+                          classItem.className
+                        }
+                      </span>
+                    )}
+
+                    {classItem.teacherName && (
+                      <>
+                        <span>•</span>
+
+                        <span>
+                          Ustad:{" "}
+                          {
+                            classItem.teacherName
+                          }
+                        </span>
+                      </>
+                    )}
+
+                  </div>
+
+                </div>
+
+              </div>
+
+
+              {/* TIME */}
+
+              <div>
+
+                <p className="text-sm font-semibold text-slate-700">
+                  {dateLabel}
+                </p>
+
+                <p className="mt-1 text-xs text-slate-400">
+                  {startTime}
+
+                  {endTime
+                    ? ` - ${endTime}`
+                    : ""}
+                </p>
+
+              </div>
+
+
+              {/* STATUS */}
+
+              <div className="flex lg:justify-end">
+
+                <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">
+
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+
+                  Completed
+
+                </span>
+
+              </div>
+
+            </div>
+          );
+        }
+      )}
+
+    </div>
+
+  )}
+
+</section>
         </div>
       </div>
     </main>

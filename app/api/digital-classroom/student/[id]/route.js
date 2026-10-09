@@ -1,235 +1,501 @@
-import { NextResponse } from "next/server";
+import {
+  NextResponse,
+} from "next/server";
 
 import {
-  doc,
-  getDoc,
-  updateDoc,
-  deleteDoc,
-  serverTimestamp,
-} from "firebase/firestore";
+  getAdminDb,
+} from "@/lib/firebase-admin";
 
-import { db } from "@/lib/firebase";
 
-import { getAdminDb } from "@/lib/firebase-admin";
+export const runtime =
+  "nodejs";
+
+export const dynamic =
+  "force-dynamic";
+
 
 const COLLECTION_NAME =
   "digitalClassStudentRegistrations";
 
 
-// ============================================
-// GET - View one registration
-// ============================================
+/* =========================================================
+   SERIALIZE FIRESTORE DATA
+========================================================= */
 
-export async function GET(request, { params }) {
+function serializeValue(value) {
+  if (
+    value === null ||
+    value === undefined
+  ) {
+    return value;
+  }
+
+  if (
+    value &&
+    typeof value.toDate ===
+      "function"
+  ) {
+    return value
+      .toDate()
+      .toISOString();
+  }
+
+  if (
+    value instanceof Date
+  ) {
+    return value.toISOString();
+  }
+
+  if (
+    Array.isArray(value)
+  ) {
+    return value.map(
+      serializeValue
+    );
+  }
+
+  if (
+    typeof value ===
+    "object"
+  ) {
+    const result = {};
+
+    for (
+      const [
+        key,
+        child,
+      ] of Object.entries(
+        value
+      )
+    ) {
+      result[key] =
+        serializeValue(
+          child
+        );
+    }
+
+    return result;
+  }
+
+  return value;
+}
+
+
+/* =========================================================
+   GET - VIEW ONE REGISTRATION
+========================================================= */
+
+export async function GET(
+  request,
+  { params }
+) {
   try {
-    const { id } = await params;
+    const {
+      id,
+    } =
+      await params;
+
 
     if (!id) {
       return NextResponse.json(
         {
-          success: false,
-          message: "Registration ID is required",
+          success:
+            false,
+
+          message:
+            "Registration ID is required",
         },
-        { status: 400 }
+        {
+          status:
+            400,
+        }
       );
     }
 
-    const registrationRef = doc(
-      db,
-      COLLECTION_NAME,
-      id
-    );
+
+    const db =
+      getAdminDb();
+
+
+    const registrationRef =
+      db
+        .collection(
+          COLLECTION_NAME
+        )
+        .doc(id);
+
 
     const registrationSnap =
-      await getDoc(registrationRef);
+      await registrationRef
+        .get();
 
-    if (!registrationSnap.exists()) {
+
+    if (
+      !registrationSnap.exists
+    ) {
       return NextResponse.json(
         {
-          success: false,
-          message: "Registration not found",
+          success:
+            false,
+
+          message:
+            "Registration not found",
         },
-        { status: 404 }
+        {
+          status:
+            404,
+        }
       );
     }
 
+
+    const registrationData =
+      serializeValue(
+        registrationSnap.data() ||
+          {}
+      );
+
+
     return NextResponse.json(
       {
-        success: true,
+        success:
+          true,
 
         data: {
-          id: registrationSnap.id,
-          ...registrationSnap.data(),
+          id:
+            registrationSnap.id,
+
+          ...registrationData,
         },
       },
-      { status: 200 }
+      {
+        status:
+          200,
+      }
     );
+
   } catch (error) {
     console.error(
-      "View student registration error:",
-      error
+      "VIEW DIGITAL STUDENT REGISTRATION ERROR:",
+      {
+        message:
+          error?.message,
+
+        code:
+          error?.code,
+
+        stack:
+          error?.stack,
+      }
     );
+
 
     return NextResponse.json(
       {
-        success: false,
-        message: "Failed to fetch registration",
-        error: error.message,
+        success:
+          false,
+
+        message:
+          error?.message ||
+          "Failed to fetch registration",
+
+        code:
+          error?.code ||
+          null,
       },
-      { status: 500 }
+      {
+        status:
+          500,
+      }
     );
   }
 }
 
 
-// ============================================
-// PATCH - Edit registration
-// ============================================
+/* =========================================================
+   PATCH - EDIT REGISTRATION
+========================================================= */
 
-export async function PATCH(request, { params }) {
+export async function PATCH(
+  request,
+  { params }
+) {
   try {
-    const { id } = await params;
-    const body = await request.json();
+    const {
+      id,
+    } =
+      await params;
+
+
+    const body =
+      await request.json();
+
 
     if (!id) {
       return NextResponse.json(
         {
-          success: false,
-          message: "Student ID is required",
+          success:
+            false,
+
+          message:
+            "Student ID is required",
         },
-        { status: 400 }
+        {
+          status:
+            400,
+        }
       );
     }
 
-    const db = getAdminDb();
 
-    const ref = db
-      .collection("digitalClassStudentRegistrations")
-      .doc(id);
+    const db =
+      getAdminDb();
 
-    const snap = await ref.get();
+
+    const ref =
+      db
+        .collection(
+          COLLECTION_NAME
+        )
+        .doc(id);
+
+
+    const snap =
+      await ref.get();
+
 
     if (!snap.exists) {
       return NextResponse.json(
         {
-          success: false,
-          message: "Student registration not found",
+          success:
+            false,
+
+          message:
+            "Student registration not found",
         },
-        { status: 404 }
+        {
+          status:
+            404,
+        }
       );
     }
 
-    const protectedFields = [
-      "id",
-      "uid",
-      "digitalAdmissionNumber",    
-      "approval",      
-      "passwordCreated",
-    ];
 
-    const updateData = { ...body };
+    const protectedFields =
+      [
+        "id",
+        "uid",
+        "digitalAdmissionNumber",
+        "approval",
+        "passwordCreated",
+      ];
 
-    for (const field of protectedFields) {
-      delete updateData[field];
+
+    const updateData = {
+      ...body,
+    };
+
+
+    for (
+      const field
+      of protectedFields
+    ) {
+      delete updateData[
+        field
+      ];
     }
 
-    updateData.updatedAt = new Date();
 
-    await ref.update(updateData);
+    updateData.updatedAt =
+      new Date();
 
-    const updatedSnap = await ref.get();
+
+    await ref.update(
+      updateData
+    );
+
+
+    const updatedSnap =
+      await ref.get();
+
 
     return NextResponse.json({
-      success: true,
-      message: "Registration updated successfully",
+      success:
+        true,
+
+      message:
+        "Registration updated successfully",
+
       student: {
-        id: updatedSnap.id,
-        ...updatedSnap.data(),
+        id:
+          updatedSnap.id,
+
+        ...serializeValue(
+          updatedSnap.data() ||
+            {}
+        ),
       },
     });
+
   } catch (error) {
-    console.error("DIGITAL STUDENT UPDATE ERROR:", {
-      message: error?.message,
-      code: error?.code,
-      stack: error?.stack,
-    });
+    console.error(
+      "DIGITAL STUDENT UPDATE ERROR:",
+      {
+        message:
+          error?.message,
+
+        code:
+          error?.code,
+
+        stack:
+          error?.stack,
+      }
+    );
+
 
     return NextResponse.json(
       {
-        success: false,
+        success:
+          false,
+
         message:
           error?.message ||
           "Failed to update registration",
-        code: error?.code || null,
+
+        code:
+          error?.code ||
+          null,
       },
-      { status: 500 }
+      {
+        status:
+          500,
+      }
     );
   }
 }
 
 
-// ============================================
-// DELETE - Delete registration
-// ============================================
+/* =========================================================
+   DELETE - DELETE REGISTRATION
+========================================================= */
 
-export async function DELETE(request, { params }) {
+export async function DELETE(
+  request,
+  { params }
+) {
   try {
-    const { id } = await params;
+    const {
+      id,
+    } =
+      await params;
+
 
     if (!id) {
       return NextResponse.json(
         {
-          success: false,
-          message: "Student registration ID is required",
+          success:
+            false,
+
+          message:
+            "Student registration ID is required",
         },
-        { status: 400 }
+        {
+          status:
+            400,
+        }
       );
     }
 
-    const db = getAdminDb();
 
-    const registrationRef = db
-      .collection("digitalClassStudentRegistrations")
-      .doc(id);
+    const db =
+      getAdminDb();
 
-    const registrationSnap = await registrationRef.get();
 
-    if (!registrationSnap.exists) {
+    const registrationRef =
+      db
+        .collection(
+          COLLECTION_NAME
+        )
+        .doc(id);
+
+
+    const registrationSnap =
+      await registrationRef
+        .get();
+
+
+    if (
+      !registrationSnap.exists
+    ) {
       return NextResponse.json(
         {
-          success: false,
-          message: "Digital student registration not found",
+          success:
+            false,
+
+          message:
+            "Digital student registration not found",
         },
-        { status: 404 }
+        {
+          status:
+            404,
+        }
       );
     }
 
-    await registrationRef.delete();
+
+    await registrationRef
+      .delete();
+
 
     return NextResponse.json(
       {
-        success: true,
-        message: "Digital student registration deleted successfully",
+        success:
+          true,
+
+        message:
+          "Digital student registration deleted successfully",
+
         id,
       },
-      { status: 200 }
+      {
+        status:
+          200,
+      }
     );
+
   } catch (error) {
-    console.error("DELETE DIGITAL STUDENT ERROR:", {
-      message: error?.message,
-      code: error?.code,
-      stack: error?.stack,
-    });
+    console.error(
+      "DELETE DIGITAL STUDENT ERROR:",
+      {
+        message:
+          error?.message,
+
+        code:
+          error?.code,
+
+        stack:
+          error?.stack,
+      }
+    );
+
 
     return NextResponse.json(
       {
-        success: false,
+        success:
+          false,
+
         message:
           error?.message ||
           "Failed to delete Digital Classroom student",
-        code: error?.code || null,
+
+        code:
+          error?.code ||
+          null,
       },
-      { status: 500 }
+      {
+        status:
+          500,
+      }
     );
   }
 }

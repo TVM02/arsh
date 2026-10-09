@@ -18,7 +18,11 @@ import {
   MosqueSilhouette,
   IslamicPattern,
 } from "@/components/digitalclassroom/dashborad";
-
+import {
+  getMyAssignedDigitalStudents,
+  getMyDigitalLiveClasses,
+  getDigitalTeacherAdminMessages,
+} from "@/lib/digitalClassTeacherService";
 
 import {
   BookOpen,
@@ -58,110 +62,36 @@ import { format, isValid } from "date-fns";
 
 
 
-const classes = [
-  {
-    id: 1,
-    name: "Quran – Class 5",
-    subject: "Quran & Tajweed",
-    students: 8,
-    nextSession: "Today",
-    time: "10:00 AM",
-    icon: BookOpen,
-    iconClass: "bg-emerald-700",
-  },
-  {
-    id: 2,
-    name: "Arabic – Class 6",
-    subject: "Arabic Language",
-    students: 6,
-    nextSession: "Today",
-    time: "11:30 AM",
-    icon: Languages,
-    iconClass: "bg-amber-500",
-  },
-  {
-    id: 3,
-    name: "Hadees – Class 4",
-    subject: "Hadees Studies",
-    students: 5,
-    nextSession: "Tomorrow",
-    time: "09:00 AM",
-    icon: Landmark,
-    iconClass: "bg-violet-600",
-  },
-  {
-    id: 4,
-    name: "Fiqh – Class 7",
-    subject: "Islamic Jurisprudence",
-    students: 4,
-    nextSession: "Tomorrow",
-    time: "11:00 AM",
-    icon: Scale,
-    iconClass: "bg-blue-600",
-  },
-  {
-    id: 5,
-    name: "Seerah – Class 3",
-    subject: "Life of the Prophet ﷺ",
-    students: 5,
-    nextSession: "28 Aug 2025",
-    time: "01:00 PM",
-    icon: Users,
-    iconClass: "bg-lime-700",
-  },
-];
-
-const activities = [
-  {
-    id: 1,
-    type: "student",
-    title: "New student assigned to Quran – Class 5",
-    time: "2 hours ago",
-    icon: Users,
-    iconClass: "bg-blue-100 text-blue-600",
-  },
-  {
-    id: 2,
-    type: "lesson",
-    title: "You uploaded a new lesson",
-    subtitle: "Tajweed Rules – Madd (Lesson 3)",
-    time: "4 hours ago",
-    icon: FileText,
-    iconClass: "bg-rose-100 text-rose-500",
-  },
-  {
-    id: 3,
-    type: "video",
-    title: "Live class completed – Arabic – Class 6",
-    time: "1 day ago",
-    icon: Video,
-    iconClass: "bg-violet-100 text-violet-600",
-  },
-  {
-    id: 4,
-    type: "assignment",
-    title: "Student submitted assignment",
-    subtitle: "Hadees – Chapter 5",
-    time: "1 day ago",
-    icon: CheckCircle2,
-    iconClass: "bg-emerald-100 text-emerald-600",
-  },
-  {
-    id: 5,
-    type: "student",
-    title: "New student assigned to Seerah – Class 3",
-    time: "2 days ago",
-    icon: Users,
-    iconClass: "bg-blue-100 text-blue-600",
-  },
-];
-
 export default function DigitalTeacherDashboard() {
   const { user, userData } = useAuthStore();
   const [teacherData, setTeacherData] = useState(null);
+  const [
+  assignedStudents,
+  setAssignedStudents,
+] = useState([]);
   const [materials, setMaterials] = useState([]);
+  const [
+  liveClasses,
+  setLiveClasses,
+] = useState([]);
+const [
+  currentTime,
+  setCurrentTime,
+] = useState(
+  new Date()
+);
   const [assignments, setAssignments] = useState([]);
   const [notices, setNotices] = useState([]);
+const [
+  liveClassesLoading,
+  setLiveClassesLoading,
+] = useState(true);
+
+const [
+  noticesLoading,
+  setNoticesLoading,
+] = useState(true);
+
   const [recentResults, setRecentResults] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadingWidgets, setLoadingWidgets] = useState(true);
@@ -198,6 +128,279 @@ export default function DigitalTeacherDashboard() {
       return "N/A";
     }
   };
+useEffect(() => {
+  const timer =
+    setInterval(() => {
+      setCurrentTime(
+        new Date()
+      );
+    }, 30000);
+
+  return () => {
+    clearInterval(timer);
+  };
+}, []);
+
+
+  useEffect(() => {
+  let active = true;
+
+  const loadAssignedStudents =
+    async () => {
+      if (!user?.uid) {
+        return;
+      }
+
+      try {
+        const result =
+          await getMyAssignedDigitalStudents();
+
+        if (!active) {
+          return;
+        }
+
+        const students =
+          Array.isArray(
+            result?.students
+          )
+            ? result.students
+            : [];
+
+        setAssignedStudents(
+          students
+        );
+      } catch (error) {
+        console.error(
+          "LOAD DASHBOARD ASSIGNED STUDENTS ERROR:",
+          error
+        );
+
+        if (active) {
+          setAssignedStudents([]);
+        }
+      }
+    };
+
+  loadAssignedStudents();
+
+  return () => {
+    active = false;
+  };
+}, [user?.uid]);
+
+
+useEffect(() => {
+  let active = true;
+
+  const loadStudyMaterials =
+    async () => {
+      if (!user?.uid) {
+        return;
+      }
+
+      try {
+        const materialsQuery =
+          query(
+            collection(
+              db,
+              "digitalStudyMaterials"
+            ),
+            where(
+              "teacherUid",
+              "==",
+              user.uid
+            )
+          );
+
+        const snapshot =
+          await getDocs(
+            materialsQuery
+          );
+
+        if (!active) {
+          return;
+        }
+
+        const materialData =
+          snapshot.docs.map(
+            (document) => ({
+              id:
+                document.id,
+
+              ...document.data(),
+            })
+          );
+
+        setMaterials(
+          materialData
+        );
+      } catch (error) {
+        console.error(
+          "LOAD DASHBOARD STUDY MATERIALS ERROR:",
+          error
+        );
+
+        if (active) {
+          setMaterials([]);
+        }
+      }
+    };
+
+  loadStudyMaterials();
+
+  return () => {
+    active = false;
+  };
+}, [user?.uid]);
+
+
+useEffect(() => {
+  let active = true;
+
+  const loadLiveClasses =
+    async () => {
+      setLiveClassesLoading(true);
+      if (!user?.uid) {
+        return;
+      }
+
+      try {
+        const result =
+          await getMyDigitalLiveClasses();
+
+        if (!active) {
+          return;
+        }
+
+        const classes =
+          Array.isArray(
+            result?.classes
+          )
+            ? result.classes
+            : [];
+
+        setLiveClasses(
+          classes
+        );
+      } catch (error) {
+  console.error(
+    "LOAD DASHBOARD LIVE CLASSES ERROR:",
+    error
+  );
+
+  if (active) {
+    setLiveClasses([]);
+  }
+} finally {
+  if (active) {
+    setLiveClassesLoading(false);
+  }
+}
+    };
+
+  loadLiveClasses();
+
+  return () => {
+    active = false;
+  };
+}, [user?.uid]);
+
+useEffect(() => {
+  let active = true;
+
+  const loadRecentNotices =
+  async () => {
+      setNoticesLoading(true);
+      if (!user?.uid) {
+        return;
+      }
+
+      try {
+        const result =
+          await getDigitalTeacherAdminMessages();
+
+        if (!active) {
+          return;
+        }
+
+        const messages =
+          Array.isArray(
+            result?.messages
+          )
+            ? result.messages
+            : [];
+
+        const recentNotices =
+          messages
+            .slice(0, 5)
+            .map((notice) => {
+              const createdDate =
+                notice.createdAt
+                  ? new Date(
+                      notice.createdAt
+                    )
+                  : null;
+
+              const validDate =
+                createdDate &&
+                !Number.isNaN(
+                  createdDate.getTime()
+                );
+
+              return {
+                ...notice,
+
+                dateLabel:
+                  validDate
+                    ? createdDate.toLocaleDateString(
+                        "en-IN",
+                        {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric",
+                        }
+                      )
+                    : "",
+
+                timeLabel:
+                  validDate
+                    ? createdDate.toLocaleTimeString(
+                        "en-IN",
+                        {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        }
+                      )
+                    : "",
+              };
+            });
+
+        setNotices(
+          recentNotices
+        );
+      } catch (error) {
+  console.error(
+    "LOAD DASHBOARD CENTRAL ADMIN NOTICES ERROR:",
+    error
+  );
+
+  if (active) {
+    setNotices([]);
+  }
+} finally {
+  if (active) {
+    setNoticesLoading(false);
+  }
+}
+    };
+
+  loadRecentNotices();
+
+  return () => {
+    active = false;
+  };
+}, [user?.uid]);
+
 
  useEffect(() => {
   const fetchTeacherData = async () => {
@@ -369,6 +572,282 @@ export default function DigitalTeacherDashboard() {
   user?.email,
   userData,
 ]);
+
+const getLocalDateString = (
+  date
+) => {
+  const year =
+    date.getFullYear();
+
+  const month =
+    String(
+      date.getMonth() + 1
+    ).padStart(
+      2,
+      "0"
+    );
+
+  const day =
+    String(
+      date.getDate()
+    ).padStart(
+      2,
+      "0"
+    );
+
+  return `${year}-${month}-${day}`;
+};
+
+
+const formatClassTime = (
+  time
+) => {
+  if (!time) {
+    return "";
+  }
+
+  const [
+    hour,
+    minute,
+  ] = time
+    .split(":")
+    .map(Number);
+
+  if (
+    Number.isNaN(hour) ||
+    Number.isNaN(minute)
+  ) {
+    return time;
+  }
+
+  const date =
+    new Date();
+
+  date.setHours(
+    hour,
+    minute,
+    0,
+    0
+  );
+
+  return date.toLocaleTimeString(
+    "en-IN",
+    {
+      hour:
+        "2-digit",
+
+      minute:
+        "2-digit",
+    }
+  );
+};
+
+
+const normalizeClassName = (
+  value
+) => {
+  return String(
+    value || ""
+  )
+    .toLowerCase()
+    .replace(
+      /^class\s*/i,
+      ""
+    )
+    .trim();
+};
+
+const todayDate =
+  getLocalDateString(
+    currentTime
+  );
+
+const tomorrow =
+  new Date(
+    currentTime
+  );
+
+tomorrow.setDate(
+  tomorrow.getDate() + 1
+);
+
+const tomorrowDate =
+  getLocalDateString(
+    tomorrow
+  );
+
+
+const myClasses =
+  liveClasses
+    .map((item) => {
+      const date =
+        item?.date || "";
+
+      const startTime =
+        item?.startTime || "";
+
+      const endTime =
+        item?.endTime || "";
+
+      let status =
+        item?.status ||
+        "upcoming";
+
+      if (
+        date &&
+        startTime &&
+        endTime
+      ) {
+        const startDate =
+          new Date(
+            `${date}T${startTime}:00`
+          );
+
+        const endDate =
+          new Date(
+            `${date}T${endTime}:00`
+          );
+
+        if (
+          !Number.isNaN(
+            startDate.getTime()
+          ) &&
+          !Number.isNaN(
+            endDate.getTime()
+          )
+        ) {
+          if (
+            currentTime <
+            startDate
+          ) {
+            status =
+              "upcoming";
+          } else if (
+            currentTime >=
+              startDate &&
+            currentTime <=
+              endDate
+          ) {
+            status =
+              "ongoing";
+          } else {
+            status =
+              "completed";
+          }
+        }
+      }
+
+      const studentsCount =
+        assignedStudents.filter(
+          (student) => {
+            const studentClass =
+              student
+                ?.applyingclass ||
+              student
+                ?.assignedDigitalTeacherClass ||
+              student
+                ?.className ||
+              student?.class;
+
+            return (
+              normalizeClassName(
+                studentClass
+              ) ===
+              normalizeClassName(
+                item.className
+              )
+            );
+          }
+        ).length;
+
+      return {
+        ...item,
+
+        status,
+
+        name:
+          item.title ||
+          `${item.subject || "Live Class"} – ${item.className || ""}`,
+
+        subject:
+          item.subject ||
+          "",
+
+        students:
+          studentsCount,
+
+        nextSession:
+          date ===
+          todayDate
+            ? "Today"
+            : date ===
+                tomorrowDate
+              ? "Tomorrow"
+              : date,
+
+        time:
+          formatClassTime(
+            startTime
+          ),
+
+        icon:
+          Video,
+
+        iconClass:
+          status ===
+          "ongoing"
+            ? "bg-red-500"
+            : "bg-teal-600",
+      };
+    })
+    .filter((item) => {
+      const validDate =
+        item.date ===
+          todayDate ||
+        item.date ===
+          tomorrowDate;
+
+      const validStatus =
+        item.status ===
+          "upcoming" ||
+        item.status ===
+          "ongoing";
+
+      return (
+        validDate &&
+        validStatus
+      );
+    })
+    .sort((a, b) => {
+      const first =
+        `${a.date} ${
+          a.startTime ||
+          ""
+        }`;
+
+      const second =
+        `${b.date} ${
+          b.startTime ||
+          ""
+        }`;
+
+      return first.localeCompare(
+        second
+      );
+    });
+    const assignedClassList =
+  Array.isArray(
+    teacherData
+      ?.digitalTeachingAssignment
+      ?.classes
+  )
+    ? teacherData
+        .digitalTeachingAssignment
+        .classes
+    : [];
+
+const hasAssignedClasses =
+  assignedClassList.length > 0;
 
   if (loading) {
     return (
@@ -579,7 +1058,7 @@ export default function DigitalTeacherDashboard() {
 
                 <DashboardStat
   icon={Users}
-  value="0"
+  value={assignedStudents.length}
   title="Assigned Students"
   iconClass="bg-blue-50 text-blue-600"
 />
@@ -601,18 +1080,21 @@ export default function DigitalTeacherDashboard() {
 
 <DashboardStat
   icon={FileText}
-  value="0"
+  value={materials.length}
   title="Study Materials"
   iconClass="bg-orange-50 text-orange-500"
 />
 
 <DashboardStat
   icon={Video}
-  value="0"
+  value={
+    liveClassesLoading
+      ? "..."
+      : liveClasses.length
+  }
   title="Live Classes"
   iconClass="bg-violet-50 text-violet-600"
 />
-
                 {/* Study Hours */}
 
               
@@ -643,13 +1125,14 @@ export default function DigitalTeacherDashboard() {
             </h2>
           </div>
 
-          <button
-            type="button"
-            className="flex items-center gap-1 text-sm font-medium text-blue-600 transition hover:text-blue-700"
-          >
-            View All
-            <ChevronRight className="h-4 w-4" />
-          </button>
+          <Link
+      href="/dashboard/digital-teacher/live-classes"
+      className="flex items-center gap-1 text-sm font-medium text-blue-600 transition hover:text-blue-700"
+    >
+      View All
+
+      <ChevronRight className="h-4 w-4" />
+    </Link>
         </div>
 
         {/* Desktop table */}
@@ -658,14 +1141,61 @@ export default function DigitalTeacherDashboard() {
             <div>Class Name</div>
             <div>Students</div>
             <div>Next Session</div>
-            <div>Actions</div>
+           
             <div />
           </div>
 
           <div>
-          {classes.map((item) => {
-  const ClassIcon =
-    item.icon || BookOpen;
+  {!hasAssignedClasses ? (
+
+  <div className="flex min-h-[200px] items-center justify-center px-5 text-center">
+
+    <div>
+
+      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100">
+        <BookOpen className="h-5 w-5 text-slate-400" />
+      </div>
+
+      <p className="mt-3 text-sm font-semibold text-slate-700">
+        No Classes Assigned
+      </p>
+
+      <p className="mt-1 text-xs leading-5 text-slate-400">
+        No Digital Classroom classes have been assigned to you yet.
+      </p>
+
+    </div>
+
+  </div>
+
+) : liveClassesLoading ? (
+    <div className="flex min-h-[180px] items-center justify-center">
+      <div className="flex flex-col items-center gap-3">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-teal-100 border-t-teal-600" />
+
+        <p className="text-xs font-medium text-slate-500">
+          Loading classes...
+        </p>
+      </div>
+    </div>
+  ) : myClasses.length === 0 ? (
+    <div className="flex min-h-[180px] items-center justify-center px-5 text-center">
+      <div>
+        <Video className="mx-auto h-8 w-8 text-slate-300" />
+
+        <p className="mt-3 text-sm font-semibold text-slate-600">
+          No upcoming classes
+        </p>
+
+        <p className="mt-1 text-xs text-slate-400">
+          Today and tomorrow&apos;s classes will appear here.
+        </p>
+      </div>
+    </div>
+  ) : (
+    myClasses.map((item) => {
+             const ClassIcon =
+               item.icon || BookOpen;
 
               return (
                 <div
@@ -705,19 +1235,11 @@ export default function DigitalTeacherDashboard() {
                     <p className="text-xs text-slate-500">
                       {item.time}
                     </p>
+                    
                   </div>
 
-                  {/* Start */}
-                  <div>
-                    <button
-                      type="button"
-                      onClick={() => handleStartClass(item)}
-                      className="flex min-w-[95px] items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-teal-700 to-emerald-700 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
-                    >
-                      <Play className="h-3.5 w-3.5 fill-current" />
-                      Start
-                    </button>
-                  </div>
+        
+                  
 
                   {/* Menu */}
                   <div className="flex justify-end">
@@ -729,14 +1251,14 @@ export default function DigitalTeacherDashboard() {
                     </button>
                   </div>
                 </div>
-              );
-            })}
+              )}
+  ))}
           </div>
         </div>
 
         {/* Mobile cards */}
         <div className="space-y-3 p-4 md:hidden">
-          {classes.map((item) => {
+          {myClasses.map((item) => {
   const ClassIcon =
     item.icon || BookOpen;
 
@@ -809,66 +1331,176 @@ export default function DigitalTeacherDashboard() {
             RECENT ACTIVITY
         ================================================== */}
 
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-slate-700">
-                <Clock3 className="h-5 w-5 text-slate-700" />
-              </div>
+        {/* =================================================
+    RECENT CENTRAL ADMIN NOTICES
+================================================== */}
 
-              <h2 className="text-lg font-bold text-slate-800">
-                Recent Activity
-              </h2>
+<div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+
+  {/* Header */}
+
+  <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+
+    <div className="flex items-center gap-3">
+
+      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-teal-50">
+
+        <Bell className="h-5 w-5 text-teal-600" />
+
+      </div>
+
+      <div>
+        <h2 className="text-lg font-bold text-slate-800">
+          Recent Notices
+        </h2>
+
+        <p className="mt-0.5 text-[10px] text-slate-400">
+          Central Admin announcements
+        </p>
+      </div>
+
+    </div>
+
+    <Link
+      href="/dashboard/digital-teacher/messages"
+      className="flex items-center gap-1 text-sm font-medium text-blue-600 transition hover:text-blue-700"
+    >
+      View All
+
+      <ChevronRight className="h-4 w-4" />
+    </Link>
+
+  </div>
+
+
+  {/* Notices */}
+
+  <div className="px-5">
+
+  {noticesLoading ? (
+
+  <div className="flex min-h-[200px] items-center justify-center">
+
+    <div className="flex flex-col items-center gap-3">
+
+      <div className="h-8 w-8 animate-spin rounded-full border-4 border-teal-100 border-t-teal-600" />
+
+      <p className="text-xs font-medium text-slate-500">
+        Loading notices...
+      </p>
+
+    </div>
+
+  </div>
+
+) : notices.length === 0 ? (
+
+      <div className="flex min-h-[180px] flex-col items-center justify-center text-center">
+
+        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100">
+
+          <Bell className="h-5 w-5 text-slate-400" />
+
+        </div>
+
+        <p className="mt-3 text-sm font-semibold text-slate-600">
+          No recent notices
+        </p>
+
+        <p className="mt-1 text-xs text-slate-400">
+          Central Admin notices will appear here.
+        </p>
+
+      </div>
+
+    ) : (
+
+      notices.map(
+        (notice, index) => (
+
+          <div
+            key={notice.id}
+            className={`flex gap-3 py-4 ${
+              index !==
+              notices.length - 1
+                ? "border-b border-slate-100"
+                : ""
+            }`}
+          >
+
+            {/* Icon */}
+
+            <div
+              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
+                notice.priority ===
+                "important"
+                  ? "bg-red-50 text-red-500"
+                  : "bg-teal-50 text-teal-600"
+              }`}
+            >
+              <Bell className="h-5 w-5" />
             </div>
 
-            <button
-              type="button"
-              className="flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-700"
-            >
-              View All
-              <ChevronRight className="h-4 w-4" />
-            </button>
+
+            {/* Content */}
+
+            <div className="min-w-0 flex-1">
+
+              <div className="flex items-start justify-between gap-2">
+
+                <p className="text-[13px] font-semibold leading-5 text-slate-800">
+                  {notice.title}
+                </p>
+
+                {!notice.read && (
+                  <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-teal-500" />
+                )}
+
+              </div>
+
+              <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">
+                {notice.message}
+              </p>
+
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-slate-400">
+
+                <span>
+                  {notice.dateLabel}
+                </span>
+
+                {notice.timeLabel && (
+                  <>
+                    <span>•</span>
+
+                    <span>
+                      {notice.timeLabel}
+                    </span>
+                  </>
+                )}
+
+                {notice.priority ===
+                  "important" && (
+
+                  <span className="rounded-full bg-red-50 px-2 py-0.5 font-semibold text-red-500">
+                    Important
+                  </span>
+
+                )}
+
+              </div>
+
+            </div>
+
           </div>
 
-          <div className="px-5">
-            {activities.map((activity, index) => {
-              const ActivityIcon =
-    activity.icon || Bell;
-              return (
-                <div
-                  key={activity.id}
-                  className={`flex gap-3 py-3 ${
-                    index !== activities.length - 1
-                      ? "border-b border-slate-100"
-                      : ""
-                  }`}
-                >
-                  <div
-                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${activity.iconClass}`}
-                  >
-                    <ActivityIcon className="h-5 w-5" />
-                  </div>
+        )
+      )
 
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[13px] font-medium leading-5 text-slate-700">
-                      {activity.title}
-                    </p>
+    )}
 
-                    {activity.subtitle && (
-                      <p className="text-xs text-slate-500">
-                        {activity.subtitle}
-                      </p>
-                    )}
+  </div>
 
-                    <p className="mt-0.5 text-xs text-slate-400">
-                      {activity.time}
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+</div>
 
         {/* =================================================
             ISLAMIC QUOTE CARD

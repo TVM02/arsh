@@ -1,3 +1,4 @@
+"use client";
 
 import {  
   MoreHorizontal,
@@ -17,7 +18,11 @@ FileImage,
   Eye,
   Trash2,
   Loader2,
+  Edit3,
+
+
 } from "lucide-react";
+import { useState } from "react";
 
 function FilterSelect({
   label,
@@ -256,7 +261,14 @@ function StatCard({
 
 function LiveClassCard({
   classItem,
+  onEdit,
+  onDelete,
 }) {
+  const [
+    showMenu,
+    setShowMenu,
+  ] = useState(false);
+
   const isLive =
     classItem.status ===
     "ongoing";
@@ -264,6 +276,52 @@ function LiveClassCard({
   const isCompleted =
     classItem.status ===
     "completed";
+    const now = new Date();
+
+const startDate =
+  classItem.date &&
+  classItem.startTime
+    ? new Date(
+        `${classItem.date}T${classItem.startTime}:00`
+      )
+    : null;
+
+const endDate =
+  classItem.date &&
+  classItem.endTime
+    ? new Date(
+        `${classItem.date}T${classItem.endTime}:00`
+      )
+    : null;
+
+const joinOpenTime =
+  startDate
+    ? new Date(
+        startDate.getTime() -
+          5 * 60 * 1000
+      )
+    : null;
+
+const canJoinClass =
+  Boolean(
+    classItem.meetLink &&
+    joinOpenTime &&
+    endDate &&
+    now >= joinOpenTime &&
+    now <= endDate
+  );
+
+const handleJoinClass = () => {
+  if (!classItem.meetLink) {
+    return;
+  }
+
+  window.open(
+    classItem.meetLink,
+    "_blank",
+    "noopener,noreferrer"
+  );
+};
 
   return (
     <div
@@ -430,40 +488,91 @@ function LiveClassCard({
 
 
           <div
-            className="
-              mt-3
-              flex
-              flex-wrap
-              items-center
-              gap-4
-              text-[11px]
-              text-slate-500
-            "
-          >
-            <span
-              className="
-                inline-flex
-                items-center
-                gap-1.5
-              "
-            >
-              <Users className="h-4 w-4 text-slate-400" />
+  className="
+    mt-3
+    flex
+    flex-wrap
+    items-center
+    gap-4
+    text-[11px]
+    text-slate-500
+  "
+>
+  {/* STUDENTS */}
 
-              {classItem.studentsCount} students
-            </span>
+  <span
+    className="
+      inline-flex
+      items-center
+      gap-1.5
+    "
+  >
+    <Users className="h-4 w-4 text-slate-400" />
 
-            <span
-              className="
-                inline-flex
-                items-center
-                gap-1.5
-              "
-            >
-              <Clock3 className="h-4 w-4 text-slate-400" />
+    {classItem.studentsCount} students
+  </span>
 
-              {classItem.statusText}
-            </span>
-          </div>
+  {/* START TIME */}
+
+  <span
+    className="
+      inline-flex
+      items-center
+      gap-1.5
+    "
+  >
+    <Clock3 className="h-4 w-4 text-emerald-500" />
+
+    <span className="font-medium text-slate-700">
+      {classItem.startTime ||
+        classItem.time}
+    </span>
+  </span>
+
+  {/* END TIME */}
+
+  <span
+    className="
+      inline-flex
+      items-center
+      gap-1.5
+    "
+  >
+    <Clock3 className="h-4 w-4 text-red-400" />
+
+    <span className="font-medium text-slate-700">
+      {classItem.endTime}
+    </span>
+  </span>
+
+  {/* STATUS */}
+
+  <span
+    className="
+      inline-flex
+      items-center
+      gap-1.5
+    "
+  >
+    <span
+      className={`
+        h-2
+        w-2
+        rounded-full
+
+        ${
+          isLive
+            ? "animate-pulse bg-red-500"
+            : isCompleted
+            ? "bg-violet-500"
+            : "bg-blue-500"
+        }
+      `}
+    />
+
+    {classItem.statusText}
+  </span>
+</div>
         </div>
 
 
@@ -480,85 +589,217 @@ function LiveClassCard({
             gap-2
           "
         >
-          {!isCompleted && (
-            <button
-              type="button"
-              className={`
-                inline-flex
-                h-10
-                items-center
-                justify-center
-                gap-2
-                rounded-lg
-                px-4
-                text-xs
-                font-semibold
-                transition-all
+          {canJoinClass && (
+  <button
+    type="button"
+    onClick={
+      handleJoinClass
+    }
+    className="
+      inline-flex
+      h-10
+      items-center
+      justify-center
+      gap-2
+      rounded-lg
+      bg-gradient-to-r
+      from-emerald-500
+      to-teal-500
+      px-4
+      text-xs
+      font-semibold
+      text-white
+      shadow-md
+      transition-all
+      hover:-translate-y-0.5
+      hover:shadow-lg
+    "
+  >
+    <Video className="h-4 w-4" />
 
-                ${
-                  isLive
-                    ? "bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-md hover:shadow-lg"
-                    : "border border-slate-200 bg-white text-slate-700 hover:border-teal-200 hover:bg-teal-50"
-                }
-              `}
-            >
-              <Video className="h-4 w-4" />
+    Join Class
+  </button>
+)}
 
-              {isLive
-                ? "Join Class"
-                : "Start Class"}
-            </button>
-          )}
+          
+<div className="relative">
+  <button
+    type="button"
+    onClick={() =>
+      setShowMenu(
+        (previous) =>
+          !previous
+      )
+    }
+    className="
+      flex
+      h-10
+      w-10
+      items-center
+      justify-center
+      rounded-lg
+      text-slate-400
+      transition
+      hover:bg-slate-100
+      hover:text-slate-700
+    "
+  >
+    <MoreVertical className="h-4 w-4" />
+  </button>
 
-          {isCompleted && (
-            <button
-              type="button"
-              className="
-                inline-flex
-                h-10
-                items-center
-                justify-center
-                gap-2
-                rounded-lg
-                border
-                border-slate-200
-                bg-white
-                px-4
-                text-xs
-                font-semibold
-                text-slate-600
-                hover:bg-slate-50
-              "
-            >
-              <Play className="h-4 w-4" />
+  {showMenu && (
+    <div
+      className="
+        absolute
+        right-0
+        top-12
+        z-30
+        w-44
+        overflow-hidden
+        rounded-xl
+        border
+        border-slate-200
+        bg-white
+        p-1.5
+        shadow-xl
+      "
+    >
+      {/* EDIT */}
 
-              Recording
-            </button>
-          )}
+      <button
+        type="button"
+        onClick={() => {
+          setShowMenu(false);
 
-          <button
-            type="button"
-            className="
-              flex
-              h-10
-              w-10
-              items-center
-              justify-center
-              rounded-lg
-              text-slate-400
-              transition
-              hover:bg-slate-100
-              hover:text-slate-700
-            "
-          >
-            <MoreVertical className="h-4 w-4" />
-          </button>
+          if (onEdit) {
+            onEdit(classItem);
+          }
+        }}
+        className="
+          flex
+          w-full
+          items-center
+          gap-2.5
+          rounded-lg
+          px-3
+          py-2.5
+          text-left
+          text-xs
+          font-semibold
+          text-slate-700
+          transition
+          hover:bg-teal-50
+          hover:text-teal-700
+        "
+      >
+        <Edit3 className="h-4 w-4" />
+
+        Edit Class
+      </button>
+
+      {/* DELETE */}
+
+      <button
+        type="button"
+        onClick={() => {
+          setShowMenu(false);
+
+          if (onDelete) {
+            onDelete(classItem);
+          }
+        }}
+        className="
+          flex
+          w-full
+          items-center
+          gap-2.5
+          rounded-lg
+          px-3
+          py-2.5
+          text-left
+          text-xs
+          font-semibold
+          text-red-600
+          transition
+          hover:bg-red-50
+        "
+      >
+        <Trash2 className="h-4 w-4" />
+
+        Delete Class
+      </button>
+    </div>
+  )}
+</div>
         </div>
       </div>
     </div>
   );
 }
 
+function getLiveClassStatus(
+  classItem
+) {
+  const date =
+    classItem?.date;
+
+  const startTime =
+    classItem?.startTime;
+
+  const endTime =
+    classItem?.endTime;
+
+  if (
+    !date ||
+    !startTime ||
+    !endTime
+  ) {
+    return (
+      classItem?.status ||
+      "upcoming"
+    );
+  }
+
+  const startDate =
+    new Date(
+      `${date}T${startTime}:00`
+    );
+
+  const endDate =
+    new Date(
+      `${date}T${endTime}:00`
+    );
+
+  const now =
+    new Date();
+
+  if (
+    Number.isNaN(
+      startDate.getTime()
+    ) ||
+    Number.isNaN(
+      endDate.getTime()
+    )
+  ) {
+    return (
+      classItem?.status ||
+      "upcoming"
+    );
+  }
+
+  if (now < startDate) {
+    return "upcoming";
+  }
+
+  if (
+    now >= startDate &&
+    now <= endDate
+  ) {
+    return "ongoing";
+  }
+
+  return "completed";
+}
 
 function TodayClassRow({
   classItem,
@@ -651,7 +892,7 @@ function TodayClassRow({
           text-slate-500
         "
       >
-        {classItem.time}
+        {classItem.startTime}
         <br />
         {classItem.endTime}
       </div>
@@ -1408,6 +1649,7 @@ function RecentUpload({
 
 export {FilterSelect, StatCard, ActionButton,
      QuickAction, TodayClassRow, LiveClassCard,
-     MaterialRow, FolderRow, RecentUpload, SummaryCard
+     MaterialRow, FolderRow, RecentUpload, SummaryCard,
+     getLiveClassStatus
 
 }

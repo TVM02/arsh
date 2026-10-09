@@ -1,11 +1,20 @@
 "use client";
 
 import {
+  useEffect,
   useMemo,
   useState,
 } from "react";
 
 import Layout from "@/components/digitalclassroom/Layout";
+import useAuthStore from "@/lib/authStore";
+import { toast } from "sonner";
+
+import {
+  getMyAssignedDigitalStudents,
+  saveDigitalTeacherAttendance,
+    getDigitalTeacherAttendance,
+} from "@/lib/digitalClassTeacherService";
 
 import {
   CalendarDays,
@@ -19,83 +28,6 @@ import {
   XCircle,
 } from "lucide-react";
 
-
-/* =========================================================
-   DEMO STUDENTS
-   Later replace with Firebase Digital Students
-========================================================= */
-
-const DEMO_STUDENTS = [
-  {
-    id: "stu-1",
-    name: "Muhammed Jasim",
-    admissionNo: "DS001",
-    className: "Class 5",
-    madrasaName: "Mamba Ul Uloom",
-    profilePictureUrl: "",
-  },
-  {
-    id: "stu-2",
-    name: "Ahmed Faris",
-    admissionNo: "DS002",
-    className: "Class 5",
-    madrasaName: "Mamba Ul Uloom",
-    profilePictureUrl: "",
-  },
-  {
-    id: "stu-3",
-    name: "Fathima Nihala",
-    admissionNo: "DS003",
-    className: "Class 5",
-    madrasaName: "Al Noor Madrasa",
-    profilePictureUrl: "",
-  },
-  {
-    id: "stu-4",
-    name: "Maryam Irha",
-    admissionNo: "DS004",
-    className: "Class 6",
-    madrasaName: "Darul Huda",
-    profilePictureUrl: "",
-  },
-  {
-    id: "stu-5",
-    name: "Muhammed Hanan",
-    admissionNo: "DS005",
-    className: "Class 6",
-    madrasaName: "Darul Huda",
-    profilePictureUrl: "",
-  },
-  {
-    id: "stu-6",
-    name: "Rameesa Sherin",
-    admissionNo: "DS006",
-    className: "Class 7",
-    madrasaName: "Al Huda Madrasa",
-    profilePictureUrl: "",
-  },
-  {
-    id: "stu-7",
-    name: "Abdul Rahman",
-    admissionNo: "DS007",
-    className: "Class 7",
-    madrasaName: "Al Huda Madrasa",
-    profilePictureUrl: "",
-  },
-  {
-    id: "stu-8",
-    name: "Sahala Parveen",
-    admissionNo: "DS008",
-    className: "Class 8",
-    madrasaName: "Noorul Islam Madrasa",
-    profilePictureUrl: "",
-  },
-];
-
-
-/* =========================================================
-   LOCAL DATE
-========================================================= */
 
 function getTodayDate() {
   const now =
@@ -345,9 +277,7 @@ function AttendanceButton({
       ? "border-red-500 bg-red-500 text-white shadow-md shadow-red-100"
       : "border-red-200 bg-red-50 text-red-600 hover:bg-red-100",
 
-    late: active
-      ? "border-amber-500 bg-amber-500 text-white shadow-md shadow-amber-100"
-      : "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100",
+    
   };
 
   return (
@@ -383,16 +313,15 @@ function AttendanceButton({
 ========================================================= */
 
 export default function DigitalTeacherAttendancePage() {
-  const [
-    students,
-  ] = useState(
-    DEMO_STUDENTS,
-  );
+const [students, setStudents] = useState([]);
+const [studentsLoading, setStudentsLoading] = useState(true);
+
+const { user } = useAuthStore();
 
   const [
     selectedClass,
     setSelectedClass,
-  ] = useState("Class 5");
+  ] = useState("");
 
   const [
     selectedDate,
@@ -410,7 +339,10 @@ export default function DigitalTeacherAttendancePage() {
     attendance,
     setAttendance,
   ] = useState({});
-
+const [
+  savedAttendance,
+  setSavedAttendance,
+] = useState({});
   const [
     saving,
     setSaving,
@@ -428,7 +360,7 @@ export default function DigitalTeacherAttendancePage() {
           students
             .map(
               (student) =>
-                student.className,
+                student.applyingclass,
             )
             .filter(Boolean),
         ),
@@ -448,11 +380,140 @@ export default function DigitalTeacherAttendancePage() {
           ),
       );
     }, [students]);
+useEffect(() => {
+  if (
+    !selectedClass &&
+    classOptions.length > 0
+  ) {
+    setSelectedClass(
+      String(classOptions[0])
+    );
+  }
+}, [classOptions, selectedClass]);
 
+useEffect(() => {
+  let cancelled = false;
 
-  /* =====================================================
-     CLASS STUDENTS
-  ===================================================== */
+  const loadSavedAttendance =
+    async () => {
+      if (
+        !user?.uid ||
+        !selectedDate ||
+        !selectedClass
+      ) {
+        if (!cancelled) {
+          setSavedAttendance({});
+        }
+
+        return;
+      }
+
+      try {
+        /*
+         * Clear temporary selections whenever
+         * date/class changes.
+         */
+        setAttendance({});
+
+        const result =
+          await getDigitalTeacherAttendance({
+            date:
+              selectedDate,
+
+            className:
+              selectedClass,
+          });
+
+        const records =
+          result?.attendanceByStudent &&
+          typeof result.attendanceByStudent ===
+            "object"
+            ? result.attendanceByStudent
+            : {};
+
+        if (!cancelled) {
+          setSavedAttendance(
+            records
+          );
+        }
+      } catch (error) {
+        console.error(
+          "LOAD SAVED ATTENDANCE ERROR:",
+          error
+        );
+
+        if (!cancelled) {
+          setSavedAttendance(
+            {}
+          );
+
+          toast.error(
+            error?.message ||
+              "Failed to load saved attendance."
+          );
+        }
+      }
+    };
+
+  loadSavedAttendance();
+
+  return () => {
+    cancelled = true;
+  };
+}, [
+  user?.uid,
+  selectedDate,
+  selectedClass,
+]);
+
+    useEffect(() => {
+  let cancelled = false;
+
+  const loadStudents = async () => {
+    if (!user?.uid) {
+      setStudentsLoading(false);
+      return;
+    }
+
+    try {
+      setStudentsLoading(true);
+
+      const result = await getMyAssignedDigitalStudents();
+
+      const assignedStudents = Array.isArray(result?.students)
+        ? result.students
+        : [];
+
+      if (!cancelled) {
+        setStudents(assignedStudents);
+      }
+    } catch (error) {
+      console.error(
+        "LOAD ATTENDANCE STUDENTS ERROR:",
+        error
+      );
+
+      if (!cancelled) {
+        toast.error(
+          error?.message ||
+            "Failed to load assigned Digital Students."
+        );
+
+        setStudents([]);
+      }
+    } finally {
+      if (!cancelled) {
+        setStudentsLoading(false);
+      }
+    }
+  };
+
+  loadStudents();
+
+  return () => {
+    cancelled = true;
+  };
+}, [user?.uid]);
 
   const classStudents =
     useMemo(() => {
@@ -460,7 +521,7 @@ export default function DigitalTeacherAttendancePage() {
         (student) =>
           selectedClass ===
             "all" ||
-          student.className ===
+          student.applyingclass ===
             selectedClass,
       );
     }, [
@@ -489,9 +550,9 @@ export default function DigitalTeacherAttendancePage() {
           const searchable =
             [
               student.name,
-              student.admissionNo,
-              student.madrasaName,
-              student.className,
+              student.digitalAdmissionNumber,
+              student.madrasa,
+              student.applyingclass,
             ]
               .filter(Boolean)
               .join(" ")
@@ -512,39 +573,73 @@ export default function DigitalTeacherAttendancePage() {
      SET ATTENDANCE
   ===================================================== */
 
-  const setStudentAttendance =
-    (
-      studentId,
-      status,
-    ) => {
-      setAttendance(
-        (previous) => ({
-          ...previous,
-
-          [studentId]:
-            status,
-        }),
+const setStudentAttendance =
+  (
+    studentId,
+    status
+  ) => {
+    /*
+     * Already saved in Firebase.
+     * Do not allow second marking.
+     */
+    if (
+      savedAttendance[
+        studentId
+      ]
+    ) {
+      toast.info(
+        "Attendance is already marked for this student."
       );
-    };
 
+      return;
+    }
+
+    setAttendance(
+      (previous) => ({
+        ...previous,
+
+        [studentId]:
+          status,
+      })
+    );
+  };
 
   /* =====================================================
      MARK ALL PRESENT
   ===================================================== */
 
   const markAllPresent =
-    () => {
-      const next = {};
+  () => {
+    setAttendance(
+      (previous) => {
+        const next = {
+          ...previous,
+        };
 
-      classStudents.forEach(
-        (student) => {
-          next[student.id] =
-            "present";
-        },
-      );
+        classStudents.forEach(
+          (student) => {
+            /*
+             * Don't touch attendance
+             * already saved in Firebase.
+             */
+            if (
+              savedAttendance[
+                student.id
+              ]
+            ) {
+              return;
+            }
 
-      setAttendance(next);
-    };
+            next[
+              student.id
+            ] = "present";
+          }
+        );
+
+        return next;
+      }
+    );
+  };
 
 
   /* =====================================================
@@ -561,132 +656,257 @@ export default function DigitalTeacherAttendancePage() {
      SUMMARY
   ===================================================== */
 
-  const presentCount =
-    classStudents.filter(
-      (student) =>
-        attendance[
-          student.id
-        ] === "present",
-    ).length;
-
-  const absentCount =
-    classStudents.filter(
-      (student) =>
-        attendance[
-          student.id
-        ] === "absent",
-    ).length;
-
-  const lateCount =
-    classStudents.filter(
-      (student) =>
-        attendance[
-          student.id
-        ] === "late",
-    ).length;
-
-  const markedCount =
-    presentCount +
-    absentCount +
-    lateCount;
-
-  const unmarkedCount =
-    Math.max(
-      classStudents.length -
-        markedCount,
-      0,
+  const getStudentAttendanceStatus =
+  (studentId) => {
+    return (
+      savedAttendance[
+        studentId
+      ]?.status ||
+      attendance[
+        studentId
+      ] ||
+      ""
     );
+  };
 
+const presentCount =
+  classStudents.filter(
+    (student) =>
+      getStudentAttendanceStatus(
+        student.id
+      ) === "present"
+  ).length;
 
-  const attendancePercentage =
-    classStudents.length > 0
-      ? Math.round(
-          (presentCount /
-            classStudents.length) *
-            100,
-        )
-      : 0;
+const absentCount =
+  classStudents.filter(
+    (student) =>
+      getStudentAttendanceStatus(
+        student.id
+      ) === "absent"
+  ).length;
 
+const lateCount =
+  classStudents.filter(
+    (student) =>
+      getStudentAttendanceStatus(
+        student.id
+      ) === "late"
+  ).length;
+
+const markedCount =
+  presentCount +
+  absentCount +
+  lateCount;
+
+const unmarkedCount =
+  Math.max(
+    classStudents.length -
+      markedCount,
+    0
+  );
+
+const attendancePercentage =
+  classStudents.length > 0
+    ? Math.round(
+        (presentCount /
+          classStudents.length) *
+          100
+      )
+    : 0;
 
   /* =====================================================
      SAVE
   ===================================================== */
 
-  const handleSaveAttendance =
-    async () => {
-      if (
-        classStudents.length ===
-        0
-      ) {
-        return;
-      }
+const handleSaveAttendance =
+  async () => {
+    if (
+      classStudents.length === 0
+    ) {
+      toast.error(
+        "No students found in this class."
+      );
 
-      if (
-        markedCount !==
-        classStudents.length
-      ) {
-        alert(
-          `Please mark attendance for all students. ${unmarkedCount} student(s) are not marked.`,
+      return;
+    }
+
+    if (!selectedDate) {
+      toast.error(
+        "Please select attendance date."
+      );
+
+      return;
+    }
+
+    if (!selectedClass) {
+      toast.error(
+        "Please select a class."
+      );
+
+      return;
+    }
+
+    /*
+     * Students already saved in Firebase
+     * must never be saved again.
+     */
+    const unsavedStudents =
+      classStudents.filter(
+        (student) =>
+          !savedAttendance[
+            student.id
+          ]
+      );
+
+    if (
+      unsavedStudents.length === 0
+    ) {
+      toast.info(
+        "Attendance is already marked for all students."
+      );
+
+      return;
+    }
+
+    /*
+     * Only check students that have
+     * not already been saved.
+     */
+    const unmarkedUnsavedStudents =
+      unsavedStudents.filter(
+        (student) =>
+          !attendance[
+            student.id
+          ]
+      );
+
+    if (
+      unmarkedUnsavedStudents.length >
+      0
+    ) {
+      toast.error(
+        `Please mark attendance for all remaining students. ${unmarkedUnsavedStudents.length} student(s) are not marked.`
+      );
+
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      const attendanceRecords =
+        unsavedStudents.map(
+          (student) => ({
+            studentId:
+              student.id,
+
+            studentName:
+              student.name ||
+              student.fullName ||
+              student.studentName ||
+              "",
+
+            admissionNumber:
+              student.digitalAdmissionNumber ||
+              student.admissionNumber ||
+              student.admissionNo ||
+              "",
+
+            status:
+              attendance[
+                student.id
+              ],
+          })
         );
 
-        return;
-      }
+      const result =
+        await saveDigitalTeacherAttendance(
+          {
+            date:
+              selectedDate,
 
-      setSaving(true);
+            className:
+              selectedClass,
 
-      try {
-        const payload =
-          classStudents.map(
-            (student) => ({
-              studentId:
-                student.id,
-
-              studentName:
-                student.name,
-
-              className:
-                student.className,
-
-              date:
-                selectedDate,
-
-              status:
-                attendance[
-                  student.id
-                ],
-            }),
-          );
-
-        
-
-        /*
-         * Firebase save will be added here.
-         */
-
-        await new Promise(
-          (resolve) =>
-            setTimeout(
-              resolve,
-              700,
-            ),
+            attendance:
+              attendanceRecords,
+          }
         );
 
-        alert(
-          "Attendance saved successfully",
-        );
-      } catch (error) {
-        console.error(
-          "Attendance save error:",
-          error,
-        );
-      } finally {
-        setSaving(false);
-      }
-    };
+      /*
+       * Immediately lock successfully
+       * saved students in the UI.
+       */
+      const newlySaved = {};
+
+      unsavedStudents.forEach(
+        (student) => {
+          newlySaved[
+            student.id
+          ] = {
+            studentId:
+              student.id,
+
+            studentName:
+              student.name,
+
+            status:
+              attendance[
+                student.id
+              ],
+
+            date:
+              selectedDate,
+
+            className:
+              selectedClass,
+          };
+        }
+      );
+
+      setSavedAttendance(
+        (previous) => ({
+          ...previous,
+          ...newlySaved,
+        })
+      );
+
+      setAttendance({});
+
+      toast.success(
+        result?.message ||
+          "Attendance saved successfully."
+      );
+    } catch (error) {
+      console.error(
+        "SAVE ATTENDANCE ERROR:",
+        error
+      );
+
+      toast.error(
+        error?.message ||
+          "Failed to save attendance."
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
 
 
   return (
     <Layout>
+
+      {studentsLoading && (
+  <div className="flex min-h-[400px] items-center justify-center">
+    <div className="text-center">
+      <div className="mx-auto h-9 w-9 animate-spin rounded-full border-2 border-teal-100 border-t-teal-600" />
+
+      <p className="mt-3 text-sm font-medium text-slate-500">
+        Loading assigned students...
+      </p>
+    </div>
+  </div>
+)}{!studentsLoading && (
       <div
         className="
           min-h-screen
@@ -853,15 +1073,7 @@ export default function DigitalTeacherAttendancePage() {
               type="red"
             />
 
-            <SummaryCard
-              title="Late"
-              value={
-                lateCount
-              }
-              description={`${unmarkedCount} not marked`}
-              icon={Clock3}
-              type="amber"
-            />
+          
           </div>
 
 
@@ -936,9 +1148,7 @@ export default function DigitalTeacherAttendancePage() {
                     focus:ring-teal-100
                   "
                 >
-                  <option value="all">
-                    All Classes
-                  </option>
+                  
 
                   {classOptions.map(
                     (
@@ -952,7 +1162,7 @@ export default function DigitalTeacherAttendancePage() {
                           className
                         }
                       >
-                        {className}
+                       Class {className}
                       </option>
                     ),
                   )}
@@ -1356,17 +1566,7 @@ export default function DigitalTeacherAttendancePage() {
                   Absent
                 </span>
 
-                <span
-                  className="
-                    flex
-                    items-center
-                    gap-1
-                    text-amber-600
-                  "
-                >
-                  <span className="h-2 w-2 rounded-full bg-amber-500" />
-                  Late
-                </span>
+                
               </div>
             </div>
 
@@ -1407,7 +1607,10 @@ export default function DigitalTeacherAttendancePage() {
                     </th>
 
                     <th className="px-4 py-3">
-                      Madrasa
+                      Phone Number
+                    </th>
+                    <th className="px-4 py-3">
+                      parents Name
                     </th>
 
                     <th className="px-4 py-3 text-center">
@@ -1423,10 +1626,22 @@ export default function DigitalTeacherAttendancePage() {
                       student,
                       index,
                     ) => {
-                      const status =
-                        attendance[
-                          student.id
-                        ];
+                      const savedRecord =
+  savedAttendance[
+    student.id
+  ];
+
+const isSaved =
+  Boolean(
+    savedRecord
+  );
+
+const status =
+  savedRecord?.status ||
+  attendance[
+    student.id
+  ] ||
+  "";
 
                       return (
                         <tr
@@ -1445,9 +1660,6 @@ export default function DigitalTeacherAttendancePage() {
                                 : status ===
                                   "absent"
                                 ? "bg-red-50/20"
-                                : status ===
-                                  "late"
-                                ? "bg-amber-50/20"
                                 : "hover:bg-slate-50"
                             }
                           `}
@@ -1516,7 +1728,7 @@ export default function DigitalTeacherAttendancePage() {
                             "
                           >
                             {
-                              student.admissionNo
+                              student.digitalAdmissionNumber || "-"
                             }
                           </td>
 
@@ -1535,7 +1747,7 @@ export default function DigitalTeacherAttendancePage() {
                               "
                             >
                               {
-                                student.className
+                                student.applyingclass
                               }
                             </span>
                           </td>
@@ -1550,74 +1762,124 @@ export default function DigitalTeacherAttendancePage() {
                             "
                           >
                             {
-                              student.madrasaName
+                              student.phone || "-"
+                            }
+                          </td>
+                          <td
+                            className="
+                              px-4
+                              py-3
+                              text-xs
+                              text-slate-500
+                            "
+                          >
+                            {
+                              student.guardianName || "NA"
                             }
                           </td>
 
 
                           <td className="px-4 py-3">
-                            <div
-                              className="
-                                flex
-                                items-center
-                                justify-center
-                                gap-2
-                              "
-                            >
-                              <AttendanceButton
-                                active={
-                                  status ===
-                                  "present"
-                                }
-                                onClick={() =>
-                                  setStudentAttendance(
-                                    student.id,
-                                    "present",
-                                  )
-                                }
-                                icon={
-                                  CheckCircle2
-                                }
-                                label="Present"
-                                type="present"
-                              />
+                           <div className="flex items-center justify-center">
+                           {isSaved ? (
+  <div
+    className={`
+      inline-flex
+      h-10
+      items-center
+      gap-2
+      rounded-xl
+      px-4
+      text-sm
+      font-semibold
+      ${
+        status === "present"
+          ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
+          : status === "absent"
+          ? "bg-red-50 text-red-700 ring-1 ring-red-200"
+          : "bg-amber-50 text-amber-700 ring-1 ring-amber-200"
+      }
+    `}
+  >
+    {status ===
+      "present" && (
+      <CheckCircle2 className="h-4 w-4" />
+    )}
 
-                              <AttendanceButton
-                                active={
-                                  status ===
-                                  "absent"
-                                }
-                                onClick={() =>
-                                  setStudentAttendance(
-                                    student.id,
-                                    "absent",
-                                  )
-                                }
-                                icon={
-                                  XCircle
-                                }
-                                label="Absent"
-                                type="absent"
-                              />
+    {status ===
+      "absent" && (
+      <XCircle className="h-4 w-4" />
+    )}
 
-                              <AttendanceButton
-                                active={
-                                  status ===
-                                  "late"
-                                }
-                                onClick={() =>
-                                  setStudentAttendance(
-                                    student.id,
-                                    "late",
-                                  )
-                                }
-                                icon={
-                                  Clock3
-                                }
-                                label="Late"
-                                type="late"
-                              />
-                            </div>
+    {status ===
+      "late" && (
+      <Clock3 className="h-4 w-4" />
+    )}
+
+    <span>
+      {status === "present"
+        ? "Present"
+        : status === "absent"
+        ? "Absent"
+        : "Late"}
+
+      {selectedDate ===
+      getTodayDate()
+        ? " Today"
+        : ` • ${selectedDate}`}
+    </span>
+  </div>
+) : (
+  <div className="inline-flex
+      h-10
+      items-center
+      gap-3
+      rounded-xl
+      px-4
+      text-sm
+      font-semibold
+      ">
+    <AttendanceButton
+      active={
+        status ===
+        "present"
+      }
+      onClick={() =>
+        setStudentAttendance(
+          student.id,
+          "present"
+        )
+      }
+      icon={
+        CheckCircle2
+      }
+      label="Present"
+      type="present"
+    />
+
+    <AttendanceButton
+      active={
+        status ===
+        "absent"
+      }
+      onClick={() =>
+        setStudentAttendance(
+          student.id,
+          "absent"
+        )
+      }
+      icon={
+        XCircle
+      }
+      label="Absent"
+      type="absent"
+    />
+
+   
+  </div>
+)}
+</div>
+
                           </td>
                         </tr>
                       );
@@ -1763,6 +2025,7 @@ export default function DigitalTeacherAttendancePage() {
           </div>
         </div>
       </div>
+)}
     </Layout>
   );
 }

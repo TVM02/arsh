@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useEffect,
   useMemo,
   useState,
 } from "react";
@@ -19,132 +20,18 @@ import {
   ShieldCheck,
   UserRound,
   Users,
+  Trash2,
 } from "lucide-react";
+import {
+  getDigitalTeacherAdminMessages,
+   markDigitalTeacherAdminMessageRead,
+   getMyAssignedDigitalStudents,
+   sendDigitalTeacherStudentMessage,
+   getDigitalTeacherSentMessages,
+   deleteDigitalTeacherStudentMessage,
+} from "@/lib/digitalClassTeacherService";
 
-
-/* =========================================================
-   DEMO CENTRAL ADMIN MESSAGES
-   Later replace with Firebase
-========================================================= */
-
-const ADMIN_MESSAGES = [
-  {
-    id: "admin-1",
-    title: "Digital Classroom Guidelines",
-    message:
-      "All Digital Teachers are requested to follow the updated online class guidelines from October 2026.",
-    senderName: "Central Admin",
-    date: "24 Sep 2026",
-    time: "10:15 AM",
-    priority: "important",
-    read: false,
-  },
-
-  {
-    id: "admin-2",
-    title: "Teacher Training Programme",
-    message:
-      "A Digital Teacher training session will be conducted this Saturday. Please check your schedule.",
-    senderName: "Central Admin",
-    date: "23 Sep 2026",
-    time: "04:30 PM",
-    priority: "normal",
-    read: true,
-  },
-
-  {
-    id: "admin-3",
-    title: "Study Material Upload",
-    message:
-      "Teachers are requested to upload the study materials for assigned classes before the upcoming week.",
-    senderName: "Central Admin",
-    date: "21 Sep 2026",
-    time: "09:20 AM",
-    priority: "normal",
-    read: true,
-  },
-];
-
-
-/* =========================================================
-   DEMO DIGITAL STUDENTS
-========================================================= */
-
-const STUDENTS = [
-  {
-    id: "stu-1",
-    name: "Muhammed Jasim",
-    admissionNo: "DS001",
-    className: "Class 5",
-    profilePictureUrl: "",
-  },
-  {
-    id: "stu-2",
-    name: "Ahmed Faris",
-    admissionNo: "DS002",
-    className: "Class 5",
-    profilePictureUrl: "",
-  },
-  {
-    id: "stu-3",
-    name: "Fathima Nihala",
-    admissionNo: "DS003",
-    className: "Class 5",
-    profilePictureUrl: "",
-  },
-  {
-    id: "stu-4",
-    name: "Maryam Irha",
-    admissionNo: "DS004",
-    className: "Class 6",
-    profilePictureUrl: "",
-  },
-  {
-    id: "stu-5",
-    name: "Muhammed Hanan",
-    admissionNo: "DS005",
-    className: "Class 6",
-    profilePictureUrl: "",
-  },
-  {
-    id: "stu-6",
-    name: "Rameesa Sherin",
-    admissionNo: "DS006",
-    className: "Class 7",
-    profilePictureUrl: "",
-  },
-];
-
-
-/* =========================================================
-   DEMO SENT MESSAGES
-========================================================= */
-
-const INITIAL_SENT_MESSAGES = [
-  {
-    id: "sent-1",
-    title: "Assignment Reminder",
-    message:
-      "Please submit your Quran assignment before tomorrow evening.",
-    recipientName: "Class 5 - All Students",
-    className: "Class 5",
-    date: "24 Sep 2026",
-    time: "09:20 AM",
-    status: "delivered",
-  },
-
-  {
-    id: "sent-2",
-    title: "Live Class Update",
-    message:
-      "Today's Arabic live class will start at 3:30 PM.",
-    recipientName: "Maryam Irha",
-    className: "Class 6",
-    date: "23 Sep 2026",
-    time: "02:15 PM",
-    status: "read",
-  },
-];
+import { toast } from "sonner";
 
 
 /* =========================================================
@@ -510,35 +397,49 @@ function AdminMessageCard({
 ========================================================= */
 
 export default function DigitalTeacherMessagesPage() {
-  const [
-    adminMessages,
-  ] = useState(
-    ADMIN_MESSAGES,
-  );
+const [
+  adminMessages,
+  setAdminMessages,
+] = useState([]);
 
   const [
-    sentMessages,
-    setSentMessages,
-  ] = useState(
-    INITIAL_SENT_MESSAGES,
-  );
+  sentMessages,
+  setSentMessages,
+] = useState([]);
+
+const [
+  sentMessagesLoading,
+  setSentMessagesLoading,
+] = useState(true);
 
   const [
     activeTab,
     setActiveTab,
   ] = useState("admin");
 
-  const [
-    selectedAdminMessage,
-    setSelectedAdminMessage,
-  ] = useState(
-    ADMIN_MESSAGES[0] || null,
-  );
+ const [
+  selectedAdminMessage,
+  setSelectedAdminMessage,
+] = useState(null);
+const [
+  adminMessagesLoading,
+  setAdminMessagesLoading,
+] = useState(true);
+
+const [
+  assignedStudents,
+  setAssignedStudents,
+] = useState([]);
+
+const [
+  studentsLoading,
+  setStudentsLoading,
+] = useState(true);
 
   const [
     selectedClass,
     setSelectedClass,
-  ] = useState("Class 5");
+  ] = useState("");
 
   const [
     selectedStudent,
@@ -565,41 +466,404 @@ export default function DigitalTeacherMessagesPage() {
     setSending,
   ] = useState(false);
 
+const [
+  messageToDelete,
+  setMessageToDelete,
+] = useState(null);
 
+const [
+  deletingMessageId,
+  setDeletingMessageId,
+] = useState(null);
   /* =====================================================
      CLASSES
   ===================================================== */
 
   const classOptions =
-    useMemo(() => {
-      return [
-        ...new Set(
-          STUDENTS.map(
+  useMemo(() => {
+    return [
+      ...new Set(
+        assignedStudents
+          .map(
             (student) =>
-              student.className,
-          ),
-        ),
-      ].sort(
-        (a, b) =>
-          Number(
-            a.replace(
-              /\D/g,
-              "",
-            ),
-          ) -
-          Number(
-            b.replace(
-              /\D/g,
-              "",
-            ),
-          ),
+              student.className
+          )
+          .filter(Boolean)
+      ),
+    ].sort((a, b) => {
+      const numberA =
+        Number(
+          String(a).replace(
+            /\D/g,
+            ""
+          )
+        ) || 0;
+
+      const numberB =
+        Number(
+          String(b).replace(
+            /\D/g,
+            ""
+          )
+        ) || 0;
+
+      return (
+        numberA -
+        numberB
       );
-    }, []);
+    });
+  }, [
+    assignedStudents,
+  ]);
 
 
-  /* =====================================================
-     CLASS STUDENTS
-  ===================================================== */
+useEffect(() => {
+  let active = true;
+
+  const loadAdminMessages =
+    async () => {
+      setAdminMessagesLoading(
+        true
+      );
+
+      try {
+        const result =
+          await getDigitalTeacherAdminMessages();
+
+        if (!active) {
+          return;
+        }
+
+        const messages =
+          Array.isArray(
+            result?.messages
+          )
+            ? result.messages
+            : [];
+
+        const formattedMessages =
+          messages.map(
+            (message) => {
+              const createdDate =
+                message.createdAt
+                  ? new Date(
+                      message.createdAt
+                    )
+                  : null;
+
+              return {
+                ...message,
+
+                date:
+                  createdDate &&
+                  !Number.isNaN(
+                    createdDate.getTime()
+                  )
+                    ? createdDate.toLocaleDateString(
+                        "en-IN",
+                        {
+                          day:
+                            "2-digit",
+                          month:
+                            "short",
+                          year:
+                            "numeric",
+                        }
+                      )
+                    : "",
+
+                time:
+                  createdDate &&
+                  !Number.isNaN(
+                    createdDate.getTime()
+                  )
+                    ? createdDate.toLocaleTimeString(
+                        "en-IN",
+                        {
+                          hour:
+                            "2-digit",
+                          minute:
+                            "2-digit",
+                        }
+                      )
+                    : "",
+              };
+            }
+          );
+
+        setAdminMessages(
+          formattedMessages
+        );
+
+        setSelectedAdminMessage(
+  null
+);
+      } catch (error) {
+        toast.error(
+          "LOAD CENTRAL ADMIN MESSAGES ERROR:",
+          error
+        );
+
+        if (active) {
+          setAdminMessages([]);
+          setSelectedAdminMessage(
+            null
+          );
+        }
+      } finally {
+        if (active) {
+          setAdminMessagesLoading(
+            false
+          );
+        }
+      }
+    };
+
+  loadAdminMessages();
+
+  return () => {
+    active = false;
+  };
+}, []);
+
+useEffect(() => {
+  let active = true;
+
+  const loadAssignedStudents =
+    async () => {
+      setStudentsLoading(true);
+
+      try {
+        const result =
+          await getMyAssignedDigitalStudents();
+
+        if (!active) {
+          return;
+        }
+
+        const students =
+          Array.isArray(
+            result?.students
+          )
+            ? result.students
+            : [];
+
+        const formattedStudents =
+          students
+            .map((student) => ({
+              ...student,
+
+              id:
+                student.uid ||
+                student.id,
+
+              name:
+                student.name ||
+                student.studentName ||
+                "Student",
+
+              admissionNo:
+                student.admissionNo ||
+                student.admissionNumber ||
+                "",
+
+              className:
+                student.applyingclass ||
+                student.className ||
+                student.class ||
+                "",
+
+              profilePictureUrl:
+                student.profilePictureUrl ||
+                student.profilePicture ||
+                student.photoURL ||
+                "",
+            }))
+            .filter(
+              (student) =>
+                student.id &&
+                student.className
+            );
+
+        setAssignedStudents(
+          formattedStudents
+        );
+
+        const classes = [
+          ...new Set(
+            formattedStudents
+              .map(
+                (student) =>
+                  student.className
+              )
+              .filter(Boolean)
+          ),
+        ].sort((a, b) => {
+          const numberA =
+            Number(
+              String(a).replace(
+                /\D/g,
+                ""
+              )
+            ) || 0;
+
+          const numberB =
+            Number(
+              String(b).replace(
+                /\D/g,
+                ""
+              )
+            ) || 0;
+
+          return (
+            numberA -
+            numberB
+          );
+        });
+
+       setSelectedClass(
+  "all"
+);
+
+        setSelectedStudent(
+          "all"
+        );
+      } catch (error) {
+        toast.error(
+          "LOAD ASSIGNED DIGITAL STUDENTS ERROR:",
+          error
+        );
+
+        if (active) {
+          setAssignedStudents(
+            []
+          );
+
+          setSelectedClass(
+            ""
+          );
+        }
+      } finally {
+        if (active) {
+          setStudentsLoading(
+            false
+          );
+        }
+      }
+    };
+
+  loadAssignedStudents();
+
+  return () => {
+    active = false;
+  };
+}, []);
+
+
+useEffect(() => {
+  let active = true;
+
+  const loadSentMessages =
+    async () => {
+      setSentMessagesLoading(true);
+
+      try {
+        const result =
+          await getDigitalTeacherSentMessages();
+
+        if (!active) {
+          return;
+        }
+
+        const messages =
+          Array.isArray(
+            result?.messages
+          )
+            ? result.messages
+            : [];
+
+        const formattedMessages =
+          messages.map(
+            (message) => {
+              const createdDate =
+                message.createdAt
+                  ? new Date(
+                      message.createdAt
+                    )
+                  : null;
+
+              const validDate =
+                createdDate &&
+                !Number.isNaN(
+                  createdDate.getTime()
+                );
+
+              return {
+                ...message,
+
+                date:
+                  validDate
+                    ? createdDate.toLocaleDateString(
+                        "en-IN",
+                        {
+                          day:
+                            "2-digit",
+                          month:
+                            "short",
+                          year:
+                            "numeric",
+                        }
+                      )
+                    : "",
+
+                time:
+                  validDate
+                    ? createdDate.toLocaleTimeString(
+                        "en-IN",
+                        {
+                          hour:
+                            "2-digit",
+                          minute:
+                            "2-digit",
+                        }
+                      )
+                    : "",
+
+                status:
+                  message.status ||
+                  "sent",
+              };
+            }
+          );
+
+        setSentMessages(
+          formattedMessages
+        );
+      } catch (error) {
+        toast.error(
+          "LOAD SENT MESSAGES ERROR:",
+          error
+        );
+
+        if (active) {
+          setSentMessages([]);
+        }
+      } finally {
+        if (active) {
+          setSentMessagesLoading(
+            false
+          );
+        }
+      }
+    };
+
+  loadSentMessages();
+
+  return () => {
+    active = false;
+  };
+}, []);
+
 
   const classStudents =
     useMemo(() => {
@@ -608,14 +872,14 @@ export default function DigitalTeacherMessagesPage() {
           .trim()
           .toLowerCase();
 
-      return STUDENTS.filter(
+      return assignedStudents.filter(
         (student) => {
           if (
-            student.className !==
-            selectedClass
-          ) {
-            return false;
-          }
+  selectedClass !== "all" &&
+  student.className !== selectedClass
+) {
+  return false;
+}
 
           if (!text) {
             return true;
@@ -632,8 +896,9 @@ export default function DigitalTeacherMessagesPage() {
         },
       );
     }, [
-      selectedClass,
-      studentSearch,
+       assignedStudents,
+  selectedClass,
+  studentSearch,
     ]);
 
 
@@ -641,160 +906,351 @@ export default function DigitalTeacherMessagesPage() {
      COUNTS
   ===================================================== */
 
-  const unreadAdmin =
-    adminMessages.filter(
-      (message) =>
-        !message.read,
-    ).length;
+
+/* =====================================================
+   OPEN CENTRAL ADMIN MESSAGE
+===================================================== */
+
+const handleAdminMessageClick =
+  async (message) => {
+    if (!message?.id) {
+      return;
+    }
+
+    /* Show selected message immediately */
+
+    setSelectedAdminMessage(
+      message
+    );
+
+    /* Already read - no API call needed */
+
+    if (message.read === true) {
+      return;
+    }
+
+    try {
+      await markDigitalTeacherAdminMessageRead(
+        message.id
+      );
+
+      /* Update message list */
+
+      setAdminMessages(
+        (previous) =>
+          previous.map(
+            (item) =>
+              item.id ===
+              message.id
+                ? {
+                    ...item,
+                    read: true,
+                  }
+                : item
+          )
+      );
+
+      /* Update selected message */
+
+      setSelectedAdminMessage(
+        (previous) => {
+          if (
+            previous?.id !==
+            message.id
+          ) {
+            return previous;
+          }
+
+          return {
+            ...previous,
+            read: true,
+          };
+        }
+      );
+    } catch (error) {
+      toast.error(
+        "MARK ADMIN MESSAGE READ ERROR:",
+        error
+      );
+    }
+  };
+
+const unreadAdmin =
+  adminMessages.filter(
+    (message) =>
+      !message.read,
+  ).length;
+
+
+
+const handleDeleteSentMessage =
+  (message) => {
+    if (!message?.id) {
+      alert(
+        "Message ID is missing."
+      );
+
+      return;
+    }
+
+    setMessageToDelete(
+      message
+    );
+  };
+
+  const confirmDeleteSentMessage =
+  async () => {
+    if (!messageToDelete?.id) {
+      return;
+    }
+
+    setDeletingMessageId(
+      messageToDelete.id
+    );
+
+    try {
+      await deleteDigitalTeacherStudentMessage(
+        messageToDelete.id
+      );
+
+      setSentMessages(
+        (previous) =>
+          previous.filter(
+            (item) =>
+              item.id !==
+              messageToDelete.id
+          )
+      );
+
+      setMessageToDelete(
+        null
+      );
+    } catch (error) {
+      console.error(
+        "DELETE SENT MESSAGE ERROR:",
+        error
+      );
+
+      alert(
+        error?.message ||
+          "Unable to delete message."
+      );
+    } finally {
+      setDeletingMessageId(
+        null
+      );
+    }
+  };
 
 
   /* =====================================================
      SEND MESSAGE
   ===================================================== */
 
-  const handleSendMessage =
-    async () => {
-      if (
-        !selectedClass
-      ) {
-        alert(
-          "Please select a class",
-        );
+ const handleSendMessage =
+  async () => {
+    /* ========================================
+       VALIDATE CLASS
+    ======================================== */
 
-        return;
-      }
+    if (!selectedClass) {
+      alert(
+        "Please select a class"
+      );
 
-      if (
-        !messageTitle.trim()
-      ) {
-        alert(
-          "Please enter message title",
-        );
+      return;
+    }
 
-        return;
-      }
+    /* ========================================
+       VALIDATE TITLE
+    ======================================== */
 
-      if (
-        !messageBody.trim()
-      ) {
-        alert(
-          "Please enter message",
-        );
+    if (
+      !messageTitle.trim()
+    ) {
+      alert(
+        "Please enter message title"
+      );
 
-        return;
-      }
+      return;
+    }
 
+    /* ========================================
+       VALIDATE MESSAGE
+    ======================================== */
 
-      const recipient =
-        selectedStudent ===
+    if (
+      !messageBody.trim()
+    ) {
+      alert(
+        "Please enter message"
+      );
+
+      return;
+    }
+
+    /* ========================================
+       DETERMINE RECIPIENT TYPE
+    ======================================== */
+
+    let recipientType =
+      "all";
+
+    let studentUid =
+      "";
+
+    let className =
+      "";
+
+    /*
+     * One individual student
+     */
+
+    if (
+      selectedStudent !==
+      "all"
+    ) {
+      recipientType =
+        "student";
+
+      studentUid =
+        selectedStudent;
+
+      /*
+       * className is optional
+       * because API checks the
+       * student's real class.
+       */
+
+      className =
+        selectedClass ===
         "all"
-          ? {
-              name: `${selectedClass} - All Students`,
-            }
-          : STUDENTS.find(
-              (student) =>
-                student.id ===
-                selectedStudent,
-            );
+          ? ""
+          : selectedClass;
+    }
 
+    /*
+     * Specific class
+     * all students
+     */
 
-      if (
-        selectedStudent !==
-          "all" &&
-        !recipient
-      ) {
-        alert(
-          "Student not found",
+    else if (
+      selectedClass !==
+      "all"
+    ) {
+      recipientType =
+        "class";
+
+      className =
+        selectedClass;
+    }
+
+    /*
+     * All assigned students
+     */
+
+    else {
+      recipientType =
+        "all";
+
+      className =
+        "";
+    }
+
+    /* ========================================
+       SEND
+    ======================================== */
+
+    setSending(true);
+
+    try {
+      const result =
+        await sendDigitalTeacherStudentMessage(
+          {
+            title:
+              messageTitle.trim(),
+
+            message:
+              messageBody.trim(),
+
+            recipientType,
+
+            className,
+
+            studentUid,
+          }
         );
 
-        return;
-      }
+      const sentMessage =
+        result?.sentMessage;
 
+      /* ========================================
+         ADD TO SENT MESSAGES UI
+      ======================================== */
 
-      setSending(true);
+      if (sentMessage?.id) {
+        const createdDate =
+          sentMessage.createdAt
+            ? new Date(
+                sentMessage.createdAt
+              )
+            : new Date();
 
+        const formattedMessage =
+          {
+            ...sentMessage,
 
-      try {
-        /*
-         * Firebase send will be added here.
-         */
+            date:
+              createdDate.toLocaleDateString(
+                "en-IN"
+              ),
 
-        await new Promise(
-          (resolve) =>
-            setTimeout(
-              resolve,
-              500,
-            ),
-        );
+            time:
+              createdDate.toLocaleTimeString(
+                "en-IN",
+                {
+                  hour:
+                    "2-digit",
 
+                  minute:
+                    "2-digit",
+                }
+              ),
 
-        const now =
-          new Date();
-
-
-        const sentMessage = {
-          id:
-            `sent-${Date.now()}`,
-
-          title:
-            messageTitle.trim(),
-
-          message:
-            messageBody.trim(),
-
-          recipientName:
-            recipient?.name ||
-            "Students",
-
-          className:
-            selectedClass,
-
-          date:
-            now.toLocaleDateString(
-              "en-IN",
-            ),
-
-          time:
-            now.toLocaleTimeString(
-              "en-IN",
-              {
-                hour:
-                  "2-digit",
-                minute:
-                  "2-digit",
-              },
-            ),
-
-          status:
-            "delivered",
-        };
-
+            status:
+              sentMessage.status ||
+              "sent",
+          };
 
         setSentMessages(
           (previous) => [
-            sentMessage,
+            formattedMessage,
             ...previous,
-          ],
+          ]
         );
-
-
-        setMessageTitle("");
-
-        setMessageBody("");
-
-
-        alert(
-          "Message sent successfully",
-        );
-      } catch (error) {
-        console.error(
-          "Message send error:",
-          error,
-        );
-      } finally {
-        setSending(false);
       }
-    };
+
+      /* ========================================
+         RESET FORM
+      ======================================== */
+
+      setMessageTitle("");
+
+      setMessageBody("");
+
+      toast.success(
+        result?.message ||
+          "Message sent successfully"
+      );
+    } catch (error) {
+      toast.error(
+        error?.message ||
+          "Unable to send message"
+      );
+    } finally {
+      setSending(false);
+    }
+  };
 
 
   return (
@@ -901,12 +1357,13 @@ export default function DigitalTeacherMessagesPage() {
             <SummaryCard
               title="Assigned Students"
               value={
-                STUDENTS.length
+                assignedStudents.length
               }
               description="Digital classroom"
               icon={Users}
               type="violet"
             />
+            
           </div>
 
 
@@ -1098,28 +1555,132 @@ export default function DigitalTeacherMessagesPage() {
                 </div>
 
 
-                {adminMessages.map(
-                  (message) => (
-                    <AdminMessageCard
-                      key={
-                        message.id
-                      }
-                      message={
-                        message
-                      }
-                      selected={
-                        selectedAdminMessage
-                          ?.id ===
-                        message.id
-                      }
-                      onClick={() =>
-                        setSelectedAdminMessage(
-                          message,
-                        )
-                      }
-                    />
-                  ),
-                )}
+                {adminMessagesLoading ? (
+  <div
+    className="
+      flex
+      min-h-[220px]
+      items-center
+      justify-center
+      p-6
+    "
+  >
+    <div
+      className="
+        flex
+        flex-col
+        items-center
+        gap-3
+        text-center
+      "
+    >
+      <div
+        className="
+          h-8
+          w-8
+          animate-spin
+          rounded-full
+          border-4
+          border-teal-100
+          border-t-teal-500
+        "
+      />
+
+      <p
+        className="
+          text-xs
+          font-medium
+          text-slate-500
+        "
+      >
+        Loading messages...
+      </p>
+    </div>
+  </div>
+) : adminMessages.length === 0 ? (
+  <div
+    className="
+      flex
+      min-h-[220px]
+      items-center
+      justify-center
+      p-6
+    "
+  >
+    <div
+      className="
+        text-center
+      "
+    >
+      <div
+        className="
+          mx-auto
+          flex
+          h-12
+          w-12
+          items-center
+          justify-center
+          rounded-2xl
+          bg-slate-100
+          text-slate-400
+        "
+      >
+        <Mail
+          className="
+            h-5
+            w-5
+          "
+        />
+      </div>
+
+      <p
+        className="
+          mt-3
+          text-sm
+          font-semibold
+          text-slate-700
+        "
+      >
+        No messages
+      </p>
+
+      <p
+        className="
+          mt-1
+          text-[10px]
+          leading-5
+          text-slate-400
+        "
+      >
+        Central Admin messages
+        will appear here.
+      </p>
+    </div>
+  </div>
+) : (
+  adminMessages.map(
+    (message) => (
+      <AdminMessageCard
+        key={
+          message.id
+        }
+        message={
+          message
+        }
+        selected={
+          selectedAdminMessage
+            ?.id ===
+          message.id
+        }
+        onClick={() =>
+          handleAdminMessageClick(
+            message
+          )
+        }
+      />
+    )
+  )
+)}
               </div>
 
 
@@ -1398,6 +1959,9 @@ export default function DigitalTeacherMessagesPage() {
                       focus:border-teal-400
                     "
                   >
+                    <option value="all">
+  All Classes
+</option>
                     {classOptions.map(
                       (
                         className,
@@ -1698,10 +2262,11 @@ export default function DigitalTeacherMessagesPage() {
                       text-teal-900
                     "
                   >
-                    {selectedStudent ===
-                    "all"
-                      ? `${selectedClass} - All Students`
-                      : STUDENTS.find(
+                  {selectedStudent === "all"
+  ? selectedClass === "all"
+    ? "All Classes Students"
+    : `${selectedClass} - All Students`
+                      : assignedStudents.find(
                           (
                             student,
                           ) =>
@@ -2026,7 +2591,34 @@ export default function DigitalTeacherMessagesPage() {
                         </span>
                       </div>
                     </div>
-
+<button
+  type="button"
+  onClick={() =>
+    handleDeleteSentMessage(
+      message
+    )
+  }
+  title="Delete message"
+  className="
+    inline-flex
+    h-9
+    w-9
+    shrink-0
+    items-center
+    justify-center
+    rounded-lg
+    border
+    border-red-100
+    bg-red-50
+    text-red-500
+    transition
+    hover:border-red-200
+    hover:bg-red-100
+    hover:text-red-600
+  "
+>
+  <Trash2 className="h-4 w-4" />
+</button>
 
                     <div>
                       <span
@@ -2063,6 +2655,140 @@ export default function DigitalTeacherMessagesPage() {
           )}
         </div>
       </div>
+      {messageToDelete && (
+  <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/40 px-4 backdrop-blur-[2px]">
+
+    <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
+
+      <div className="p-6">
+
+        <div className="flex items-start gap-4">
+
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-red-50">
+            <Trash2 className="h-5 w-5 text-red-600" />
+          </div>
+
+          <div className="min-w-0">
+
+            <h3 className="text-lg font-bold text-slate-900">
+              Delete Message?
+            </h3>
+
+            <p className="mt-1 text-sm leading-6 text-slate-500">
+              Are you sure you want to delete this sent message?
+              This action cannot be undone.
+            </p>
+
+          </div>
+
+        </div>
+
+
+        <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
+
+          <p className="text-sm font-semibold text-slate-800">
+            {messageToDelete.title ||
+              "Sent Message"}
+          </p>
+
+          {messageToDelete.message && (
+            <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-500">
+              {messageToDelete.message}
+            </p>
+          )}
+
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px] text-slate-400">
+
+            {messageToDelete.recipientName && (
+              <span>
+                To:{" "}
+                {
+                  messageToDelete.recipientName
+                }
+              </span>
+            )}
+
+            {messageToDelete.className && (
+              <>
+                <span>•</span>
+
+                <span>
+                  {
+                    messageToDelete.className
+                  }
+                </span>
+              </>
+            )}
+
+            {messageToDelete.date && (
+              <>
+                <span>•</span>
+
+                <span>
+                  {messageToDelete.date}
+                </span>
+              </>
+            )}
+
+          </div>
+
+        </div>
+
+
+        <div className="mt-6 flex justify-end gap-3">
+
+          <button
+            type="button"
+            disabled={
+              deletingMessageId ===
+              messageToDelete.id
+            }
+            onClick={() =>
+              setMessageToDelete(
+                null
+              )
+            }
+            className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Cancel
+          </button>
+
+          <button
+            type="button"
+            disabled={
+              deletingMessageId ===
+              messageToDelete.id
+            }
+            onClick={
+              confirmDeleteSentMessage
+            }
+            className="inline-flex min-w-[130px] items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+
+            {deletingMessageId ===
+            messageToDelete.id ? (
+              <>
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+
+                Deleting...
+              </>
+            ) : (
+              <>
+                <Trash2 className="h-4 w-4" />
+
+                Delete Message
+              </>
+            )}
+
+          </button>
+
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+)}
     </Layout>
   );
 }
