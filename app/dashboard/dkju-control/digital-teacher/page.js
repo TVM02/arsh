@@ -1,6 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+} from "react";
 
 import ProfileImage from "@/components/ProfileImage";
 import {
@@ -57,7 +62,12 @@ Loader2,
   Building2,
   Landmark,
   ShieldCheck,
- Languages
+ Languages,
+ Video,
+Link2,
+CheckCircle2,
+LockKeyhole,
+
 
 } from "lucide-react";
 import {
@@ -74,13 +84,19 @@ import {
   getAssignedDigitalStudents,
 unassignDigitalStudent,
 } from "@/lib/digitalClassTeacherService";
+import {
+  getGoogleMeetConnectionStatus,
+  startGoogleMeetOAuth,
+} from "@/lib/googleMeetOAuthService";
 import useAuthStore from "@/lib/authStore";
 import Layout from "@/components/Layout";
 import StudentFilters from "@/components/digitalclassroom/studentFilter";
 import { Pagination } from "@/components/ui/pagination";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-
+import {
+  auth,
+} from "@/lib/firebase";
 
 const DIGITAL_CLASS_OPTIONS = [
   "LKG",
@@ -150,6 +166,7 @@ export default function CentralAdminTeachersPage() {
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
+  
  
   const [filterLevel, setFilterLevel] = useState("all");
   const [filterGender, setFilterGender] = useState("all");
@@ -164,6 +181,36 @@ export default function CentralAdminTeachersPage() {
   const [totalPages, setTotalPages] = useState(0);
   const [totalTeachers, setTotalTeachers] = useState(0);
   const itemsPerPage = 20;
+
+
+
+  const [assignPopupTab, setAssignPopupTab] = useState("students");
+  const [meetRooms, setMeetRooms] = useState([]);
+  const [ meetRoomsLoading, setMeetRoomsLoading] = useState(false);
+  const [meetEditingClass, setMeetEditingClass] = useState("");
+  const [meetLink, setMeetLink] = useState("");
+  const [meetSavingClass, setMeetSavingClass] = useState("");
+
+
+const [
+  googleMeetConnected,
+  setGoogleMeetConnected,
+] = useState(false);
+
+const [
+  googleMeetConnectionLoading,
+  setGoogleMeetConnectionLoading,
+] = useState(false);
+
+const [
+  googleMeetConnecting,
+  setGoogleMeetConnecting,
+] = useState(false);
+
+const [
+  googleMeetConnection,
+  setGoogleMeetConnection,
+] = useState(null);
 
   // Lazy Secondary Data: Maps for O(1) lookup of madarsa and mekhala names
 
@@ -273,6 +320,751 @@ const toggleTeachingAssignmentValue = (
     };
   });
 };
+
+const loadGoogleMeetConnectionStatus =
+  async () => {
+
+    try {
+
+      setGoogleMeetConnectionLoading(
+        true
+      );
+
+      const result =
+        await getGoogleMeetConnectionStatus();
+
+      setGoogleMeetConnected(
+        result?.connected === true
+      );
+
+      setGoogleMeetConnection(
+        result || null
+      );
+
+      return result;
+
+    } catch (error) {
+
+      console.error(
+        "GOOGLE MEET CONNECTION STATUS ERROR:",
+        error
+      );
+
+      setGoogleMeetConnected(false);
+      setGoogleMeetConnection(null);
+
+      return null;
+
+    } finally {
+
+      setGoogleMeetConnectionLoading(
+        false
+      );
+    }
+  };
+
+  const handleConnectGoogleMeet =
+  async () => {
+
+    /*
+     * Open immediately from click
+     * to avoid popup blocking.
+     */
+    const googleWindow =
+      window.open(
+        "",
+        "dkju-google-meet-oauth",
+        "width=620,height=760,resizable=yes,scrollbars=yes"
+      );
+
+
+    if (!googleWindow) {
+
+      toast.error(
+        "Please allow pop-ups to connect Google Meet."
+      );
+
+      return;
+    }
+
+
+    try {
+
+      setGoogleMeetConnecting(true);
+
+
+      googleWindow.document.title =
+        "Connect Google Meet";
+
+
+      googleWindow.document.body.innerHTML =
+        `
+          <div style="
+            min-height:100vh;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            background:#0f172a;
+            color:white;
+            font-family:Arial,sans-serif;
+          ">
+            <div style="text-align:center">
+              <h2>DKJU Digital Classroom</h2>
+              <p>Connecting to Google...</p>
+            </div>
+          </div>
+        `;
+
+
+      const result =
+        await startGoogleMeetOAuth();
+
+
+      if (!result?.authorizationUrl) {
+
+        throw new Error(
+          "Google authorization URL is missing."
+        );
+      }
+
+
+      googleWindow.location.replace(
+        result.authorizationUrl
+      );
+
+    } catch (error) {
+
+      console.error(
+        "CONNECT GOOGLE MEET ERROR:",
+        error
+      );
+
+
+      try {
+        googleWindow.close();
+      } catch {}
+
+
+      toast.error(
+        error?.message ||
+        "Unable to connect Google Meet."
+      );
+
+      setGoogleMeetConnecting(false);
+    }
+  };
+
+const getAssignTeacherUid = () => {
+  return String(
+    assignTeacher
+      ?.digitalTeacherUid ||
+    assignTeacher
+      ?.sourceTeacherUid ||
+    assignTeacher
+      ?.uid ||
+    assignTeacher
+      ?.userUid ||
+    "",
+  ).trim();
+};
+
+
+const getAssignTeacherClasses = () => {
+  const classes =
+    assignTeacher
+      ?.digitalTeachingAssignment
+      ?.classes ||
+    assignTeacher
+      ?.teachingAssignment
+      ?.classes ||
+    [];
+
+
+  if (!Array.isArray(classes)) {
+    return [];
+  }
+
+
+  return [
+    ...new Set(
+      classes
+        .map((item) =>
+          String(item || "").trim()
+        )
+        .filter(Boolean),
+    ),
+  ];
+};
+
+
+const normalizeMeetClass = (
+  value,
+) => {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^class\s*/i, "")
+    .replace(/\s+/g, "");
+};
+
+
+/* =========================================================
+   LOAD THIS TEACHER'S MEET ROOMS
+========================================================= */
+
+const loadTeacherMeetRooms =
+  async () => {
+
+    const teacherUid =
+      getAssignTeacherUid();
+
+
+    if (!teacherUid) {
+
+      setMeetRooms([]);
+
+      toast.error(
+        "Digital Teacher UID not found.",
+      );
+
+      return;
+    }
+
+
+    try {
+
+      setMeetRoomsLoading(
+        true,
+      );
+
+
+      const currentUser =
+        auth.currentUser;
+
+
+      if (!currentUser) {
+        throw new Error(
+          "Please login again.",
+        );
+      }
+
+
+      const token =
+        await currentUser
+          .getIdToken(true);
+
+
+      const response =
+        await fetch(
+          "/api/digital-classroom/admin/google-meet",
+          {
+            method:
+              "GET",
+
+            headers: {
+              Authorization:
+                `Bearer ${token}`,
+
+              Accept:
+                "application/json",
+            },
+
+            cache:
+              "no-store",
+          },
+        );
+
+
+      const raw =
+        await response.text();
+
+
+      let data = {};
+
+
+      try {
+
+        data =
+          raw
+            ? JSON.parse(raw)
+            : {};
+
+      } catch {
+
+        throw new Error(
+          `Google Meet API returned invalid JSON. HTTP ${response.status}`,
+        );
+
+      }
+
+
+      if (!response.ok) {
+
+        throw new Error(
+          data?.message ||
+          data?.error ||
+          "Unable to load Google Meet rooms.",
+        );
+
+      }
+
+
+      const allRooms =
+        Array.isArray(
+          data?.rooms,
+        )
+          ? data.rooms
+          : [];
+
+
+      /*
+       * Only rooms belonging to
+       * this currently selected teacher.
+       */
+      const teacherRooms =
+        allRooms.filter(
+          (room) =>
+            String(
+              room?.teacherUid ||
+              "",
+            ).trim() ===
+            teacherUid,
+        );
+
+
+      setMeetRooms(
+        teacherRooms,
+      );
+
+    } catch (error) {
+
+      console.error(
+        "LOAD TEACHER MEET ROOMS ERROR:",
+        error,
+      );
+
+
+      setMeetRooms(
+        [],
+      );
+
+
+      toast.error(
+        error?.message ||
+        "Unable to load Google Meet rooms.",
+      );
+
+    } finally {
+
+      setMeetRoomsLoading(
+        false,
+      );
+    }
+  };
+
+
+/* =========================================================
+   CHECK IF CLASS HAS ROOM
+========================================================= */
+
+const getMeetRoomForClass = (
+  className,
+) => {
+
+  const teacherUid =
+    getAssignTeacherUid();
+
+
+  const normalizedClass =
+    normalizeMeetClass(
+      className,
+    );
+
+
+  return (
+    meetRooms.find(
+      (room) =>
+        String(
+          room?.teacherUid ||
+          "",
+        ).trim() ===
+          teacherUid &&
+
+        normalizeMeetClass(
+          room?.className,
+        ) ===
+          normalizedClass,
+    ) ||
+    null
+  );
+};
+
+const handleCreateGoogleMeet =
+  async (className) => {
+
+    const teacherUid =
+      getAssignTeacherUid();
+
+
+    if (!teacherUid) {
+
+      toast.error(
+        "Digital Teacher UID not found."
+      );
+
+      return;
+    }
+
+
+    if (!googleMeetConnected) {
+
+      toast.error(
+        "Connect Google Meet first."
+      );
+
+      return;
+    }
+
+
+    try {
+
+      setMeetSavingClass(
+        className
+      );
+
+
+      const currentUser =
+        auth.currentUser;
+
+
+      if (!currentUser) {
+
+        throw new Error(
+          "Please login again."
+        );
+      }
+
+
+      const token =
+        await currentUser
+          .getIdToken(true);
+
+
+      const response =
+        await fetch(
+          "/api/digital-classroom/admin/google-meet/create",
+          {
+            method: "POST",
+
+            headers: {
+
+              Authorization:
+                `Bearer ${token}`,
+
+              "Content-Type":
+                "application/json",
+
+              Accept:
+                "application/json",
+            },
+
+            body:
+              JSON.stringify({
+
+                teacherUid,
+
+                className,
+
+              }),
+          }
+        );
+
+
+      const raw =
+        await response.text();
+
+
+      let data = {};
+
+
+      try {
+
+        data =
+          raw
+            ? JSON.parse(raw)
+            : {};
+
+      } catch {
+
+        throw new Error(
+          `Google Meet API returned invalid JSON. HTTP ${response.status}`
+        );
+      }
+
+
+      if (!response.ok) {
+
+        throw new Error(
+          data?.message ||
+          "Unable to create Google Meet."
+        );
+      }
+
+
+    if (
+  data?.teacherMemberAdded === false
+) {
+
+  console.error(
+    "USTAD COHOST ERROR:",
+    data?.teacherMemberMessage
+  );
+
+  toast.warning(
+    data?.teacherMemberMessage ||
+    "Google Meet created, but Ustad could not be added as Co-host."
+  );
+
+} else {
+
+  toast.success(
+    data?.message ||
+    "Google Meet created successfully."
+  );
+
+}
+
+
+      await loadTeacherMeetRooms();
+
+
+    } catch (error) {
+
+      console.error(
+        "CREATE GOOGLE MEET ERROR:",
+        error
+      );
+
+
+      toast.error(
+        error?.message ||
+        "Unable to create Google Meet."
+      );
+
+    } finally {
+
+      setMeetSavingClass(
+        ""
+      );
+    }
+  };
+
+const handleSaveMeetRoom =
+  async (
+    className,
+  ) => {
+
+    const teacherUid =
+      getAssignTeacherUid();
+
+
+    const cleanMeetLink =
+      String(
+        meetLink ||
+        "",
+      ).trim();
+
+
+    if (!teacherUid) {
+
+      toast.error(
+        "Digital Teacher UID not found.",
+      );
+
+      return;
+    }
+
+
+    if (!className) {
+
+      toast.error(
+        "Class is required.",
+      );
+
+      return;
+    }
+
+
+    if (!cleanMeetLink) {
+
+      toast.error(
+        "Please enter Google Meet link.",
+      );
+
+      return;
+    }
+
+
+    /*
+     * Client validation
+     */
+    try {
+
+      const url =
+        new URL(
+          cleanMeetLink,
+        );
+
+
+      if (
+        url.protocol !==
+          "https:" ||
+        url.hostname !==
+          "meet.google.com"
+      ) {
+        throw new Error();
+      }
+
+    } catch {
+
+      toast.error(
+        "Please enter a valid Google Meet URL.",
+      );
+
+      return;
+    }
+
+
+    try {
+
+      setMeetSavingClass(
+        className,
+      );
+
+
+      const currentUser =
+        auth.currentUser;
+
+
+      if (!currentUser) {
+        throw new Error(
+          "Please login again.",
+        );
+      }
+
+
+      const token =
+        await currentUser
+          .getIdToken(true);
+
+
+      const response =
+        await fetch(
+          "/api/digital-classroom/admin/google-meet",
+          {
+            method:
+              "POST",
+
+            headers: {
+              Authorization:
+                `Bearer ${token}`,
+
+              "Content-Type":
+                "application/json",
+
+              Accept:
+                "application/json",
+            },
+
+            body:
+              JSON.stringify({
+                teacherUid,
+
+                className,
+
+                meetLink:
+                  cleanMeetLink,
+              }),
+          },
+        );
+
+
+      const raw =
+        await response.text();
+
+
+      let data = {};
+
+
+      try {
+
+        data =
+          raw
+            ? JSON.parse(raw)
+            : {};
+
+      } catch {
+
+        throw new Error(
+          `Google Meet API returned invalid JSON. HTTP ${response.status}`,
+        );
+
+      }
+
+
+      if (!response.ok) {
+
+        throw new Error(
+          data?.message ||
+          data?.error ||
+          "Unable to save Google Meet room.",
+        );
+
+      }
+
+
+      toast.success(
+        data?.message ||
+        "Google Meet room saved successfully.",
+      );
+
+
+      /*
+       * SECURITY:
+       * Never keep link visible after save.
+       */
+      setMeetLink(
+        "",
+      );
+
+
+      setMeetEditingClass(
+        "",
+      );
+
+
+      await loadTeacherMeetRooms();
+
+    } catch (error) {
+
+      console.error(
+        "SAVE GOOGLE MEET ROOM ERROR:",
+        error,
+      );
+
+
+      toast.error(
+        error?.message ||
+        "Unable to save Google Meet room.",
+      );
+
+    } finally {
+
+      setMeetSavingClass(
+        "",
+      );
+    }
+  };
   
 
   const teacherMatchesClientFilters = useCallback(
@@ -1637,7 +2429,58 @@ const handleInactiveTeacher =
 
   
 
-  
+  useEffect(() => {
+
+  const handleGoogleMeetMessage =
+    async (event) => {
+
+      if (
+        event.origin !==
+        window.location.origin
+      ) {
+        return;
+      }
+
+
+      if (
+        event?.data?.type !==
+        "DKJU_GOOGLE_MEET_CONNECTED"
+      ) {
+        return;
+      }
+
+
+      setGoogleMeetConnecting(false);
+
+
+      const result =
+        await loadGoogleMeetConnectionStatus();
+
+
+      if (result?.connected) {
+
+        toast.success(
+          "Google Meet connected successfully."
+        );
+      }
+    };
+
+
+  window.addEventListener(
+    "message",
+    handleGoogleMeetMessage
+  );
+
+
+  return () => {
+
+    window.removeEventListener(
+      "message",
+      handleGoogleMeetMessage
+    );
+  };
+
+}, []);
   
 
   return (
@@ -3524,47 +4367,94 @@ const handleInactiveTeacher =
         <Dialog
   open={assignStudentsOpen}
   onOpenChange={(open) => {
+
     setAssignStudentsOpen(
       open,
     );
 
+
     if (!open) {
+
       setAssignTeacher(
         null,
       );
 
+
       setAssignedDigitalStudents(
         [],
+      );
+
+
+      setAssignPopupTab(
+        "students",
+      );
+
+
+      setMeetRooms(
+        [],
+      );
+
+
+      setMeetEditingClass(
+        "",
+      );
+
+
+      setMeetLink(
+        "",
       );
     }
   }}
 >
+
   <DialogContent
     className="
       max-h-[90vh]
-      max-w-4xl
+      max-w-5xl
       overflow-y-auto
       rounded-2xl
       p-0
     "
   >
 
-    {/* Header */}
+    {/* =====================================
+        HEADER
+    ===================================== */}
 
-    <DialogHeader className="border-b border-slate-200 px-6 py-5">
+    <DialogHeader
+      className="
+        border-b
+        border-slate-200
+        px-6
+        py-5
+      "
+    >
 
-      <DialogTitle className="text-xl font-bold text-slate-900">
-  Assigned Digital Students
-</DialogTitle>
+      <DialogTitle
+        className="
+          text-xl
+          font-bold
+          text-slate-900
+        "
+      >
+        Digital Teacher Assignment
+      </DialogTitle>
 
-<DialogDescription>
-  View and manage students currently assigned to this Digital Teacher.
-</DialogDescription>
+
+      <DialogDescription>
+        Manage students and private Google Meet rooms
+        assigned to this Digital Teacher.
+      </DialogDescription>
 
     </DialogHeader>
 
 
-    <div className="space-y-6 p-6">
+    <div
+      className="
+        space-y-6
+        p-6
+      "
+    >
 
       {/* =====================================
           TEACHER
@@ -3599,8 +4489,10 @@ const handleInactiveTeacher =
           "
         >
           {(
-            assignTeacher?.fullName ||
-            assignTeacher?.name ||
+            assignTeacher
+              ?.fullName ||
+            assignTeacher
+              ?.name ||
             "T"
           )
             .charAt(0)
@@ -3608,21 +4500,58 @@ const handleInactiveTeacher =
         </div>
 
 
-        <div className="min-w-0">
+        <div
+          className="
+            min-w-0
+            flex-1
+          "
+        >
 
-          <p className="truncate font-bold text-slate-900">
-            {assignTeacher?.fullName ||
-              assignTeacher?.name ||
+          <p
+            className="
+              truncate
+              font-bold
+              text-slate-900
+            "
+          >
+            {assignTeacher
+              ?.fullName ||
+              assignTeacher
+                ?.name ||
               "Digital Teacher"}
           </p>
 
-          <p className="mt-1 text-sm text-slate-500">
-            {assignTeacher?.mhrId ||
-              assignTeacher?.digitalTeacherEmail ||
+
+          <p
+            className="
+              mt-1
+              text-sm
+              text-slate-500
+            "
+          >
+            {assignTeacher
+              ?.mhrId ||
+              assignTeacher
+                ?.digitalTeacherEmail ||
               "Digital Teacher"}
           </p>
 
         </div>
+
+
+        <span
+          className="
+            rounded-full
+            bg-emerald-50
+            px-3
+            py-1
+            text-xs
+            font-semibold
+            text-emerald-700
+          "
+        >
+          Active Digital Teacher
+        </span>
 
       </div>
 
@@ -3641,39 +4570,83 @@ const handleInactiveTeacher =
         "
       >
 
-        <div className="mb-5">
+        <div
+          className="
+            mb-5
+          "
+        >
 
-          <h3 className="text-base font-bold text-slate-900">
+          <h3
+            className="
+              text-base
+              font-bold
+              text-slate-900
+            "
+          >
             Teaching Assignment
           </h3>
 
-          <p className="mt-1 text-sm text-slate-500">
-            Classes, subjects and teaching medium assigned to this teacher.
+
+          <p
+            className="
+              mt-1
+              text-sm
+              text-slate-500
+            "
+          >
+            Classes, subjects and teaching medium
+            assigned to this teacher.
           </p>
 
         </div>
 
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div
+          className="
+            grid
+            grid-cols-1
+            gap-4
+            md:grid-cols-3
+          "
+        >
 
           {/* CLASSES */}
 
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <div
+            className="
+              rounded-xl
+              border
+              border-slate-200
+              bg-slate-50
+              p-4
+            "
+          >
 
-            <p className="mb-3 text-sm font-bold text-slate-800">
+            <p
+              className="
+                mb-3
+                text-sm
+                font-bold
+                text-slate-800
+              "
+            >
               Assigned Classes
             </p>
 
-            <div className="flex flex-wrap gap-2">
 
-              {assignTeacher
-                ?.teachingAssignment
-                ?.classes
-                ?.length > 0 ? (
+            <div
+              className="
+                flex
+                flex-wrap
+                gap-2
+              "
+            >
 
-                assignTeacher
-                  .teachingAssignment
-                  .classes
+              {getAssignTeacherClasses()
+                .length >
+              0 ? (
+
+                getAssignTeacherClasses()
                   .map(
                     (
                       className,
@@ -3702,7 +4675,12 @@ const handleInactiveTeacher =
 
               ) : (
 
-                <span className="text-sm text-slate-400">
+                <span
+                  className="
+                    text-sm
+                    text-slate-400
+                  "
+                >
                   No classes assigned
                 </span>
 
@@ -3715,51 +4693,92 @@ const handleInactiveTeacher =
 
           {/* SUBJECTS */}
 
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <div
+            className="
+              rounded-xl
+              border
+              border-slate-200
+              bg-slate-50
+              p-4
+            "
+          >
 
-            <p className="mb-3 text-sm font-bold text-slate-800">
+            <p
+              className="
+                mb-3
+                text-sm
+                font-bold
+                text-slate-800
+              "
+            >
               Assigned Subjects
             </p>
 
-            <div className="flex flex-wrap gap-2">
 
-              {assignTeacher
-                ?.teachingAssignment
-                ?.subjects
-                ?.length > 0 ? (
+            <div
+              className="
+                flex
+                flex-wrap
+                gap-2
+              "
+            >
+
+              {(assignTeacher
+                ?.digitalTeachingAssignment
+                ?.subjects ||
 
                 assignTeacher
-                  .teachingAssignment
-                  .subjects
-                  .map(
-                    (
-                      subject,
-                      index,
-                    ) => (
+                  ?.teachingAssignment
+                  ?.subjects ||
 
-                      <span
-                        key={`${subject}-${index}`}
-                        className="
-                          rounded-full
-                          border
-                          border-indigo-200
-                          bg-indigo-50
-                          px-3
-                          py-1
-                          text-xs
-                          font-semibold
-                          text-indigo-700
-                        "
-                      >
-                        {subject}
-                      </span>
+                []
+              ).length >
+              0 ? (
 
-                    ),
-                  )
+                (
+                  assignTeacher
+                    ?.digitalTeachingAssignment
+                    ?.subjects ||
+
+                  assignTeacher
+                    ?.teachingAssignment
+                    ?.subjects ||
+
+                  []
+                ).map(
+                  (
+                    subject,
+                    index,
+                  ) => (
+
+                    <span
+                      key={`${subject}-${index}`}
+                      className="
+                        rounded-full
+                        border
+                        border-indigo-200
+                        bg-indigo-50
+                        px-3
+                        py-1
+                        text-xs
+                        font-semibold
+                        text-indigo-700
+                      "
+                    >
+                      {subject}
+                    </span>
+
+                  ),
+                )
 
               ) : (
 
-                <span className="text-sm text-slate-400">
+                <span
+                  className="
+                    text-sm
+                    text-slate-400
+                  "
+                >
                   No subjects assigned
                 </span>
 
@@ -3772,51 +4791,92 @@ const handleInactiveTeacher =
 
           {/* MEDIUM */}
 
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <div
+            className="
+              rounded-xl
+              border
+              border-slate-200
+              bg-slate-50
+              p-4
+            "
+          >
 
-            <p className="mb-3 text-sm font-bold text-slate-800">
+            <p
+              className="
+                mb-3
+                text-sm
+                font-bold
+                text-slate-800
+              "
+            >
               Teaching Medium
             </p>
 
-            <div className="flex flex-wrap gap-2">
 
-              {assignTeacher
-                ?.teachingAssignment
-                ?.languages
-                ?.length > 0 ? (
+            <div
+              className="
+                flex
+                flex-wrap
+                gap-2
+              "
+            >
+
+              {(assignTeacher
+                ?.digitalTeachingAssignment
+                ?.languages ||
 
                 assignTeacher
-                  .teachingAssignment
-                  .languages
-                  .map(
-                    (
-                      language,
-                      index,
-                    ) => (
+                  ?.teachingAssignment
+                  ?.languages ||
 
-                      <span
-                        key={`${language}-${index}`}
-                        className="
-                          rounded-full
-                          border
-                          border-amber-200
-                          bg-amber-50
-                          px-3
-                          py-1
-                          text-xs
-                          font-semibold
-                          text-amber-700
-                        "
-                      >
-                        {language}
-                      </span>
+                []
+              ).length >
+              0 ? (
 
-                    ),
-                  )
+                (
+                  assignTeacher
+                    ?.digitalTeachingAssignment
+                    ?.languages ||
+
+                  assignTeacher
+                    ?.teachingAssignment
+                    ?.languages ||
+
+                  []
+                ).map(
+                  (
+                    language,
+                    index,
+                  ) => (
+
+                    <span
+                      key={`${language}-${index}`}
+                      className="
+                        rounded-full
+                        border
+                        border-amber-200
+                        bg-amber-50
+                        px-3
+                        py-1
+                        text-xs
+                        font-semibold
+                        text-amber-700
+                      "
+                    >
+                      {language}
+                    </span>
+
+                  ),
+                )
 
               ) : (
 
-                <span className="text-sm text-slate-400">
+                <span
+                  className="
+                    text-sm
+                    text-slate-400
+                  "
+                >
                   No medium assigned
                 </span>
 
@@ -3831,346 +4891,1798 @@ const handleInactiveTeacher =
       </div>
 
 
-   
+      {/* =====================================
+          TABS
+      ===================================== */}
 
-      <div className="rounded-2xl border border-slate-200 bg-white">
+      <div
+        className="
+          rounded-2xl
+          border
+          border-slate-200
+          bg-white
+          p-1.5
+        "
+      >
 
-  {/* Header */}
+        <div
+          className="
+            grid
+            grid-cols-2
+            gap-1.5
+          "
+        >
+
+          <button
+            type="button"
+            onClick={() => {
+
+              setAssignPopupTab(
+                "students",
+              );
+
+
+              setMeetEditingClass(
+                "",
+              );
+
+
+              setMeetLink(
+                "",
+              );
+
+            }}
+            className={`
+              flex
+              items-center
+              justify-center
+              gap-2
+              rounded-xl
+              px-4
+              py-3
+              text-sm
+              font-bold
+              transition
+
+              ${
+                assignPopupTab ===
+                "students"
+
+                  ? "bg-teal-600 text-white shadow-sm"
+
+                  : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+              }
+            `}
+          >
+
+            <Users
+              className="
+                h-4
+                w-4
+              "
+            />
+
+            Assigned Students
+
+            <span
+              className={`
+                rounded-full
+                px-2
+                py-0.5
+                text-[10px]
+
+                ${
+                  assignPopupTab ===
+                  "students"
+
+                    ? "bg-white/20 text-white"
+
+                    : "bg-slate-100 text-slate-500"
+                }
+              `}
+            >
+              {assignedDigitalStudents
+                .length}
+            </span>
+
+          </button>
+
+
+          <button
+            type="button"
+            onClick={async () => {
+
+              setAssignPopupTab(
+                "google-meet",
+              );
+
+
+              setMeetEditingClass(
+                "",
+              );
+
+
+              setMeetLink(
+                "",
+              );
+              await Promise.all([
+  loadTeacherMeetRooms(),
+  loadGoogleMeetConnectionStatus(),
+]);
+
+
+            
+
+            }}
+            className={`
+              flex
+              items-center
+              justify-center
+              gap-2
+              rounded-xl
+              px-4
+              py-3
+              text-sm
+              font-bold
+              transition
+
+              ${
+                assignPopupTab ===
+                "google-meet"
+
+                  ? "bg-teal-600 text-white shadow-sm"
+
+                  : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+              }
+            `}
+          >
+
+            <Video
+              className="
+                h-4
+                w-4
+              "
+            />
+
+            Google Meet
+
+          </button>
+
+        </div>
+
+      </div>
+
+
+      {/* =====================================================
+          STUDENTS TAB
+      ===================================================== */}
+
+      {assignPopupTab ===
+      "students" && (
+
+        <div
+          className="
+            rounded-2xl
+            border
+            border-slate-200
+            bg-white
+          "
+        >
+
+          {/* Header */}
+
+          <div
+            className="
+              flex
+              flex-col
+              gap-2
+              border-b
+              border-slate-200
+              px-5
+              py-4
+              sm:flex-row
+              sm:items-center
+              sm:justify-between
+            "
+          >
+
+            <div>
+
+              <h3
+                className="
+                  font-bold
+                  text-slate-900
+                "
+              >
+                Assigned Digital Students
+              </h3>
+
+
+              <p
+                className="
+                  mt-1
+                  text-sm
+                  text-slate-500
+                "
+              >
+                Students currently assigned to this Ustad.
+              </p>
+
+            </div>
+
+
+            {!digitalStudentsLoading && (
+
+              <span
+                className="
+                  inline-flex
+                  w-fit
+                  rounded-full
+                  bg-teal-50
+                  px-3
+                  py-1
+                  text-xs
+                  font-semibold
+                  text-teal-700
+                "
+              >
+                {assignedDigitalStudents
+                  .length} Student
+
+                {assignedDigitalStudents
+                  .length !==
+                1
+                  ? "s"
+                  : ""}
+              </span>
+
+            )}
+
+          </div>
+
+
+          {digitalStudentsLoading ? (
+
+            <div
+              className="
+                flex
+                min-h-[180px]
+                items-center
+                justify-center
+              "
+            >
+
+              <div
+                className="
+                  flex
+                  items-center
+                  gap-2
+                  text-sm
+                  text-slate-500
+                "
+              >
+
+                <Loader2
+                  className="
+                    h-5
+                    w-5
+                    animate-spin
+                  "
+                />
+
+                Loading Digital Students...
+
+              </div>
+
+            </div>
+
+          ) : assignedDigitalStudents
+              .length ===
+            0 ? (
+
+            <div
+              className="
+                flex
+                min-h-[180px]
+                flex-col
+                items-center
+                justify-center
+                p-6
+                text-center
+              "
+            >
+
+              <Users
+                className="
+                  h-9
+                  w-9
+                  text-slate-300
+                "
+              />
+
+
+              <p
+                className="
+                  mt-3
+                  font-semibold
+                  text-slate-700
+                "
+              >
+                No Assigned Digital Students
+              </p>
+
+
+              <p
+                className="
+                  mt-1
+                  text-sm
+                  text-slate-500
+                "
+              >
+                No students are currently assigned
+                to this Digital Teacher.
+              </p>
+
+            </div>
+
+          ) : (
+
+            <div
+              className="
+                divide-y
+                divide-slate-100
+              "
+            >
+
+              {assignedDigitalStudents.map(
+                (
+                  student,
+                ) => {
+
+                  const studentUid =
+                    student?.uid ||
+                    student?.id;
+
+
+                  const studentName =
+                    student?.fullName ||
+                    student?.name ||
+                    student?.studentName ||
+                    "Digital Student";
+
+
+                  const studentClass =
+                    student
+                      ?.studentClass ||
+
+                    student
+                      ?.className ||
+
+                    student
+                      ?.currentClass ||
+
+                    student
+                      ?.class ||
+
+                    student
+                      ?.classLevel ||
+
+                    "N/A";
+
+
+                  return (
+
+                    <div
+                      key={
+                        studentUid
+                      }
+                      className="
+                        flex
+                        flex-col
+                        gap-4
+                        px-5
+                        py-4
+                        transition
+                        hover:bg-slate-50/70
+                        sm:flex-row
+                        sm:items-center
+                        sm:justify-between
+                      "
+                    >
+
+                      {/* Student Info */}
+
+                      <div
+                        className="
+                          flex
+                          min-w-0
+                          items-center
+                          gap-3
+                        "
+                      >
+
+                        <div
+                          className="
+                            flex
+                            h-11
+                            w-11
+                            shrink-0
+                            items-center
+                            justify-center
+                            overflow-hidden
+                            rounded-xl
+                            bg-teal-50
+                            font-bold
+                            text-teal-700
+                          "
+                        >
+
+                          {student
+                            ?.profilePicture ? (
+
+                            <img
+                              src={
+                                student
+                                  .profilePicture
+                              }
+                              alt={
+                                studentName
+                              }
+                              className="
+                                h-full
+                                w-full
+                                object-cover
+                              "
+                            />
+
+                          ) : (
+
+                            studentName
+                              .charAt(0)
+                              .toUpperCase()
+
+                          )}
+
+                        </div>
+
+
+                        <div
+                          className="
+                            min-w-0
+                          "
+                        >
+
+                          <div
+                            className="
+                              flex
+                              flex-wrap
+                              items-center
+                              gap-2
+                            "
+                          >
+
+                            <p
+                              className="
+                                truncate
+                                font-bold
+                                text-slate-900
+                              "
+                            >
+                              {studentName}
+                            </p>
+
+
+                            {student
+                              ?.alreadyAssigned && (
+
+                              <span
+                                className="
+                                  rounded-full
+                                  bg-emerald-50
+                                  px-2
+                                  py-0.5
+                                  text-[11px]
+                                  font-semibold
+                                  text-emerald-700
+                                "
+                              >
+                                Assigned
+                              </span>
+
+                            )}
+
+                          </div>
+
+
+                          <div
+                            className="
+                              mt-1
+                              flex
+                              flex-wrap
+                              items-center
+                              gap-x-3
+                              gap-y-1
+                              text-xs
+                              text-slate-500
+                            "
+                          >
+
+                            <span>
+                              ID:{" "}
+
+                              {student
+                                ?.digitalAdmissionNumber ||
+
+                                student
+                                  ?.studentId ||
+
+                                studentUid ||
+
+                                "N/A"}
+                            </span>
+
+
+                            <span>
+                              Class:{" "}
+
+                              <strong
+                                className="
+                                  font-semibold
+                                  text-slate-700
+                                "
+                              >
+                                {studentClass}
+                              </strong>
+                            </span>
+
+
+                            {student
+                              ?.phone && (
+
+                              <span>
+                                {student
+                                  .phone}
+                              </span>
+
+                            )}
+
+                          </div>
+
+                        </div>
+
+                      </div>
+
+
+                      {/* ACTIONS */}
+
+                      <div
+                        className="
+                          flex
+                          shrink-0
+                          items-center
+                          gap-2
+                        "
+                      >
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleViewAssignStudent(
+                              student,
+                            )
+                          }
+                          className="
+                            inline-flex
+                            h-9
+                            items-center
+                            justify-center
+                            gap-1.5
+                            rounded-lg
+                            border
+                            border-slate-200
+                            bg-white
+                            px-3
+                            text-xs
+                            font-semibold
+                            text-slate-700
+                            transition
+                            hover:bg-slate-50
+                          "
+                        >
+
+                          <Eye
+                            className="
+                              h-3.5
+                              w-3.5
+                            "
+                          />
+
+                          View
+
+                        </button>
+
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleRemoveDigitalStudent(
+                              student,
+                            )
+                          }
+                          disabled={
+                            removingStudentUid ===
+                            studentUid
+                          }
+                          className="
+                            inline-flex
+                            h-9
+                            items-center
+                            justify-center
+                            gap-1.5
+                            rounded-lg
+                            border
+                            border-red-200
+                            bg-red-50
+                            px-3
+                            text-xs
+                            font-semibold
+                            text-red-700
+                            transition
+                            hover:border-red-300
+                            hover:bg-red-100
+                            disabled:cursor-not-allowed
+                            disabled:opacity-50
+                          "
+                        >
+
+                          {removingStudentUid ===
+                          studentUid ? (
+
+                            <>
+                              <Loader2
+                                className="
+                                  h-3.5
+                                  w-3.5
+                                  animate-spin
+                                "
+                              />
+
+                              Unassigning...
+                            </>
+
+                          ) : (
+
+                            <>
+                              <UserX
+                                className="
+                                  h-3.5
+                                  w-3.5
+                                "
+                              />
+
+                              Unassign
+                            </>
+
+                          )}
+
+                        </button>
+
+                      </div>
+
+                    </div>
+
+                  );
+                },
+              )}
+
+            </div>
+
+          )}
+
+        </div>
+
+      )}
+
+
+      {/* =====================================================
+          GOOGLE MEET TAB
+      ===================================================== */}
+
+      {assignPopupTab ===
+      "google-meet" && (
+
+        <div
+          className="
+            overflow-hidden
+            rounded-2xl
+            border
+            border-slate-200
+            bg-white
+          "
+        >
+
+          {/* HEADER */}
+
+          <div
+            className="
+              flex
+              flex-col
+              gap-3
+              border-b
+              border-slate-200
+              px-5
+              py-4
+              sm:flex-row
+              sm:items-center
+              sm:justify-between
+            "
+          >
+
+            <div
+              className="
+                flex
+                items-center
+                gap-3
+              "
+            >
+
+              <div
+                className="
+                  flex
+                  h-10
+                  w-10
+                  items-center
+                  justify-center
+                  rounded-xl
+                  bg-teal-50
+                  text-teal-600
+                "
+              >
+                <Video
+                  className="
+                    h-5
+                    w-5
+                  "
+                />
+              </div>
+
+
+              <div>
+
+                <h3
+                  className="
+                    font-bold
+                    text-slate-900
+                  "
+                >
+                  Google Meet Assignment
+                </h3>
+
+
+                <p
+                  className="
+                    mt-1
+                    text-sm
+                    text-slate-500
+                  "
+                >
+                  Assign one private Meet room
+                  for each class.
+                </p>
+
+              </div>
+
+            </div>
+
+
+            <button
+              type="button"
+              onClick={
+                loadTeacherMeetRooms
+              }
+              disabled={
+                meetRoomsLoading
+              }
+              className="
+                inline-flex
+                items-center
+                gap-2
+                rounded-lg
+                border
+                border-slate-200
+                bg-white
+                px-3
+                py-2
+                text-xs
+                font-semibold
+                text-slate-600
+                hover:bg-slate-50
+                disabled:opacity-50
+              "
+            >
+
+              {meetRoomsLoading ? (
+
+                <Loader2
+                  className="
+                    h-3.5
+                    w-3.5
+                    animate-spin
+                  "
+                />
+
+              ) : (
+
+                <Video
+                  className="
+                    h-3.5
+                    w-3.5
+                  "
+                />
+
+              )}
+
+              Refresh
+
+            </button>
+
+          </div>
+{/* GOOGLE CONNECTION */}
+
+<div
+  className="
+    mx-5
+    mt-5
+    rounded-2xl
+    border
+    border-slate-200
+    bg-slate-50
+    p-4
+  "
+>
+
   <div
     className="
       flex
       flex-col
-      gap-2
-      border-b
-      border-slate-200
-      px-5
-      py-4
+      gap-4
       sm:flex-row
       sm:items-center
       sm:justify-between
     "
   >
-    <div>
-      <h3 className="font-bold text-slate-900">
-        Assigned Digital Students
-      </h3>
 
-   
-    </div>
+    <div
+      className="
+        flex
+        items-center
+        gap-3
+      "
+    >
 
-    {!digitalStudentsLoading && (
-      <span
-        className="
-          inline-flex
-          w-fit
-          rounded-full
-          bg-teal-50
-          px-3
-          py-1
-          text-xs
-          font-semibold
-          text-teal-700
-        "
+      <div
+        className={`
+          flex
+          h-11
+          w-11
+          items-center
+          justify-center
+          rounded-xl
+
+          ${
+            googleMeetConnected
+              ? "bg-emerald-100 text-emerald-700"
+              : "bg-amber-100 text-amber-700"
+          }
+        `}
       >
-        {assignedDigitalStudents.length} Student
-{assignedDigitalStudents.length !== 1
-  ? "s"
-  : ""}
-      </span>
-    )}
-  </div>
+
+        {googleMeetConnectionLoading ? (
+
+          <Loader2
+            className="
+              h-5
+              w-5
+              animate-spin
+            "
+          />
+
+        ) : googleMeetConnected ? (
+
+          <CheckCircle2
+            className="
+              h-5
+              w-5
+            "
+          />
+
+        ) : (
+
+          <Video
+            className="
+              h-5
+              w-5
+            "
+          />
+
+        )}
+
+      </div>
 
 
-  {/* Loading */}
-  {digitalStudentsLoading ? (
+      <div>
 
-    <div className="flex min-h-[180px] items-center justify-center">
+        <p
+          className="
+            text-sm
+            font-bold
+            text-slate-900
+          "
+        >
+          Google Meet Integration
+        </p>
 
-      <div className="flex items-center gap-2 text-sm text-slate-500">
 
-        <Loader2 className="h-5 w-5 animate-spin" />
+        <div
+          className="
+            mt-1
+            flex
+            items-center
+            gap-2
+          "
+        >
 
-        Loading Digital Students...
+          <span
+            className={`
+              h-2
+              w-2
+              rounded-full
+
+              ${
+                googleMeetConnected
+                  ? "bg-emerald-500"
+                  : "bg-amber-500"
+              }
+            `}
+          />
+
+
+          <p
+            className={`
+              text-xs
+              font-semibold
+
+              ${
+                googleMeetConnected
+                  ? "text-emerald-700"
+                  : "text-amber-700"
+              }
+            `}
+          >
+            {googleMeetConnectionLoading
+              ? "Checking connection..."
+              : googleMeetConnected
+                ? "Google Meet Connected"
+                : "Google Meet Not Connected"}
+          </p>
+
+        </div>
 
       </div>
 
     </div>
 
-  ) : assignedDigitalStudents.length === 0 ? (
 
-    /* Empty */
+    {!googleMeetConnected && (
 
-    <div
-      className="
-        flex
-        min-h-[180px]
-        flex-col
-        items-center
-        justify-center
-        p-6
-        text-center
-      "
-    >
-      <Users className="h-9 w-9 text-slate-300" />
+      <button
+        type="button"
 
-      <p className="mt-3 font-semibold text-slate-700">
-  No Assigned Digital Students
-</p>
+        onClick={
+          handleConnectGoogleMeet
+        }
 
-<p className="mt-1 text-sm text-slate-500">
-  No students are currently assigned to this Digital Teacher.
-</p>
-    </div>
+        disabled={
+          googleMeetConnecting ||
+          googleMeetConnectionLoading
+        }
 
-  ) : (
+        className="
+          inline-flex
+          h-10
+          items-center
+          justify-center
+          gap-2
+          rounded-xl
+          bg-teal-600
+          px-4
+          text-xs
+          font-bold
+          text-white
+          transition
+          hover:bg-teal-700
+          disabled:cursor-wait
+          disabled:opacity-60
+        "
+      >
 
-    /* Student List */
+        {googleMeetConnecting ? (
 
-    <div className="divide-y divide-slate-100">
+          <>
+            <Loader2
+              className="
+                h-4
+                w-4
+                animate-spin
+              "
+            />
 
-      {assignedDigitalStudents.map(
-        (student) => {
+            Connecting...
+          </>
 
-          const studentUid =
-            student?.uid ||
-            student?.id;
+        ) : (
 
-         
+          <>
+            <Link2
+              className="
+                h-4
+                w-4
+              "
+            />
 
-          const studentName =
-            student?.fullName ||
-            student?.name ||
-            student?.studentName ||
-            "Digital Student";
+            Connect Google Meet
+          </>
 
-          const studentClass =
-            student?.studentClass ||
-            student?.className ||
-            student?.currentClass ||
-            student?.class ||
-            student?.classLevel ||
-            "N/A";
+        )}
 
-          return (
+      </button>
+
+    )}
+
+
+    {googleMeetConnected && (
+
+      <div
+        className="
+          inline-flex
+          items-center
+          gap-2
+          rounded-xl
+          border
+          border-emerald-200
+          bg-emerald-50
+          px-4
+          py-2.5
+          text-xs
+          font-bold
+          text-emerald-700
+        "
+      >
+
+        <ShieldCheck
+          className="
+            h-4
+            w-4
+          "
+        />
+
+        Connected
+
+      </div>
+
+    )}
+
+  </div>
+
+</div>
+
+          {/* SECURITY INFO */}
+
+          <div
+            className="
+              m-5
+              flex
+              items-start
+              gap-3
+              rounded-xl
+              border
+              border-emerald-100
+              bg-emerald-50
+              p-4
+            "
+          >
+
+            <ShieldCheck
+              className="
+                mt-0.5
+                h-5
+                w-5
+                shrink-0
+                text-emerald-600
+              "
+            />
+
+
+            <div>
+
+              <p
+                className="
+                  text-sm
+                  font-bold
+                  text-emerald-800
+                "
+              >
+                Private Meet Link
+              </p>
+
+
+              <p
+                className="
+                  mt-1
+                  text-xs
+                  leading-5
+                  text-emerald-700
+                "
+              >
+                Saved Meet URLs are not displayed.
+                Teachers and students cannot read
+                the private room collection directly.
+              </p>
+
+            </div>
+
+          </div>
+
+
+          {/* CLASS LIST */}
+
+          {meetRoomsLoading ? (
+
             <div
-              key={studentUid}
               className="
                 flex
-                flex-col
-                gap-4
-                px-5
-                py-4
-                transition
-                hover:bg-slate-50/70
-                sm:flex-row
-                sm:items-center
-                sm:justify-between
+                min-h-[220px]
+                items-center
+                justify-center
               "
             >
 
-              {/* Student Info */}
-              <div className="flex min-w-0 items-center gap-3">
+              <div
+                className="
+                  flex
+                  items-center
+                  gap-2
+                  text-sm
+                  text-slate-500
+                "
+              >
 
-                {/* Avatar */}
-                <div
+                <Loader2
                   className="
-                    flex
-                    h-11
-                    w-11
-                    shrink-0
-                    items-center
-                    justify-center
-                    overflow-hidden
-                    rounded-xl
-                    bg-teal-50
-                    font-bold
-                    text-teal-700
+                    h-5
+                    w-5
+                    animate-spin
                   "
-                >
-                  {student?.profilePicture ? (
+                />
 
-                    <img
-                      src={student.profilePicture}
-                      alt={studentName}
-                      className="h-full w-full object-cover"
-                    />
-
-                  ) : (
-
-                    studentName
-                      .charAt(0)
-                      .toUpperCase()
-
-                  )}
-                </div>
-
-
-                {/* Details */}
-                <div className="min-w-0">
-
-                  <div className="flex flex-wrap items-center gap-2">
-
-                    <p className="truncate font-bold text-slate-900">
-                      {studentName}
-                    </p>
-
-                    {student?.alreadyAssigned && (
-                      <span
-                        className="
-                          rounded-full
-                          bg-emerald-50
-                          px-2
-                          py-0.5
-                          text-[11px]
-                          font-semibold
-                          text-emerald-700
-                        "
-                      >
-                        Assigned
-                      </span>
-                    )}
-
-                  </div>
-
-                  <div
-                    className="
-                      mt-1
-                      flex
-                      flex-wrap
-                      items-center
-                      gap-x-3
-                      gap-y-1
-                      text-xs
-                      text-slate-500
-                    "
-                  >
-
-                    <span>
-                      ID:{" "}
-                      {student?.digitalAdmissionNumber ||
-                        student?.studentId ||
-                        studentUid ||
-                        "N/A"}
-                    </span>
-
-                    <span>
-                      Class:{" "}
-                      <strong className="font-semibold text-slate-700">
-                        {studentClass}
-                      </strong>
-                    </span>
-
-                    {student?.phone && (
-                      <span>
-                        {student.phone}
-                      </span>
-                    )}
-
-                  </div>
-
-                </div>
-
-              </div>
-
-
-              {/* Actions */}
-              <div className="flex shrink-0 items-center gap-2">
-
-                {/* View */}
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleViewAssignStudent(
-                      student,
-                    )
-                  }
-                  className="
-                    inline-flex
-                    h-9
-                    items-center
-                    justify-center
-                    gap-1.5
-                    rounded-lg
-                    border
-                    border-slate-200
-                    bg-white
-                    px-3
-                    text-xs
-                    font-semibold
-                    text-slate-700
-                    transition
-                    hover:bg-slate-50
-                  "
-                >
-                  <Eye className="h-3.5 w-3.5" />
-
-                  View
-                </button>
-
-
-                {/* Add */}
-                <button
-  type="button"
-  onClick={() =>
-    handleRemoveDigitalStudent(
-      student,
-    )
-  }
-  disabled={
-    removingStudentUid ===
-    studentUid
-  }
-  className="
-    inline-flex
-    h-9
-    items-center
-    justify-center
-    gap-1.5
-    rounded-lg
-    border
-    border-red-200
-    bg-red-50
-    px-3
-    text-xs
-    font-semibold
-    text-red-700
-    transition
-    hover:border-red-300
-    hover:bg-red-100
-    disabled:cursor-not-allowed
-    disabled:opacity-50
-  "
->
-  {removingStudentUid ===
-  studentUid ? (
-    <>
-      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-      Unassigning...
-    </>
-  ) : (
-    <>
-      <UserX className="h-3.5 w-3.5" />
-      Unassign
-    </>
-  )}
-</button>
+                Loading Google Meet rooms...
 
               </div>
 
             </div>
-          );
-        },
+
+          ) : getAssignTeacherClasses()
+              .length ===
+            0 ? (
+
+            <div
+              className="
+                flex
+                min-h-[220px]
+                flex-col
+                items-center
+                justify-center
+                p-6
+                text-center
+              "
+            >
+
+              <Video
+                className="
+                  h-10
+                  w-10
+                  text-slate-300
+                "
+              />
+
+
+              <p
+                className="
+                  mt-3
+                  font-semibold
+                  text-slate-700
+                "
+              >
+                No Assigned Classes
+              </p>
+
+
+              <p
+                className="
+                  mt-1
+                  text-sm
+                  text-slate-500
+                "
+              >
+                Assign classes to this Ustad first.
+              </p>
+
+            </div>
+
+          ) : (
+
+            <div
+              className="
+                divide-y
+                divide-slate-100
+              "
+            >
+
+              {getAssignTeacherClasses()
+                .map(
+                  (
+                    className,
+                  ) => {
+
+                    const room =
+                      getMeetRoomForClass(
+                        className,
+                      );
+
+
+                    const configured =
+                      Boolean(
+                        room
+                          ?.configured,
+                      );
+
+
+                    const editing =
+                      meetEditingClass ===
+                      className;
+
+
+                    const saving =
+                      meetSavingClass ===
+                      className;
+
+
+                    return (
+
+                      <div
+                        key={
+                          className
+                        }
+                        className="
+                          px-5
+                          py-5
+                        "
+                      >
+
+                        <div
+                          className="
+                            flex
+                            flex-col
+                            gap-4
+                            md:flex-row
+                            md:items-center
+                            md:justify-between
+                          "
+                        >
+
+                          {/* CLASS */}
+
+                          <div
+                            className="
+                              flex
+                              items-center
+                              gap-3
+                            "
+                          >
+
+                            <div
+                              className={`
+                                flex
+                                h-11
+                                w-11
+                                shrink-0
+                                items-center
+                                justify-center
+                                rounded-xl
+
+                                ${
+                                  configured
+
+                                    ? "bg-emerald-50 text-emerald-600"
+
+                                    : "bg-slate-100 text-slate-500"
+                                }
+                              `}
+                            >
+
+                              <Video
+                                className="
+                                  h-5
+                                  w-5
+                                "
+                              />
+
+                            </div>
+
+
+                            <div>
+
+                              <p
+                                className="
+                                  font-bold
+                                  text-slate-900
+                                "
+                              >
+                                {className}
+                              </p>
+
+
+                              {configured ? (
+
+  <div
+    className="
+      mt-1
+      space-y-1
+    "
+  >
+
+    <p
+      className="
+        flex
+        items-center
+        gap-1.5
+        text-xs
+        font-semibold
+        text-emerald-600
+      "
+    >
+
+      <CheckCircle2
+        className="
+          h-3.5
+          w-3.5
+        "
+      />
+
+      Google Meet configured
+
+    </p>
+
+
+    {room?.meetUri && (
+
+      <div
+        className="
+          flex
+          flex-wrap
+          items-center
+          gap-2
+        "
+      >
+
+        <a
+          href={
+            room.meetUri
+          }
+          target="_blank"
+          rel="noreferrer"
+          className="
+            max-w-[420px]
+            truncate
+            text-xs
+            font-medium
+            text-blue-600
+            underline
+            underline-offset-2
+            hover:text-blue-700
+          "
+        >
+          {room.meetUri}
+        </a>
+
+
+        <button
+          type="button"
+          onClick={async () => {
+
+            try {
+
+              await navigator
+                .clipboard
+                .writeText(
+                  room.meetUri
+                );
+
+
+              toast.success(
+                "Google Meet link copied."
+              );
+
+            } catch {
+
+              toast.error(
+                "Unable to copy link."
+              );
+
+            }
+          }}
+          className="
+            rounded-md
+            border
+            border-slate-200
+            bg-white
+            px-2
+            py-1
+            text-[10px]
+            font-semibold
+            text-slate-600
+            hover:bg-slate-50
+          "
+        >
+          Copy
+        </button>
+
+      </div>
+
+    )}
+
+  </div>
+
+) : (
+                                <p
+                                  className="
+                                    mt-1
+                                    text-xs
+                                    font-medium
+                                    text-slate-400
+                                  "
+                                >
+                                  Google Meet not assigned
+                                </p>
+
+                              )}
+
+                            </div>
+
+                          </div>
+
+
+                          {/* ACTION */}
+
+                          {!editing && (
+
+                            <button
+  type="button"
+
+  onClick={() =>
+    handleCreateGoogleMeet(
+      className
+    )
+  }
+
+  disabled={
+    configured ||
+    saving ||
+    !googleMeetConnected
+  }
+
+  className={`
+    inline-flex
+    h-9
+    items-center
+    justify-center
+    gap-2
+    rounded-lg
+    border
+    px-4
+    text-xs
+    font-bold
+    transition
+
+    ${
+      configured
+        ? "cursor-default border-emerald-200 bg-emerald-50 text-emerald-700"
+        : "border-teal-200 bg-teal-600 text-white hover:bg-teal-700"
+    }
+
+    disabled:opacity-60
+  `}
+>
+
+  {saving ? (
+
+    <>
+      <Loader2
+        className="
+          h-3.5
+          w-3.5
+          animate-spin
+        "
+      />
+
+      Creating...
+    </>
+
+  ) : configured ? (
+
+    <>
+      <CheckCircle2
+        className="
+          h-3.5
+          w-3.5
+        "
+      />
+
+      Meet Ready
+    </>
+
+  ) : (
+
+    <>
+      <Video
+        className="
+          h-3.5
+          w-3.5
+        "
+      />
+
+      Create Google Meet
+    </>
+
+  )}
+
+</button>
+
+                          )}
+
+                        </div>
+
+
+                        {/* ==================================
+                            EDIT AREA
+                        ================================== */}
+
+                        {editing && (
+
+                          <div
+                            className="
+                              mt-4
+                              rounded-xl
+                              border
+                              border-teal-100
+                              bg-teal-50/40
+                              p-4
+                            "
+                          >
+
+                            <label
+                              className="
+                                mb-2
+                                block
+                                text-xs
+                                font-bold
+                                uppercase
+                                tracking-wide
+                                text-slate-500
+                              "
+                            >
+                              Google Meet Link
+                            </label>
+
+
+                            <div
+                              className="
+                                relative
+                              "
+                            >
+
+                              <LockKeyhole
+                                className="
+                                  absolute
+                                  left-3
+                                  top-1/2
+                                  h-4
+                                  w-4
+                                  -translate-y-1/2
+                                  text-slate-400
+                                "
+                              />
+
+
+                              <input
+                                type="url"
+                                value={
+                                  meetLink
+                                }
+                                onChange={
+                                  (
+                                    event,
+                                  ) =>
+                                    setMeetLink(
+                                      event
+                                        .target
+                                        .value,
+                                    )
+                                }
+                                placeholder="https://meet.google.com/abc-defg-hij"
+                                autoComplete="off"
+                                className="
+                                  h-11
+                                  w-full
+                                  rounded-xl
+                                  border
+                                  border-slate-200
+                                  bg-white
+                                  pl-10
+                                  pr-3
+                                  text-sm
+                                  text-slate-700
+                                  outline-none
+                                  focus:border-teal-500
+                                  focus:ring-2
+                                  focus:ring-teal-100
+                                "
+                              />
+
+                            </div>
+
+
+                            <p
+                              className="
+                                mt-2
+                                text-[11px]
+                                text-slate-500
+                              "
+                            >
+                              The URL will be hidden again
+                              immediately after saving.
+                            </p>
+
+
+                            <div
+                              className="
+                                mt-4
+                                flex
+                                justify-end
+                                gap-2
+                              "
+                            >
+
+                              <button
+                                type="button"
+                                onClick={() => {
+
+                                  setMeetEditingClass(
+                                    "",
+                                  );
+
+
+                                  setMeetLink(
+                                    "",
+                                  );
+
+                                }}
+                                disabled={
+                                  saving
+                                }
+                                className="
+                                  rounded-lg
+                                  border
+                                  border-slate-200
+                                  bg-white
+                                  px-4
+                                  py-2
+                                  text-xs
+                                  font-semibold
+                                  text-slate-600
+                                  hover:bg-slate-50
+                                "
+                              >
+                                Cancel
+                              </button>
+
+
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleSaveMeetRoom(
+                                    className,
+                                  )
+                                }
+                                disabled={
+                                  saving ||
+                                  !meetLink
+                                    .trim()
+                                }
+                                className="
+                                  inline-flex
+                                  items-center
+                                  gap-2
+                                  rounded-lg
+                                  bg-teal-600
+                                  px-4
+                                  py-2
+                                  text-xs
+                                  font-bold
+                                  text-white
+                                  hover:bg-teal-700
+                                  disabled:cursor-not-allowed
+                                  disabled:bg-slate-300
+                                "
+                              >
+
+                                {saving ? (
+
+                                  <>
+                                    <Loader2
+                                      className="
+                                        h-3.5
+                                        w-3.5
+                                        animate-spin
+                                      "
+                                    />
+
+                                    Saving...
+                                  </>
+
+                                ) : (
+
+                                  <>
+                                    <ShieldCheck
+                                      className="
+                                        h-3.5
+                                        w-3.5
+                                      "
+                                    />
+
+                                    {configured
+                                      ? "Replace Private Room"
+                                      : "Save Private Room"}
+                                  </>
+
+                                )}
+
+                              </button>
+
+                            </div>
+
+                          </div>
+
+                        )}
+
+                      </div>
+
+                    );
+                  },
+                )}
+
+            </div>
+
+          )}
+
+        </div>
+
       )}
 
     </div>
 
-  )}
-
-</div>
-
-    </div>
-
   </DialogContent>
+
 </Dialog>
 <Dialog
   open={studentViewOpen}

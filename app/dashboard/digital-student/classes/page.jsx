@@ -20,7 +20,9 @@ import {
   ChevronRight,
   MoonStar,
   Sparkles,
+  
   GraduationCap,
+X,
 } from "lucide-react";
   import {
       StatCard,
@@ -29,7 +31,9 @@ import {
 
   import {
   getMyDigitalStudentLiveClasses,
+  joinDigitalStudentLiveClass,
 } from "@/lib/digitalClassStudentService";
+import { toast } from "sonner";
 
 import Layout from "@/components/digitalclassroom/Layout";
 
@@ -58,7 +62,14 @@ export default function DigitalClassroomPage() {
   const { userData, user } = useAuthStore();
   const [liveClasses, setLiveClasses] = useState([]);
   const [liveClassesLoading, setLiveClassesLoading] = useState(true);
-
+  const [
+  selectedLiveClass,
+  setSelectedLiveClass,
+] = useState(null);
+  const [
+  joiningClassId,
+  setJoiningClassId,
+] = useState(null);
 const [currentTime, setCurrentTime] = useState(new Date());
 
   const studentName = useMemo(() => {
@@ -360,6 +371,175 @@ const upcomingClasses =
   }
 };
 
+
+const handleJoinLiveClass =
+  (classItem) => {
+
+    if (!classItem?.id) {
+      toast.error(
+        "Live Class ID is missing."
+      );
+
+      return;
+    }
+
+
+    if (!classItem?.canJoin) {
+      toast.error(
+        "You can join this class only 5 minutes before the start time."
+      );
+
+      return;
+    }
+
+
+    setSelectedLiveClass(
+      classItem
+    );
+  };
+
+  const handleEnterLiveClass =
+  async () => {
+
+    if (!selectedLiveClass?.id) {
+      toast.error(
+        "Live Class ID is missing."
+      );
+
+      return;
+    }
+
+
+    const popupWidth = 1280;
+const popupHeight = 820;
+
+const left =
+  Math.max(
+    0,
+    Math.round(
+      window.screenX +
+      (window.outerWidth - popupWidth) / 2
+    )
+  );
+
+const top =
+  Math.max(
+    0,
+    Math.round(
+      window.screenY +
+      (window.outerHeight - popupHeight) / 2
+    )
+  );
+
+const meetWindow =
+  window.open(
+    "",
+    "dkju-live-class",
+    `
+      popup=yes,
+      width=${popupWidth},
+      height=${popupHeight},
+      left=${left},
+      top=${top},
+      resizable=yes,
+      scrollbars=yes,
+      toolbar=no,
+      menubar=no,
+      status=no,
+      location=no
+    `.replace(/\s+/g, "")
+  );
+
+
+    if (!meetWindow) {
+      toast.error(
+        "Please allow pop-ups for DKJU."
+      );
+
+      return;
+    }
+
+
+    try {
+
+      setJoiningClassId(
+        selectedLiveClass.id
+      );
+
+
+      meetWindow.document.title =
+        "DKJU Live Class";
+
+
+      meetWindow.document.body.innerHTML =
+        `
+          <div style="
+            min-height:100vh;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            background:#0f172a;
+            color:white;
+            font-family:Arial,sans-serif;
+          ">
+            <div style="
+              text-align:center;
+              padding:40px;
+            ">
+              <h2>DKJU Live Class</h2>
+              <p>Connecting to Google Meet...</p>
+            </div>
+          </div>
+        `;
+
+
+      const result =
+        await joinDigitalStudentLiveClass(
+          selectedLiveClass.id
+        );
+
+
+      if (!result?.joinUrl) {
+        throw new Error(
+          "Google Meet room is unavailable."
+        );
+      }
+
+try {
+  meetWindow.opener = null;
+} catch {}
+
+      meetWindow.location.replace(
+        result.joinUrl
+      );
+      
+
+    } catch (error) {
+
+      console.error(
+        "STUDENT JOIN LIVE CLASS ERROR:",
+        error
+      );
+
+
+      try {
+        meetWindow.close();
+      } catch {}
+
+
+      toast.error(
+        error?.message ||
+        "Unable to join Live Class."
+      );
+
+    } finally {
+
+      setJoiningClassId(
+        null
+      );
+    }
+  };
+
   return (
     <Layout user={user}>
       
@@ -645,41 +825,110 @@ const upcomingClasses =
           </div>
 
 
-          {live ? (
+          {classItem?.canJoin ? (
 
-            <button
-              type="button"
-              onClick={() => {
-                if (
-                  classItem.meetLink
-                ) {
-                  window.open(
-                    classItem.meetLink,
-                    "_blank",
-                    "noopener,noreferrer"
-                  );
-                }
-              }}
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-teal-700 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-800"
-            >
-              <Video className="h-4 w-4" />
+  <button
+    type="button"
 
-              Join Now
-            </button>
+    onClick={() =>
+      handleJoinLiveClass(
+        classItem
+      )
+    }
 
-          ) : (
+    disabled={
+      joiningClassId ===
+      classItem.id
+    }
 
-            <button
-              type="button"
-              disabled
-              className="inline-flex h-11 cursor-not-allowed items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-5 text-sm font-semibold text-slate-400"
-            >
-              Scheduled
+    className="
+      inline-flex
+      h-11
+      items-center
+      justify-center
+      gap-2
+      rounded-xl
+      bg-teal-700
+      px-5
+      text-sm
+      font-semibold
+      text-white
+      shadow-sm
+      transition
+      hover:bg-teal-800
+      disabled:cursor-wait
+      disabled:opacity-70
+    "
+  >
 
-              <ChevronRight className="h-4 w-4" />
-            </button>
+    {joiningClassId ===
+    classItem.id ? (
 
-          )}
+      <>
+        <span
+          className="
+            h-4
+            w-4
+            animate-spin
+            rounded-full
+            border-2
+            border-white/40
+            border-t-white
+          "
+        />
+
+        Opening...
+      </>
+
+    ) : (
+
+      <>
+        <Video className="h-4 w-4" />
+
+        Join Now
+      </>
+
+    )}
+
+  </button>
+
+) : (
+
+  <button
+    type="button"
+    disabled
+
+    className="
+      inline-flex
+      h-11
+      cursor-not-allowed
+      items-center
+      justify-center
+      gap-2
+      rounded-xl
+      border
+      border-slate-200
+      bg-slate-50
+      px-5
+      text-sm
+      font-semibold
+      text-slate-400
+    "
+  >
+
+    {classItem?.status ===
+    "completed"
+      ? "Completed"
+      : "Scheduled"}
+
+    {classItem?.status !==
+      "completed" && (
+      <ChevronRight className="h-4 w-4" />
+    )}
+
+  </button>
+
+)}
 
         </div>
       );
@@ -937,6 +1186,291 @@ const upcomingClasses =
 </section>
         </div>
       </div>
+      {selectedLiveClass && (
+
+  <div
+    className="
+      fixed
+      inset-0
+      z-[9999]
+      bg-slate-950/85
+      p-3
+      sm:p-6
+    "
+  >
+
+    <div
+      className="
+        mx-auto
+        flex
+        h-full
+        max-w-[1500px]
+        flex-col
+      "
+    >
+
+      {/* HEADER */}
+      <div
+        className="
+          mb-3
+          flex
+          items-center
+          justify-between
+          rounded-2xl
+          bg-slate-900
+          px-5
+          py-4
+          text-white
+        "
+      >
+
+        <div>
+          <p
+            className="
+              text-xs
+              font-semibold
+              uppercase
+              tracking-wider
+              text-teal-300
+            "
+          >
+            DKJU Digital Classroom
+          </p>
+
+          <h2
+            className="
+              mt-1
+              text-lg
+              font-bold
+            "
+          >
+            {selectedLiveClass.title}
+          </h2>
+        </div>
+
+
+        <button
+          type="button"
+
+          onClick={() =>
+            setSelectedLiveClass(
+              null
+            )
+          }
+
+          className="
+            inline-flex
+            items-center
+            gap-2
+            rounded-xl
+            bg-white/10
+            px-4
+            py-2
+            text-sm
+            font-semibold
+            hover:bg-white/20
+          "
+        >
+          <X className="h-4 w-4" />
+
+          Close Window
+        </button>
+
+      </div>
+
+
+      {/* CLASS AREA */}
+      <div
+        className="
+          flex
+          flex-1
+          items-center
+          justify-center
+          overflow-hidden
+          rounded-[24px]
+          border
+          border-slate-700
+          bg-slate-900
+          shadow-2xl
+        "
+      >
+
+        <div
+          className="
+            w-full
+            max-w-xl
+            p-8
+            text-center
+          "
+        >
+
+          <div
+            className="
+              mx-auto
+              flex
+              h-20
+              w-20
+              items-center
+              justify-center
+              rounded-3xl
+              bg-teal-600
+              text-white
+              shadow-lg
+            "
+          >
+            <Video className="h-9 w-9" />
+          </div>
+
+
+          <p
+            className="
+              mt-6
+              text-sm
+              font-semibold
+              text-teal-300
+            "
+          >
+            {selectedLiveClass.subject}
+          </p>
+
+
+          <h1
+            className="
+              mt-2
+              text-3xl
+              font-bold
+              text-white
+            "
+          >
+            {selectedLiveClass.title}
+          </h1>
+
+
+          <p
+            className="
+              mt-3
+              text-sm
+              text-slate-400
+            "
+          >
+            {selectedLiveClass.className}
+          </p>
+
+
+          {selectedLiveClass.teacherName && (
+
+            <p
+              className="
+                mt-2
+                text-sm
+                text-slate-400
+              "
+            >
+              Ustad:{" "}
+              {
+                selectedLiveClass.teacherName
+              }
+            </p>
+
+          )}
+
+
+          <div
+            className="
+              mt-8
+              rounded-2xl
+              border
+              border-slate-700
+              bg-slate-800
+              p-5
+            "
+          >
+            <p
+              className="
+                text-sm
+                leading-6
+                text-slate-300
+              "
+            >
+              Your DKJU Digital Student account
+              will be verified before entering
+              the Live Class.
+            </p>
+          </div>
+
+
+          <button
+            type="button"
+
+            onClick={
+              handleEnterLiveClass
+            }
+
+            disabled={
+              joiningClassId ===
+              selectedLiveClass.id
+            }
+
+            className="
+              mt-7
+              inline-flex
+              h-12
+              min-w-[220px]
+              items-center
+              justify-center
+              gap-2
+              rounded-xl
+              bg-teal-600
+              px-6
+              font-bold
+              text-white
+              transition
+              hover:bg-teal-500
+              disabled:cursor-wait
+              disabled:opacity-60
+            "
+          >
+
+            {joiningClassId ===
+            selectedLiveClass.id ? (
+
+              <>
+                <span
+                  className="
+                    h-4
+                    w-4
+                    animate-spin
+                    rounded-full
+                    border-2
+                    border-white/30
+                    border-t-white
+                  "
+                />
+
+                Connecting...
+              </>
+
+            ) : (
+
+              <>
+                <Video className="h-5 w-5" />
+
+                Enter Live Class
+              </>
+
+            )}
+
+          </button>
+
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+)}
     </main>
     </Layout>
   );

@@ -1,16 +1,17 @@
 import { NextResponse } from "next/server";
 
 import {
-  FieldValue,
-} from "firebase-admin/firestore";
-
-import {
   getAdminAuth,
   getAdminDb,
 } from "@/lib/firebase-admin";
 
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+
+const LIVE_CLASS_COLLECTION =
+  "digitalClassLiveClasses";
 
 
 function cleanText(value) {
@@ -24,7 +25,8 @@ function normalizeClass(value) {
   return cleanText(value)
     .toLowerCase()
     .replace(/^class\s*/i, "")
-    .replace(/\s+/g, "");
+    .replace(/\s+/g, "")
+    .replace(/[^a-z0-9_-]/g, "");
 }
 
 
@@ -47,6 +49,7 @@ function getAutomaticStatus(
       liveClass?.endTime
     );
 
+
   if (
     !date ||
     !startTime ||
@@ -58,15 +61,18 @@ function getAutomaticStatus(
     );
   }
 
+
   const startDate =
     new Date(
       `${date}T${startTime}:00+05:30`
     );
 
+
   const endDate =
     new Date(
       `${date}T${endTime}:00+05:30`
     );
+
 
   if (
     Number.isNaN(
@@ -82,9 +88,11 @@ function getAutomaticStatus(
     );
   }
 
+
   if (now < startDate) {
     return "upcoming";
   }
+
 
   if (
     now >= startDate &&
@@ -93,9 +101,81 @@ function getAutomaticStatus(
     return "ongoing";
   }
 
+
   return "completed";
 }
 
+
+function getCanJoin(
+  liveClass,
+  now = new Date()
+) {
+  const date =
+    cleanText(
+      liveClass?.date
+    );
+
+  const startTime =
+    cleanText(
+      liveClass?.startTime
+    );
+
+  const endTime =
+    cleanText(
+      liveClass?.endTime
+    );
+
+
+  if (
+    !date ||
+    !startTime ||
+    !endTime
+  ) {
+    return false;
+  }
+
+
+  const startDate =
+    new Date(
+      `${date}T${startTime}:00+05:30`
+    );
+
+
+  const endDate =
+    new Date(
+      `${date}T${endTime}:00+05:30`
+    );
+
+
+  if (
+    Number.isNaN(
+      startDate.getTime()
+    ) ||
+    Number.isNaN(
+      endDate.getTime()
+    )
+  ) {
+    return false;
+  }
+
+
+  const joinOpenTime =
+    new Date(
+      startDate.getTime() -
+      5 * 60 * 1000
+    );
+
+
+  return (
+    now >= joinOpenTime &&
+    now <= endDate
+  );
+}
+
+
+/* =========================================================
+   VERIFY DIGITAL STUDENT
+========================================================= */
 
 async function verifyDigitalStudent(
   request,
@@ -107,6 +187,7 @@ async function verifyDigitalStudent(
       "authorization"
     ) || "";
 
+
   if (
     !authorization.startsWith(
       "Bearer "
@@ -115,20 +196,30 @@ async function verifyDigitalStudent(
     return null;
   }
 
+
+  const token =
+    authorization
+      .slice(7)
+      .trim();
+
+
+  if (!token) {
+    return null;
+  }
+
+
   try {
-    const token =
-      authorization
-        .slice(7)
-        .trim();
 
     const decoded =
       await auth.verifyIdToken(
         token
       );
 
+
     if (!decoded?.uid) {
       return null;
     }
+
 
     const studentSnapshot =
       await db
@@ -136,25 +227,28 @@ async function verifyDigitalStudent(
         .doc(decoded.uid)
         .get();
 
+
     if (
       !studentSnapshot.exists
     ) {
       return null;
     }
 
+
     const studentData =
       studentSnapshot.data() ||
       {};
 
-    const isDigitalStudent =
-      studentData?.role ===
-        "student" &&
-      studentData?.userType ===
-        "digital_student";
 
-    if (!isDigitalStudent) {
+    if (
+      studentData?.role !==
+        "student" ||
+      studentData?.userType !==
+        "digital_student"
+    ) {
       return null;
     }
+
 
     return {
       uid:
@@ -162,26 +256,36 @@ async function verifyDigitalStudent(
 
       studentData,
     };
+
   } catch (error) {
+
     console.error(
       "VERIFY DIGITAL STUDENT ERROR:",
       error
     );
+
 
     return null;
   }
 }
 
 
+/* =========================================================
+   GET STUDENT LIVE CLASSES
+========================================================= */
+
 export async function GET(
   request
 ) {
   try {
+
     const auth =
       getAdminAuth();
 
+
     const db =
       getAdminDb();
+
 
     const student =
       await verifyDigitalStudent(
@@ -190,10 +294,13 @@ export async function GET(
         db
       );
 
+
     if (!student?.uid) {
+
       return NextResponse.json(
         {
           success: false,
+
           message:
             "Unauthorized Digital Student.",
         },
@@ -203,9 +310,34 @@ export async function GET(
       );
     }
 
+
     const studentData =
       student.studentData ||
       {};
+
+
+    /* =====================================================
+       STUDENT MUST HAVE ASSIGNED USTAD
+    ===================================================== */
+
+    if (
+      studentData
+        ?.teacherAssigned !==
+        true
+    ) {
+
+      return NextResponse.json({
+        success: true,
+
+        count: 0,
+
+        classes: [],
+
+        message:
+          "No Digital Teacher is assigned.",
+      });
+    }
+
 
     const teacherUid =
       cleanText(
@@ -213,35 +345,46 @@ export async function GET(
           ?.assignedDigitalTeacherUid
       );
 
+
     const studentClass =
       cleanText(
         studentData
-          ?.assignedDigitalTeacherClass ||
-        studentData
-          ?.applyingclass ||
-        studentData
-          ?.className ||
-        studentData
-          ?.class
+          ?.assignedDigitalTeacherClass
       );
 
+
+    const studentClassKey =
+      normalizeClass(
+        studentClass
+      );
+
+
     if (
-      !studentData
-        ?.teacherAssigned ||
-      !teacherUid
+      !teacherUid ||
+      !studentClassKey
     ) {
+
       return NextResponse.json({
         success: true,
-        teacherAssigned: false,
-        classes: [],
+
         count: 0,
+
+        classes: [],
+
+        message:
+          "Digital Teacher or class assignment is incomplete.",
       });
     }
+
+
+    /* =====================================================
+       LOAD ONLY ASSIGNED USTAD'S CLASSES
+    ===================================================== */
 
     const snapshot =
       await db
         .collection(
-          "digitalClassLiveClasses"
+          LIVE_CLASS_COLLECTION
         )
         .where(
           "teacherUid",
@@ -250,35 +393,33 @@ export async function GET(
         )
         .get();
 
+
     const now =
       new Date();
 
-    const batch =
-      db.batch();
-
-    let statusChanges = 0;
 
     const classes =
       snapshot.docs
-        .map((document) => {
+        .map((doc) => {
+
           const data =
-            document.data() ||
+            doc.data() ||
             {};
 
+
           /*
-           * Student sees only
-           * his/her assigned class.
+           * Student must see only
+           * their assigned class.
            */
           if (
             normalizeClass(
               data?.className
             ) !==
-            normalizeClass(
-              studentClass
-            )
+            studentClassKey
           ) {
             return null;
           }
+
 
           const status =
             getAutomaticStatus(
@@ -286,113 +427,127 @@ export async function GET(
               now
             );
 
-          if (
-            cleanText(
-              data?.status
-            ) !== status
-          ) {
-            batch.update(
-              document.ref,
-              {
-                status,
 
-                statusUpdatedAt:
-                  FieldValue
-                    .serverTimestamp(),
-
-                updatedAt:
-                  FieldValue
-                    .serverTimestamp(),
-              }
+          const canJoin =
+            getCanJoin(
+              data,
+              now
             );
 
-            statusChanges += 1;
-          }
 
+          /*
+           * SAFE RESPONSE ONLY.
+           *
+           * Never return:
+           * meetUri
+           * meetLink
+           * meetRoomId
+           */
           return {
             id:
-              document.id,
+              doc.id,
 
             title:
-              data?.title ||
-              "",
+              cleanText(
+                data?.title
+              ),
 
             subject:
-              data?.subject ||
-              "",
+              cleanText(
+                data?.subject
+              ),
 
             className:
-              data?.className ||
-              "",
+              cleanText(
+                data?.className
+              ),
 
             date:
-              data?.date ||
-              "",
+              cleanText(
+                data?.date
+              ),
 
             startTime:
-              data?.startTime ||
-              "",
+              cleanText(
+                data?.startTime
+              ),
 
             endTime:
-              data?.endTime ||
-              "",
-
-            meetLink:
-              data?.meetLink ||
-              "",
+              cleanText(
+                data?.endTime
+              ),
 
             description:
-              data?.description ||
-              "",
-
-            teacherUid,
+              cleanText(
+                data?.description
+              ) ||
+              null,
 
             teacherName:
-              data?.teacherName ||
-              studentData
-                ?.assignedDigitalTeacherName ||
-              "",
+              cleanText(
+                data?.teacherName ||
+                studentData
+                  ?.assignedDigitalTeacherName
+              ) ||
+              null,
 
             status,
+
+            canJoin,
+
+            meetConfigured:
+              Boolean(
+                data?.meetRoomId ||
+                data?.meetConfigured
+              ),
           };
         })
         .filter(Boolean)
-        .sort((a, b) => {
-          const first =
-            `${a.date} ${a.startTime}`;
+        .sort(
+          (a, b) => {
 
-          const second =
-            `${b.date} ${b.startTime}`;
+            const first =
+              `${a.date} ${a.startTime}`;
 
-          return first.localeCompare(
-            second
-          );
-        });
+            const second =
+              `${b.date} ${b.startTime}`;
 
-    if (statusChanges > 0) {
-      await batch.commit();
-    }
+
+            return first.localeCompare(
+              second
+            );
+          }
+        );
+
 
     return NextResponse.json({
       success: true,
 
-      teacherAssigned:
-        true,
-
-      studentClass,
-
-      teacherUid,
-
       count:
         classes.length,
 
+      teacher: {
+        name:
+          cleanText(
+            studentData
+              ?.assignedDigitalTeacherName
+          ) ||
+          null,
+
+        className:
+          studentClass,
+      },
+
       classes,
     });
+
   } catch (error) {
+
     console.error(
       "GET DIGITAL STUDENT LIVE CLASSES ERROR:",
       error
     );
+
 
     return NextResponse.json(
       {

@@ -260,9 +260,11 @@ function StatCard({
 
 
 function LiveClassCard({
-  classItem,
+ classItem,
+  onJoin,
+  joining = false,
   onEdit,
-  onDelete,
+  onDelete
 }) {
   const [
     showMenu,
@@ -276,52 +278,52 @@ function LiveClassCard({
   const isCompleted =
     classItem.status ===
     "completed";
-    const now = new Date();
+    const now =
+  new Date();
+
 
 const startDate =
-  classItem.date &&
-  classItem.startTime
+  classItem?.date &&
+  classItem?.startTime
     ? new Date(
-        `${classItem.date}T${classItem.startTime}:00`
+        `${classItem.date}T${classItem.startTime}:00+05:30`
       )
     : null;
+
 
 const endDate =
-  classItem.date &&
-  classItem.endTime
+  classItem?.date &&
+  classItem?.endTime
     ? new Date(
-        `${classItem.date}T${classItem.endTime}:00`
+        `${classItem.date}T${classItem.endTime}:00+05:30`
       )
     : null;
 
+
+/*
+ * Teacher can start/join
+ * 5 minutes before class.
+ */
 const joinOpenTime =
   startDate
     ? new Date(
         startDate.getTime() -
-          5 * 60 * 1000
+        5 * 60 * 1000
       )
     : null;
 
+
 const canJoinClass =
   Boolean(
-    classItem.meetLink &&
+    classItem?.meetConfigured &&
     joinOpenTime &&
     endDate &&
     now >= joinOpenTime &&
-    now <= endDate
+    now <= endDate &&
+    !isCompleted
   );
 
-const handleJoinClass = () => {
-  if (!classItem.meetLink) {
-    return;
-  }
 
-  window.open(
-    classItem.meetLink,
-    "_blank",
-    "noopener,noreferrer"
-  );
-};
 
   return (
     <div
@@ -589,38 +591,64 @@ const handleJoinClass = () => {
             gap-2
           "
         >
-          {canJoinClass && (
+ {canJoinClass && (
   <button
     type="button"
-    onClick={
-      handleJoinClass
-    }
+    onClick={() => {
+      if (
+        typeof onJoin ===
+        "function"
+      ) {
+        onJoin();
+      }
+    }}
+    disabled={joining}
     className="
       inline-flex
       h-10
       items-center
       justify-center
       gap-2
-      rounded-lg
-      bg-gradient-to-r
-      from-emerald-500
-      to-teal-500
+      rounded-xl
+      bg-teal-600
       px-4
-      text-xs
-      font-semibold
+      text-sm
+      font-bold
       text-white
-      shadow-md
-      transition-all
-      hover:-translate-y-0.5
-      hover:shadow-lg
+      shadow-sm
+      transition
+      hover:bg-teal-700
+      disabled:cursor-wait
+      disabled:opacity-70
     "
   >
-    <Video className="h-4 w-4" />
+    {joining ? (
+      <>
+        <span
+          className="
+            h-4
+            w-4
+            animate-spin
+            rounded-full
+            border-2
+            border-white/40
+            border-t-white
+          "
+        />
 
-    Join Class
+        Opening...
+      </>
+    ) : (
+      <>
+        <Video className="h-4 w-4" />
+
+        {isLive
+          ? "Join Class"
+          : "Start Class"}
+      </>
+    )}
   </button>
 )}
-
           
 <div className="relative">
   <button

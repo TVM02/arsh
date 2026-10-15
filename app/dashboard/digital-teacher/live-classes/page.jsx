@@ -14,27 +14,19 @@ import {
     getMyAssignedDigitalStudents,
      deleteDigitalLiveClass,
      updateDigitalLiveClass,
+     joinDigitalLiveClass,
 } from "@/lib/digitalClassTeacherService";
 import Layout from "@/components/digitalclassroom/Layout";
-import {StatCard, QuickAction, TodayClassRow, LiveClassCard, getLiveClassStatus} from "@/components/digitalclassroom/tecaherstudent"
+import {StatCard, TodayClassRow, LiveClassCard, getLiveClassStatus} from "@/components/digitalclassroom/tecaherstudent"
 import {
-
- BookOpen,
   CalendarDays,
   CheckCircle2,
-
-  Clock3,
-  History,
-  Link2,
-  MoreVertical,
-  Play,
+   Play,
   Plus,
   Radio,
   Search,
-  UserRound,
-  Users,
   Video,
-  Trash2 
+  Trash2,
 } from "lucide-react";
 import {
   MiniCalendar,
@@ -74,6 +66,11 @@ const [
   editingClass,
   setEditingClass,
 ] = useState(null);
+const [
+  joiningClassId,
+  setJoiningClassId,
+] = useState(null);
+
 
 const [
   classForm,
@@ -85,9 +82,9 @@ const [
   date: "",
   startTime: "",
   endTime: "",
-  meetLink: "",
   description: "",
 });
+
 const { user, userData } = useAuthStore();
 
   const [
@@ -280,6 +277,116 @@ const getClassStudentCount =
     ).length;
   };
 
+const handleJoinClass = async (classItem) => {
+  if (!classItem?.id) {
+    toast.error("Live Class ID is missing.");
+    return;
+  }
+
+  const popupWidth = 1280;
+  const popupHeight = 820;
+
+  const left = Math.max(
+    0,
+    Math.round(
+      window.screenX +
+        (window.outerWidth - popupWidth) / 2
+    )
+  );
+
+  const top = Math.max(
+    0,
+    Math.round(
+      window.screenY +
+        (window.outerHeight - popupHeight) / 2
+    )
+  );
+
+  const meetWindow = window.open(
+    "",
+    "dkju-teacher-live-class",
+    `
+      popup=yes,
+      width=${popupWidth},
+      height=${popupHeight},
+      left=${left},
+      top=${top},
+      resizable=yes,
+      scrollbars=yes
+    `.replace(/\s+/g, "")
+  );
+
+  if (!meetWindow) {
+    toast.error(
+      "Please allow pop-ups for DKJU."
+    );
+    return;
+  }
+
+  try {
+    setJoiningClassId(classItem.id);
+
+    meetWindow.document.title =
+      "DKJU Live Class";
+
+    meetWindow.document.body.innerHTML = `
+      <div style="
+        min-height:100vh;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        background:#0f172a;
+        color:white;
+        font-family:Arial,sans-serif;
+      ">
+        <div style="
+          text-align:center;
+          padding:40px;
+        ">
+          <h2>DKJU Digital Classroom</h2>
+          <p>Verifying and connecting to Google Meet...</p>
+        </div>
+      </div>
+    `;
+
+    const result =
+      await joinDigitalLiveClass(
+        classItem.id
+      );
+
+    if (!result?.joinUrl) {
+      throw new Error(
+        "Google Meet room is unavailable."
+      );
+    }
+
+    try {
+      meetWindow.opener = null;
+    } catch {}
+
+    meetWindow.location.replace(
+      result.joinUrl
+    );
+  } catch (error) {
+    console.error(
+      "TEACHER JOIN LIVE CLASS ERROR:",
+      error
+    );
+
+    try {
+      meetWindow.close();
+    } catch {}
+
+    toast.error(
+      error?.message ||
+        "Unable to join Live Class."
+    );
+  } finally {
+    setJoiningClassId(null);
+  }
+};
+
+
 
   const handleDeleteClass =
   async () => {
@@ -346,39 +453,35 @@ const handleEditClass =
     );
 
     setClassForm({
-      title:
-        classItem.title ||
-        "",
+  title:
+    classItem.title ||
+    "",
 
-      subject:
-        classItem.subject ||
-        "",
+  subject:
+    classItem.subject ||
+    "",
 
-      className:
-        classItem.className ||
-        "",
+  className:
+    classItem.className ||
+    "",
 
-      date:
-        classItem.date ||
-        "",
+  date:
+    classItem.date ||
+    "",
 
-      startTime:
-        classItem.startTime ||
-        classItem.time ||
-        "",
+  startTime:
+    classItem.startTime ||
+    classItem.time ||
+    "",
 
-      endTime:
-        classItem.endTime ||
-        "",
+  endTime:
+    classItem.endTime ||
+    "",
 
-      meetLink:
-        classItem.meetLink ||
-        "",
-
-      description:
-        classItem.description ||
-        "",
-    });
+  description:
+    classItem.description ||
+    "",
+});
 
     setShowScheduleForm(
       true
@@ -549,7 +652,13 @@ useEffect(() => {
 
 const handleScheduleClass =
   async (event) => {
+
     event.preventDefault();
+
+
+    /* =========================================
+       REQUIRED FIELDS
+    ========================================= */
 
     if (
       !classForm.title ||
@@ -557,9 +666,9 @@ const handleScheduleClass =
       !classForm.className ||
       !classForm.date ||
       !classForm.startTime ||
-      !classForm.endTime ||
-      !classForm.meetLink
+      !classForm.endTime
     ) {
+
       toast.error(
         "Please fill all required fields."
       );
@@ -567,22 +676,16 @@ const handleScheduleClass =
       return;
     }
 
-    if (
-      !classForm.meetLink.startsWith(
-        "https://meet.google.com/"
-      )
-    ) {
-      toast.error(
-        "Please enter a valid Google Meet link."
-      );
 
-      return;
-    }
+    /* =========================================
+       TIME VALIDATION
+    ========================================= */
 
     if (
       classForm.endTime <=
       classForm.startTime
     ) {
+
       toast.error(
         "End time must be after start time."
       );
@@ -590,10 +693,23 @@ const handleScheduleClass =
       return;
     }
 
-    setScheduling(true);
+
+    setScheduling(
+      true
+    );
+
 
     try {
+
+      /* =======================================
+         NO GOOGLE MEET LINK SENT
+
+         Backend automatically resolves:
+         teacherUid + className
+      ======================================= */
+
       const payload = {
+
         title:
           classForm.title,
 
@@ -612,32 +728,40 @@ const handleScheduleClass =
         endTime:
           classForm.endTime,
 
-        meetLink:
-          classForm.meetLink,
-
         description:
           classForm.description,
       };
 
+
       let result;
 
-      /* =========================
-         EDIT
-      ========================= */
 
-      if (editingClass?.id) {
+      /* =======================================
+         EDIT
+      ======================================= */
+
+      if (
+        editingClass?.id
+      ) {
+
         result =
           await updateDigitalLiveClass({
+
             classId:
               editingClass.id,
 
             ...payload,
           });
 
+
         const updatedClass =
           result?.liveClass;
 
-        if (updatedClass?.id) {
+
+        if (
+          updatedClass?.id
+        ) {
+
           setClasses(
             (previous) =>
               previous.map(
@@ -663,28 +787,38 @@ const handleScheduleClass =
           );
         }
 
+
         toast.success(
           result?.message ||
-            "Live Class updated successfully."
+          "Live Class updated successfully."
         );
+
       }
 
-      /* =========================
+
+      /* =======================================
          CREATE
-      ========================= */
+      ======================================= */
 
       else {
+
         result =
           await scheduleDigitalLiveClass(
             payload
           );
 
+
         const createdClass =
           result?.liveClass;
 
-        if (createdClass?.id) {
+
+        if (
+          createdClass?.id
+        ) {
+
           setClasses(
             (previous) => [
+
               {
                 ...createdClass,
 
@@ -712,13 +846,17 @@ const handleScheduleClass =
           );
         }
 
+
         toast.success(
           result?.message ||
-            "Live Class scheduled successfully."
+          "Live Class scheduled successfully."
         );
       }
 
-      /* RESET */
+
+      /* =======================================
+         RESET
+      ======================================= */
 
       setClassForm({
         title: "",
@@ -727,16 +865,21 @@ const handleScheduleClass =
         date: "",
         startTime: "",
         endTime: "",
-        meetLink: "",
         description: "",
       });
 
-      setEditingClass(null);
+
+      setEditingClass(
+        null
+      );
+
 
       setShowScheduleForm(
         false
       );
+
     } catch (error) {
+
       console.error(
         editingClass
           ? "UPDATE LIVE CLASS ERROR:"
@@ -744,14 +887,21 @@ const handleScheduleClass =
         error
       );
 
+
       toast.error(
         error?.message ||
-          (editingClass
+        (
+          editingClass
             ? "Failed to update Live Class."
-            : "Failed to schedule Live Class.")
+            : "Failed to schedule Live Class."
+        )
       );
+
     } finally {
-      setScheduling(false);
+
+      setScheduling(
+        false
+      );
     }
   };
 
@@ -1257,11 +1407,12 @@ const handleScheduleClass =
                   classItem,
                 ) => (
                   <LiveClassCard
-                     key={
-        classItem.id ||
-        `${classItem.date}-${classItem.startTime || classItem.time}-${classItem.title}`
-      }
-                    classItem={{
+  key={
+    classItem.id ||
+    `${classItem.date}-${classItem.startTime || classItem.time}-${classItem.title}`
+  }
+
+  classItem={{
     ...classItem,
 
     studentsCount:
@@ -1269,15 +1420,28 @@ const handleScheduleClass =
         classItem.className
       ),
   }}
-    onEdit={
+
+  onJoin={() =>
+    handleJoinClass(
+      classItem
+    )
+  }
+
+  joining={
+    joiningClassId ===
+    classItem.id
+  }
+
+  onEdit={
     handleEditClass
   }
-   onDelete={() =>
+
+  onDelete={() =>
     setDeleteClass(
       classItem
-    )}
-                    
-                  />
+    )
+  }
+/>
                 ),
               ))}
 
@@ -1492,8 +1656,8 @@ const handleScheduleClass =
             "
           >
           {editingClass
-  ? "Update the Live Class details."
-  : "Create a class and provide the Google Meet link."}
+  ? "Update the Live Class details. Google Meet room is managed automatically."
+  : "Schedule your class. Google Meet room is assigned automatically by Central Admin."}
           </p>
         </div>
 
@@ -1796,57 +1960,176 @@ onChange={handleClassFormChange}
 
           {/* GOOGLE MEET */}
 
-          <div className="md:col-span-2">
-            <label className="mb-2 block text-xs font-semibold text-slate-600">
-              Google Meet Link *
-            </label>
+          {/* =====================================
+    GOOGLE MEET ROOM
+===================================== */}
 
-            <div className="relative">
-              <Link2
-                className="
-                  absolute
-                  left-3
-                  top-1/2
-                  h-4
-                  w-4
-                  -translate-y-1/2
-                  text-teal-500
-                "
-              />
+<div
+  className="
+    md:col-span-2
+  "
+>
 
-              <input
-                type="url"
-                name="meetLink"
-                value={
-                  classForm.meetLink
-                }
-                onChange={
-                  handleClassFormChange
-                }
-                placeholder="https://meet.google.com/abc-defg-hij"
-                className="
-                  h-11
-                  w-full
-                  rounded-xl
-                  border
-                  border-slate-200
-                  pl-10
-                  pr-4
-                  text-sm
-                  outline-none
-                  focus:border-teal-400
-                  focus:ring-2
-                  focus:ring-teal-100
-                "
-              />
-            </div>
+  <div
+    className="
+      flex
+      items-start
+      gap-3
+      rounded-2xl
+      border
+      border-teal-100
+      bg-teal-50
+      p-4
+    "
+  >
 
-            <p className="mt-1.5 text-[10px] text-slate-400">
-              Paste the Google Meet
-              meeting URL for students
-              to join.
-            </p>
-          </div>
+    <div
+      className="
+        flex
+        h-11
+        w-11
+        shrink-0
+        items-center
+        justify-center
+        rounded-xl
+        bg-white
+        text-teal-600
+        shadow-sm
+      "
+    >
+
+      <Video
+        className="
+          h-5
+          w-5
+        "
+      />
+
+    </div>
+
+
+    <div
+      className="
+        min-w-0
+        flex-1
+      "
+    >
+
+      <div
+        className="
+          flex
+          flex-wrap
+          items-center
+          gap-2
+        "
+      >
+
+        <p
+          className="
+            text-sm
+            font-bold
+            text-slate-800
+          "
+        >
+          Google Meet Room
+        </p>
+
+
+        {classForm.className && (
+
+          <span
+            className="
+              inline-flex
+              items-center
+              gap-1
+              rounded-full
+              bg-emerald-100
+              px-2.5
+              py-1
+              text-[10px]
+              font-bold
+              text-emerald-700
+            "
+          >
+
+            <CheckCircle2
+              className="
+                h-3
+                w-3
+              "
+            />
+
+            Auto Assigned
+
+          </span>
+
+        )}
+
+      </div>
+
+
+      {classForm.className ? (
+
+        <>
+
+          <p
+            className="
+              mt-2
+              text-sm
+              font-bold
+              text-teal-700
+            "
+          >
+            {classForm.className}
+          </p>
+
+
+          <p
+            className="
+              mt-1
+              text-xs
+              leading-5
+              text-slate-500
+            "
+          >
+            The Google Meet room assigned
+           automatically for{" "}
+
+            <strong
+              className="
+                text-slate-700
+              "
+            >
+              {classForm.className}
+            </strong>{" "}
+
+            will be used automatically.
+                      </p>
+
+        </>
+
+      ) : (
+
+        <p
+          className="
+            mt-2
+            text-xs
+            leading-5
+            text-slate-500
+          "
+        >
+          Select an assigned class first.
+          The correct Google Meet room
+          will be selected automatically.
+        </p>
+
+      )}
+
+    </div>
+
+  </div>
+
+</div>
 
           {/* DESCRIPTION */}
 
@@ -2063,6 +2346,8 @@ onChange={handleClassFormChange}
 
   </div>
 )}
+
+
     </Layout>
   );
 }
