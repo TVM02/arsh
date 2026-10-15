@@ -20,6 +20,14 @@ import Image from 'next/image';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import {
+  ref,
+  uploadBytes,
+  getDownloadURL
+} from "firebase/storage";
+
+import { storage } from "@/lib/firebase";
+
 
 
 export default function TeacherAssignments() {
@@ -240,40 +248,58 @@ export default function TeacherAssignments() {
     }));
   };
 
-  const uploadToCloudinary = async (file) => {
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('upload_preset', 'dkjuerp');
-    
-    try {
-      const response = await fetch(
-        `https://api.cloudinary.com/v1_1/dglkp24ki/image/upload`,
-        {
-          method: 'POST',
-          body: formData
-        }
-      );
-      
-      if (!response.ok) {
-        throw new Error(`Upload failed with status ${response.status}`);
-      }
-      
-      const data = await response.json();
-      if (!data.secure_url) {
-        throw new Error('No secure URL returned from Cloudinary');
-      }
-      
-      return data.secure_url;
-    } catch (error) {
-      console.error('Error uploading to Cloudinary:', error);
-      throw new Error('Failed to upload image. Please try again.');
+ 
+const uploadToFirebase = async (file) => {
+  try {
+    if (!user?.uid) {
+      throw new Error("Please log in before uploading images");
     }
-  };
 
-  const uploadMultipleToCloudinary = async (files) => {
-    const uploadPromises = files.map(file => uploadToCloudinary(file));
-    return Promise.all(uploadPromises);
-  };
+    if (!userData?.madarsaId) {
+      throw new Error("No Madrasa assigned to this teacher");
+    }
+
+    if (!file || !file.type.startsWith("image/")) {
+      throw new Error("Only image files are allowed");
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      throw new Error("Image size must be less than 10MB");
+    }
+
+    const uniqueId = crypto.randomUUID();
+    const extension = file.name.split(".").pop()?.toLowerCase() || "jpg";
+
+    const filePath =
+      `assignments/${userData.madarsaId}/${user.uid}/${uniqueId}.${extension}`;
+
+    const storageRef = ref(storage, filePath);
+
+    const snapshot = await uploadBytes(storageRef, file, {
+      contentType: file.type,
+    });
+
+    const downloadURL = await getDownloadURL(snapshot.ref);
+
+    return downloadURL;
+
+  } catch (error) {
+    console.error("Firebase Storage Upload Error:", error);
+    throw new Error(
+      error?.message || "Failed to upload image to Firebase Storage"
+    );
+  }
+};
+
+
+
+const uploadMultipleToFirebase = async (files) => {
+  const uploadPromises = files.map((file) =>
+    uploadToFirebase(file)
+  );
+
+  return Promise.all(uploadPromises);
+};
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -302,7 +328,7 @@ export default function TeacherAssignments() {
       // Upload new files if any
       if (formData.files.length > 0) {
         setUploadProgress(40);
-        const newImageUrls = await uploadMultipleToCloudinary(formData.files);
+        const newImageUrls = await uploadMultipleToFirebase(formData.files);
         imageUrls = [...imageUrls, ...newImageUrls];
       }
       
@@ -684,7 +710,7 @@ export default function TeacherAssignments() {
             {/* Footer */}
             <div className="mt-8 pt-6 border-t text-center text-gray-500">
               <p className="text-sm">Generated on {new Date().toLocaleDateString()} • DKJU Assignment System</p>
-              <p className="text-xs mt-1">© Made by Vaibhav - All Rights Reserved</p>
+              <p className="text-xs mt-1">© Made by DKIMVB - All Rights Reserved</p>
             </div>
           </div>
         </DialogContent>
