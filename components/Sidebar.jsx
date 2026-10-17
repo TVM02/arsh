@@ -694,6 +694,12 @@ const Sidebar = ({ isOpen, onClose }) => {
             group: "exams",
           },
           {
+            name: "Manual Hall Ticket",
+            href: "/dashboard/dkju-control/exam/hall-tickets",
+            icon: Hash,
+            group: "exams",
+          },
+          {
             name: "Unpublished Results",
             href: "/dashboard/dkju-control/exam/unpublished",
             icon: FileText,
