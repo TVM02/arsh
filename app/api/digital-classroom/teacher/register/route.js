@@ -287,6 +287,65 @@ export async function POST(
       If photo is optional,
       remove this block.
     */
+/* ========================================
+   NORMALIZE QUALIFICATION DATA
+======================================== */
+
+const qualificationBody =
+  body?.qualification &&
+  typeof body.qualification === "object"
+    ? body.qualification
+    : {};
+
+const generalEducation =
+  qualificationBody?.generalEducation &&
+  typeof qualificationBody.generalEducation ===
+    "object"
+    ? qualificationBody.generalEducation
+    : {};
+
+const computerKnowledge =
+  qualificationBody?.computerKnowledge &&
+  typeof qualificationBody.computerKnowledge ===
+    "object"
+    ? qualificationBody.computerKnowledge
+    : {};
+
+const islamicEducation =
+  qualificationBody?.islamicEducation &&
+  typeof qualificationBody.islamicEducation ===
+    "object"
+    ? qualificationBody.islamicEducation
+    : {};
+
+
+/* ========================================
+   QURAN QUALIFICATION
+
+   Supports:
+   quranQualification      = correct
+   QuranQualification      = old field
+======================================== */
+
+const quranQualification =
+  cleanText(
+    islamicEducation?.quranQualification ||
+    islamicEducation?.QuranQualification
+  ) || null;
+
+
+/* ========================================
+   CERTIFICATE URL
+
+   Certificate is uploaded to Firebase
+   Storage by frontend before API call.
+======================================== */
+
+const certificateUrl =
+  cleanText(
+    body?.certificateUrl ||
+    qualificationBody?.certificateUrl
+  ) || null;
 
     if (!profilePicture) {
       return errorResponse(
@@ -295,19 +354,9 @@ export async function POST(
       );
     }
 
-    /* ========================================
-       BUILD APPLICATION
 
-       IMPORTANT:
-       SAME Firebase UID
-       SAME Firebase email
-       SAME Firebase password
-    ======================================== */
 
     const applicationData = {
-      /* ======================================
-         EXISTING TEACHER ACCOUNT
-      ====================================== */
 
       sourceTeacherUid:
         teacherUid,
@@ -398,29 +447,81 @@ export async function POST(
          QUALIFICATION
       ====================================== */
 
-      qualification:
-        body?.qualification &&
-        typeof body.qualification ===
-          "object"
-          ? body.qualification
-          : {},
+     qualification: {
+  generalEducation: {
+    highestQualification:
+      cleanText(
+        generalEducation?.highestQualification
+      ) || null,
 
-      /* ======================================
-         BANK DETAILS
-      ====================================== */
+    courseName:
+      cleanText(
+        generalEducation?.courseName
+      ) || null,
 
-      bankDetails:
-        body?.bankDetails &&
-        typeof body.bankDetails ===
-          "object"
-          ? body.bankDetails
-          : {},
+    institution:
+      cleanText(
+        generalEducation?.institution
+      ) || null,
+  },
 
-      certificateUrl:
-        body?.certificateUrl ||
-        body?.qualification
-          ?.certificateUrl ||
-        null,
+  computerKnowledge: {
+    level:
+      cleanText(
+        computerKnowledge?.level
+      ) || null,
+
+    otherDetails:
+      cleanText(
+        computerKnowledge?.otherDetails
+      ) || null,
+  },
+
+  islamicEducation: {
+    highestQualification:
+      cleanText(
+        islamicEducation?.highestQualification
+      ) || null,
+
+    courseName:
+      cleanText(
+        islamicEducation?.courseName
+      ) || null,
+
+    institution:
+      cleanText(
+        islamicEducation?.institution
+      ) || null,
+
+    yearOfPassing:
+      cleanText(
+        islamicEducation?.yearOfPassing
+      ) || null,
+
+    teachingExperience:
+      cleanText(
+        islamicEducation?.teachingExperience
+      ) || null,
+
+    quranQualification:
+      quranQualification,
+  },
+
+  certificateUrl:
+    certificateUrl,
+},
+
+
+bankDetails:
+  body?.bankDetails &&
+  typeof body.bankDetails ===
+    "object"
+    ? body.bankDetails
+    : {},
+
+
+certificateUrl:
+  certificateUrl,
 
       /* ======================================
          APPLICATION STATUS

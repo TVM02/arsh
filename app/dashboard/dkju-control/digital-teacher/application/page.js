@@ -7,6 +7,9 @@ import {
   approveDigitalTeacher,
   rejectDigitalTeacher,
 } from "@/lib/digitalClassTeacherService";
+import {
+  getDigitalSyllabusSettings,
+} from "@/lib/digitalClassSyllabusService";
 
 import {
   Users,
@@ -37,7 +40,7 @@ StatCard,
 
 
 const CLASS_OPTIONS = [
-  "LKG",
+
   "UKG",
   "Class 1",
   "Class 2",
@@ -53,16 +56,7 @@ const CLASS_OPTIONS = [
   "Class 12",
 ];
 
-const SUBJECT_OPTIONS = [
-  "Quran",
-  "Arabic",
-  "Islamic Studies",
-  "Fiqh",
-  "Aqeedah",
-  "Hadees",
-  "Seerah",
-  "Dua",
-];
+
 
 const LANGUAGE_OPTIONS = [
   "Malayalam",
@@ -98,9 +92,17 @@ export default function DigitalTeacherApplicationsPage() {
 const [approvalForm, setApprovalForm] =
   useState({
     assignedClasses: [],
-    assignedSubjects: [],
     languages: [],
   });
+
+const [syllabusSettings, setSyllabusSettings] =
+  useState({});
+
+const [syllabusLoading, setSyllabusLoading] =
+  useState(false);
+
+const [syllabusError, setSyllabusError] =
+  useState("");
   
 
 const [approveLoading, setApproveLoading] =
@@ -116,6 +118,108 @@ const [rejectionReason, setRejectionReason] =
   /* ============================================
      LOAD APPLICATIONS
   ============================================ */
+/* ============================================
+   QUALIFICATION CERTIFICATE
+============================================ */
+
+const rawCertificateUrl =
+  selectedTeacher?.qualification?.certificateUrl ||
+  selectedTeacher?.certificateUrl ||
+  "";
+
+const certificateUrl = (() => {
+  if (typeof rawCertificateUrl !== "string") {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(rawCertificateUrl);
+
+    return parsed.protocol === "https:"
+      ? parsed.href
+      : "";
+  } catch {
+    return "";
+  }
+})();
+
+const certificatePath = (() => {
+  try {
+    return decodeURIComponent(
+      new URL(certificateUrl).pathname
+    ).toLowerCase();
+  } catch {
+    return "";
+  }
+})();
+
+const isPdfCertificate =
+  certificatePath.endsWith(".pdf");
+
+const isImageCertificate =
+  /\.(jpg|jpeg|png|webp|gif)$/.test(
+    certificatePath
+  );
+
+  /* ============================================
+   AUTO ASSIGN SUBJECTS FROM SELECTED CLASSES
+============================================ */
+
+const assignedSubjects = useMemo(() => {
+  const subjects = [];
+  const seen = new Set();
+
+  approvalForm.assignedClasses.forEach(
+    (className) => {
+      const classSubjects =
+        syllabusSettings[className] || [];
+
+      if (!Array.isArray(classSubjects)) {
+        return;
+      }
+
+      classSubjects.forEach((subject) => {
+        if (typeof subject !== "string") {
+          return;
+        }
+
+        const cleanSubject = subject.trim();
+        const key = cleanSubject.toLowerCase();
+
+        if (cleanSubject && !seen.has(key)) {
+          seen.add(key);
+          subjects.push(cleanSubject);
+        }
+      });
+    }
+  );
+
+  return subjects;
+}, [
+  approvalForm.assignedClasses,
+  syllabusSettings,
+]);
+
+/* ============================================
+   CHECK UNCONFIGURED CLASSES
+============================================ */
+
+const missingSyllabusClasses = useMemo(() => {
+  return approvalForm.assignedClasses.filter(
+    (className) => {
+      const classSubjects =
+        syllabusSettings[className];
+
+      return (
+        !Array.isArray(classSubjects) ||
+        classSubjects.length === 0
+      );
+    }
+  );
+}, [
+  approvalForm.assignedClasses,
+  syllabusSettings,
+]);
 
   const loadTeachers = async () => {
     try {
@@ -214,20 +318,54 @@ const [rejectionReason, setRejectionReason] =
 
  
 
-  const openApprove = (teacher) => {
+/* ============================================
+   OPEN APPROVAL AND LOAD CLASS SUBJECTS
+============================================ */
+
+const openApprove = async (teacher) => {
   setSelectedTeacher(teacher);
 
   setApprovalForm({
     assignedClasses: [],
-    assignedSubjects: [],
     languages: [],
   });
 
   setMessage("");
-
+  setSyllabusError("");
+  setSyllabusSettings({});
+  setSyllabusLoading(true);
   setApproveOpen(true);
-};
 
+  try {
+    const result =
+      await getDigitalSyllabusSettings();
+
+    if (
+      result?.success !== true ||
+      !result?.settings ||
+      typeof result.settings !== "object" ||
+      Array.isArray(result.settings)
+    ) {
+      throw new Error(
+        "Invalid syllabus settings response."
+      );
+    }
+
+    setSyllabusSettings(result.settings);
+  } catch (error) {
+    console.error(
+      "LOAD TEACHER APPROVAL SUBJECTS ERROR:",
+      error
+    );
+
+    setSyllabusError(
+      error?.message ||
+      "Unable to load class subjects."
+    );
+  } finally {
+    setSyllabusLoading(false);
+  }
+};
   /* ============================================
      TOGGLE ARRAY VALUE
   ============================================ */
@@ -295,48 +433,51 @@ const [rejectionReason, setRejectionReason] =
       return;
     }
 
-    if (
-      approvalForm
-        .assignedSubjects
-        .length === 0
-    ) {
-      setMessage(
-        "Please assign at least one subject.",
-      );
+    
 
-      return;
-    }
+    if (syllabusLoading || syllabusError) {
+  setMessage(
+    syllabusError ||
+    "Please wait while class subjects load."
+  );
 
-    if (
-      approvalForm.languages
-        .length === 0
-    ) {
-      setMessage(
-        "Please select at least one teaching medium.",
-      );
+  return;
+}
 
-      return;
-    }
+if (missingSyllabusClasses.length > 0) {
+  setMessage(
+    `Configure subjects in Syllabus Settings for: ${
+      missingSyllabusClasses.join(", ")
+    }.`
+  );
+
+  return;
+}
+
+if (assignedSubjects.length === 0) {
+  setMessage(
+    "No subjects configured for the selected classes."
+  );
+
+  return;
+}
 
     setApproveLoading(true);
     setMessage("");
 
     try {
-      const result =
+     const result =
   await approveDigitalTeacher(
     selectedTeacher.id,
     {
       assignedClasses:
-        approvalForm
-          .assignedClasses,
+        approvalForm.assignedClasses,
 
       assignedSubjects:
-        approvalForm
-          .assignedSubjects,
+        assignedSubjects,
 
       languages:
-        approvalForm
-          .languages,
+        approvalForm.languages,
     },
   );
 
@@ -778,6 +919,13 @@ const [rejectionReason, setRejectionReason] =
 
                   <InfoField
                     icon={Building2}
+                    label="Address"
+                    value={
+                      selectedTeacher.address
+                    }
+                  />
+                  <InfoField
+                    icon={Building2}
                     label="Madrasa"
                     value={
                       selectedTeacher.madarsaName
@@ -875,6 +1023,16 @@ const [rejectionReason, setRejectionReason] =
                         ?.courseName
                     }
                   />
+                   <InfoField
+                    icon={Building2}
+                    label="Institution"
+                    value={
+                      selectedTeacher
+                        ?.qualification
+                        ?.islamicEducation
+                        ?.institution
+                    }
+                  />
 
                   <InfoField
                     icon={ShieldCheck}
@@ -889,6 +1047,16 @@ const [rejectionReason, setRejectionReason] =
 
                   <InfoField
                     icon={GraduationCap}
+                    label="Year of Passing"
+                    value={
+                      selectedTeacher
+                        ?.qualification
+                        ?.islamicEducation
+                        ?.yearOfPassing
+                    }
+                  />
+                  <InfoField
+                    icon={GraduationCap}
                     label="Teaching Experience"
                     value={
                       selectedTeacher
@@ -899,6 +1067,68 @@ const [rejectionReason, setRejectionReason] =
                   />
 
                 </InfoSection>
+                
+{/* ===================================
+    QUALIFICATION CERTIFICATE
+=================================== */}
+
+<InfoSection title="Qualification Certificate">
+
+  {certificateUrl ? (
+    <div className="space-y-4">
+
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+
+        {isPdfCertificate ? (
+          <iframe
+            src={certificateUrl}
+            title="Teacher Qualification Certificate"
+            className="h-[400px] w-full bg-white sm:h-[500px]"
+            loading="lazy"
+          />
+        ) : isImageCertificate ? (
+          <img
+            src={certificateUrl}
+            alt="Teacher Qualification Certificate"
+            className="max-h-[500px] w-full object-contain"
+          />
+        ) : (
+          <div className="p-8 text-center">
+            <BookOpen className="mx-auto h-9 w-9 text-teal-700" />
+
+            <p className="mt-3 text-sm font-medium text-slate-600">
+              Certificate available for viewing.
+            </p>
+          </div>
+        )}
+
+      </div>
+
+      <a
+        href={certificateUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-teal-700 px-5 text-sm font-semibold text-white transition hover:bg-teal-800"
+      >
+        <Eye className="h-4 w-4" />
+        View Full Certificate
+      </a>
+
+    </div>
+  ) : (
+    <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-5 py-8 text-center">
+
+      <BookOpen className="mx-auto h-8 w-8 text-slate-300" />
+
+      <p className="mt-3 text-sm font-medium text-slate-500">
+        No qualification certificate uploaded.
+      </p>
+
+    </div>
+  )}
+
+</InfoSection>
+
 
                 <InfoSection
                   title="Bank Details"
@@ -952,6 +1182,15 @@ const [rejectionReason, setRejectionReason] =
                         ?.upiId
                     }
                   />
+                  <InfoField
+                    icon={Landmark}
+                    label="Branch Name"
+                    value={
+                      selectedTeacher
+                        ?.bankDetails
+                        ?.branchName
+                    }
+                  />
 
                 </InfoSection>
 
@@ -998,7 +1237,11 @@ const [rejectionReason, setRejectionReason] =
             >
 
               <div className="space-y-7">
-
+{message && (
+  <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+    {message}
+  </div>
+)}
                 
                 {/* CLASSES */}
 
@@ -1016,23 +1259,56 @@ const [rejectionReason, setRejectionReason] =
                     )
                   }
                 />
+{/* AUTO ASSIGNED SUBJECTS */}
 
-                {/* SUBJECTS */}
+<div className="rounded-2xl border border-teal-100 bg-teal-50 p-5">
+  <h3 className="text-sm font-bold text-slate-900">
+    Automatically Assigned Subjects
+  </h3>
 
-                <AssignmentSection
-                  icon={BookOpen}
-                  title="Subjects"
-                  options={SUBJECT_OPTIONS}
-                  selected={
-                    approvalForm.assignedSubjects
-                  }
-                  onToggle={(value) =>
-                    toggleValue(
-                      "assignedSubjects",
-                      value,
-                    )
-                  }
-                />
+  <p className="mt-1 text-xs text-slate-500">
+    Subjects are assigned automatically from the
+    selected classes.
+  </p>
+
+  {syllabusLoading ? (
+    <div className="mt-4 flex items-center gap-2 text-sm text-teal-700">
+      <Loader2 className="h-4 w-4 animate-spin" />
+      Loading class subjects...
+    </div>
+  ) : syllabusError ? (
+    <p className="mt-4 text-sm text-red-600">
+      {syllabusError}
+    </p>
+  ) : (
+    <>
+      <div className="mt-4 flex flex-wrap gap-2">
+        {assignedSubjects.map((subject) => (
+          <span
+            key={subject}
+            className="rounded-lg border border-teal-200 bg-white px-3 py-2 text-xs font-semibold text-teal-800"
+          >
+            {subject}
+          </span>
+        ))}
+      </div>
+
+      {assignedSubjects.length === 0 && (
+        <p className="mt-3 text-sm text-slate-500">
+          Select a class to view its assigned subjects.
+        </p>
+      )}
+
+      {missingSyllabusClasses.length > 0 && (
+        <p className="mt-3 text-sm text-red-600">
+          No subjects configured for:{" "}
+          {missingSyllabusClasses.join(", ")}
+        </p>
+      )}
+    </>
+  )}
+</div>
+  
 
                 {/* LANGUAGE */}
 

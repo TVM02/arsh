@@ -222,6 +222,114 @@ useEffect(() => {
       certificateFile: file,
     }));
   };
+const uploadDigitalTeacherCertificate =
+  async (file) => {
+    if (!file) {
+      return null;
+    }
+
+    if (!teacher?.uid) {
+      throw new Error(
+        "Teacher UID not found."
+      );
+    }
+
+    const allowedTypes = [
+      "application/pdf",
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+    ];
+
+    if (
+      !allowedTypes.includes(
+        file.type
+      )
+    ) {
+      throw new Error(
+        "Certificate must be PDF, JPG, PNG or WEBP."
+      );
+    }
+
+    // Maximum 10 MB
+    if (
+      file.size >
+      10 * 1024 * 1024
+    ) {
+      throw new Error(
+        "Certificate must be below 10 MB."
+      );
+    }
+
+    const safeFileName =
+      file.name.replace(
+        /[^a-zA-Z0-9._-]/g,
+        "_"
+      );
+
+    const storagePath =
+      `digital-teachers/certificates/${teacher.uid}/${Date.now()}_${safeFileName}`;
+
+    const storageRef =
+      ref(
+        storage,
+        storagePath
+      );
+
+    const uploadTask =
+      uploadBytesResumable(
+        storageRef,
+        file,
+        {
+          contentType:
+            file.type,
+        }
+      );
+
+    return await new Promise(
+      (
+        resolve,
+        reject
+      ) => {
+        uploadTask.on(
+          "state_changed",
+
+          () => {},
+
+          (error) => {
+            console.error(
+              "CERTIFICATE UPLOAD ERROR:",
+              error
+            );
+
+            reject(
+              new Error(
+                "Unable to upload qualification certificate."
+              )
+            );
+          },
+
+          async () => {
+            try {
+              const downloadURL =
+                await getDownloadURL(
+                  uploadTask.snapshot.ref
+                );
+
+              resolve(
+                downloadURL
+              );
+
+            } catch (error) {
+              reject(error);
+            }
+          }
+        );
+      }
+    );
+  };
+
+
   const handleProfileImage = (e) => {
   const file =
     e.target.files?.[0] || null;
@@ -403,6 +511,16 @@ if (formData.profileFile) {
       formData.profileFile,
     );
 }
+let certificateUrl = null;
+
+if (
+  formData.certificateFile
+) {
+  certificateUrl =
+    await uploadDigitalTeacherCertificate(
+      formData.certificateFile
+    );
+}
 
     const registrationData = {
   /* ========================================
@@ -463,53 +581,54 @@ profilePicture:
      QUALIFICATION
   ======================================== */
 
-  qualification: {
-    generalEducation: {
-      highestQualification:
-        formData.generalQualification,
+ qualification: {
+  generalEducation: {
+    highestQualification:
+      formData.generalQualification,
 
-      courseName:
-        formData.generalCourseName,
+    courseName:
+      formData.generalCourseName,
 
-      institution:
-        formData.generalInstitution ||
-        null,
-    },
-
-    computerKnowledge: {
-      level:
-        formData.computerKnowledge,
-
-      otherDetails:
-        formData.computerKnowledge ===
-        "other"
-          ? formData.otherComputerSkill.trim()
-          : null,
-    },
-
-    islamicEducation: {
-      highestQualification:
-        formData.islamicHighestQualification,
-
-      courseName:
-        formData.islamicQualificationName,
-
-      institution:
-        formData.islamicInstitution,
-
-      yearOfPassing:
-        formData.islamicYearOfPassing,
-
-      teachingExperience:
-        formData.islamicTeachingExperience,
-
-      QuranQualification:
-        formData.isQuranQualification,
-    },
-
-    certificateUrl:
+    institution:
+      formData.generalInstitution ||
       null,
   },
+
+  computerKnowledge: {
+    level:
+      formData.computerKnowledge,
+
+    otherDetails:
+      formData.computerKnowledge ===
+      "other"
+        ? formData.otherComputerSkill.trim()
+        : null,
+  },
+
+  islamicEducation: {
+    highestQualification:
+      formData.islamicHighestQualification,
+
+    courseName:
+      formData.islamicQualificationName,
+
+    institution:
+      formData.islamicInstitution ||
+      null,
+
+    yearOfPassing:
+      formData.islamicYearOfPassing,
+
+    teachingExperience:
+      formData.islamicTeachingExperience,
+
+    quranQualification:
+      formData.quranQualification,
+  },
+
+  certificateUrl:
+    certificateUrl,
+},
 
   /* ========================================
      BANK
@@ -540,7 +659,7 @@ profilePicture:
   },
 
   certificateUrl:
-    null,
+    certificateUrl,
 };
 
     /* ============================================
@@ -1588,7 +1707,7 @@ const uploadDigitalTeacherProfile =
                   <p className="mt-1 text-sm leading-6 text-slate-500">
                     I understand that this
                     application will be reviewed
-                    by Central Admin. Digital
+                    by board. Digital
                     Teacher login credentials,
                     assigned classes, subjects
                     and teaching medium will be

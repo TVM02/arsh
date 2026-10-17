@@ -37,7 +37,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Progress } from "@/components/ui/progress";
 import {
@@ -991,26 +991,41 @@ return;
           );
         }
 
-        // Handle other select fields (classes, etc.)
-        const options =
-          field.options === "classes" ? configDropdowns.classes : [];
-        return (
-          <Select
-            value={formData[field.id] || ""}
-            onValueChange={(value) => handleInputChange(field.id, value)}
-          >
-            <SelectTrigger className="h-11 [&>span]:text-gray-600">
-              <SelectValue placeholder={field.placeholder} />
-            </SelectTrigger>
-            <SelectContent className="max-h-60 overflow-y-auto bg-white">
-              {options.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        );
+       // Handle classes and mentor dropdowns
+
+const options =
+  field.options === "classes"
+    ? configDropdowns.classes || []
+    : field.options === "mentors"
+      ? configDropdowns.mentors || []
+      : [];
+
+return (
+  <Select
+    value={formData[field.id] || ""}
+    onValueChange={(value) =>
+      handleInputChange(field.id, value)
+    }
+  >
+    <SelectTrigger className="h-11 bg-white">
+      <SelectValue
+        placeholder={field.placeholder}
+      />
+    </SelectTrigger>
+
+    <SelectContent className="bg-white">
+      {options.map((option) => (
+        <SelectItem
+          key={option.value}
+          value={option.value}
+        >
+          {option.label}
+        </SelectItem>
+      ))}
+    </SelectContent>
+  </Select>
+);
+       
 
       case "radio":
         return (

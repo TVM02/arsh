@@ -15,6 +15,7 @@ import {
      deleteDigitalLiveClass,
      updateDigitalLiveClass,
      joinDigitalLiveClass,
+     getDigitalTeacherClassSubjects,
 } from "@/lib/digitalClassTeacherService";
 import Layout from "@/components/digitalclassroom/Layout";
 import {StatCard, TodayClassRow, LiveClassCard, getLiveClassStatus} from "@/components/digitalclassroom/tecaherstudent"
@@ -85,6 +86,14 @@ const [
   description: "",
 });
 
+const [classSubjects, setClassSubjects] =
+  useState([]);
+
+const [classSubjectsLoading, setClassSubjectsLoading] =
+  useState(false);
+
+const [classSubjectsError, setClassSubjectsError] =
+  useState("");
 const { user, userData } = useAuthStore();
 
   const [
@@ -167,20 +176,29 @@ const [
     ).length;
 
 
-const handleClassFormChange =
-  (event) => {
-    const {
-      name,
-      value,
-    } = event.target;
 
-    setClassForm(
-      (previous) => ({
-        ...previous,
-        [name]: value,
-      })
-    );
-  };
+
+
+const handleClassFormChange = (event) => {
+  const { name, value } = event.target;
+
+  setClassForm((previous) => ({
+    ...previous,
+    [name]: value,
+
+    // Clear the previous subject when
+    // the selected class changes.
+    ...(name === "className"
+      ? { subject: "" }
+      : {}),
+  }));
+
+  if (name === "className") {
+    setClassSubjects([]);
+    setClassSubjectsError("");
+  }
+};
+
 
 
   const filteredClasses =
@@ -230,6 +248,9 @@ const handleClassFormChange =
       activeTab,
       search,
     ]);
+
+
+
 
 useEffect(() => {
   const loadAssignedStudents =
@@ -677,9 +698,45 @@ const handleScheduleClass =
     }
 
 
-    /* =========================================
-       TIME VALIDATION
-    ========================================= */
+  
+/* =========================================
+   VALIDATE CLASS-WISE SUBJECT
+========================================= */
+
+if (
+  !assignedClasses.includes(
+    classForm.className
+  )
+) {
+  toast.error(
+    "This class is not assigned to you."
+  );
+  return;
+}
+
+if (classSubjectsLoading) {
+  toast.error(
+    "Please wait for class subjects to load."
+  );
+  return;
+}
+
+if (classSubjectsError) {
+  toast.error(classSubjectsError);
+  return;
+}
+
+if (
+  !classSubjects.includes(
+    classForm.subject
+  )
+) {
+  toast.error(
+    `The selected subject is not available for ${classForm.className}.`
+  );
+  return;
+}
+
 
     if (
       classForm.endTime <=
@@ -929,25 +986,89 @@ const handleScheduleClass =
   }, [userData]);
   
   
-  const assignedSubjects = useMemo(() => {
-    const subjects =
-      userData?.digitalTeachingAssignment?.subjects;
-  
-    if (!Array.isArray(subjects)) {
-      return [];
+useEffect(() => {
+  let cancelled = false;
+
+  const loadClassSubjects = async () => {
+    const selectedClass = classForm.className;
+
+    setClassSubjects([]);
+    setClassSubjectsError("");
+
+
+    if (
+      !showScheduleForm ||
+      !user?.uid ||
+      !selectedClass ||
+      !assignedClasses.includes(selectedClass)
+    ) {
+      setClassSubjectsLoading(false);
+      return;
     }
-  
-    return [...new Set(subjects)]
-      .filter(Boolean)
-      .sort((a, b) =>
-        String(a).localeCompare(
-          String(b),
+
+    /* ========================================
+       FETCH CLASS SUBJECTS FROM FIREBASE
+    ======================================== */
+
+    try {
+      setClassSubjectsLoading(true);
+
+      const subjects =
+        await getDigitalTeacherClassSubjects(
+          selectedClass
+        );
+
+      if (cancelled) return;
+
+      const cleanSubjects = [
+        ...new Set(
+          (Array.isArray(subjects)
+            ? subjects
+            : []
+          )
+            .filter(
+              (subject) =>
+                typeof subject === "string"
+            )
+            .map((subject) => subject.trim())
+            .filter(Boolean)
         ),
+      ].sort((a, b) =>
+        a.localeCompare(b)
       );
-  }, [userData]);
-  /* =====================================================
-     TABS
-  ===================================================== */
+
+      setClassSubjects(cleanSubjects);
+    } catch (error) {
+      if (cancelled) return;
+
+      console.error(
+        "LOAD CLASS SUBJECTS ERROR:",
+        error
+      );
+
+      setClassSubjectsError(
+        error?.message ||
+        "Unable to load class subjects."
+      );
+    } finally {
+      if (!cancelled) {
+        setClassSubjectsLoading(false);
+      }
+    }
+  };
+
+  loadClassSubjects();
+
+  return () => {
+    cancelled = true;
+  };
+}, [
+  classForm.className,
+  assignedClasses,
+  showScheduleForm,
+  user?.uid,
+]);
+
 
   const tabs = [
     {
@@ -1738,66 +1859,7 @@ const handleScheduleClass =
 
          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
 
-                {/* SUBJECT */}
-
-                <div>
-                  <label className="mb-1.5 block text-xs font-semibold text-slate-700">
-                    Subject Name
-                    <span className="ml-1 text-red-500">*</span>
-                  </label>
-
-                  <select
-  required
-value={classForm.subject}
-  name="subject"
-onChange={handleClassFormChange}
-  disabled={
-    assignedSubjects.length === 0
-  }
-  className="
-    h-11
-    w-full
-    rounded-xl
-    border
-    border-slate-200
-    bg-white
-    px-3
-    text-sm
-    text-slate-700
-    outline-none
-    transition
-    focus:border-teal-400
-    focus:ring-2
-    focus:ring-teal-100
-    disabled:cursor-not-allowed
-    disabled:bg-slate-100
-    disabled:text-slate-400
-  "
->
-  <option value="">
-    {assignedSubjects.length > 0
-      ? "Select Assigned Subject"
-      : "No Subject Assigned"}
-  </option>
-
-  {assignedSubjects.map(
-    (subject) => (
-      <option
-        key={subject}
-        value={subject}
-      >
-        {subject}
-      </option>
-    ),
-  )}
-</select>
-{assignedSubjects.length === 0 && (
-  <p className="mt-1.5 text-[11px] font-medium text-red-500">
-    No subjects are assigned to your Digital Teacher account.
-  </p>
-)}
-                </div>
-
+          
 
                 {/* CLASS */}
 
@@ -1858,6 +1920,84 @@ onChange={handleClassFormChange}
   </p>
 )}
                 </div>
+                
+
+
+<div>
+  <label className="mb-1.5 block text-xs font-semibold text-slate-700">
+    Subject Name
+    <span className="ml-1 text-red-500">*</span>
+  </label>
+
+  <select
+    required
+    name="subject"
+    value={classForm.subject}
+    onChange={handleClassFormChange}
+    disabled={
+      !classForm.className ||
+      classSubjectsLoading ||
+      Boolean(classSubjectsError) ||
+      classSubjects.length === 0
+    }
+    className="
+      h-11
+      w-full
+      rounded-xl
+      border
+      border-slate-200
+      bg-white
+      px-3
+      text-sm
+      text-slate-700
+      outline-none
+      transition
+      focus:border-teal-400
+      focus:ring-2
+      focus:ring-teal-100
+      disabled:cursor-not-allowed
+      disabled:bg-slate-100
+      disabled:text-slate-400
+    "
+  >
+    <option value="">
+      {!classForm.className
+        ? "Select Class First"
+        : classSubjectsLoading
+          ? "Loading Subjects..."
+          : classSubjectsError
+            ? "Unable to Load Subjects"
+            : classSubjects.length === 0
+              ? "No Subjects Available"
+              : "Select Class Subject"}
+    </option>
+
+    {classSubjects.map((subject) => (
+      <option
+        key={subject}
+        value={subject}
+      >
+        {subject}
+      </option>
+    ))}
+  </select>
+
+  {classSubjectsError && (
+    <p className="mt-1.5 text-xs font-medium text-red-600">
+      {classSubjectsError}
+    </p>
+  )}
+
+  {classForm.className &&
+    !classSubjectsLoading &&
+    !classSubjectsError &&
+    classSubjects.length === 0 && (
+      <p className="mt-1.5 text-xs text-amber-700">
+        No subjects configured for {classForm.className}.
+      </p>
+    )}
+</div>
+
 
               </div>
 

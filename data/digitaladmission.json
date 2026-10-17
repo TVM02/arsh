@@ -61,6 +61,14 @@
       "options": "classes",
       "placeholder": "Select class"
     },
+    {
+          "id": "mentor",
+          "label": "Please Select Mentor",
+          "type": "select",
+          "required": true,
+          "options": "mentors",
+      "placeholder": "Select Mentor"
+        },
     
     {
       "id": "oldRegistrationNumber",

@@ -1,19 +1,25 @@
+
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase-admin";
+
 import {
   generateDigitalAdmissionNumber,
 } from "@/lib/digitalClassAdmissionNumber";
 
+/* ============================================
+   DIGITAL STUDENT REGISTRATION
+============================================ */
+
 export async function POST(request) {
   try {
-  
+    /* ========================================
+       1. REQUEST BODY
+    ======================================== */
 
     const body = await request.json();
-
-
 
     const {
       studentId,
@@ -31,6 +37,9 @@ export async function POST(request) {
 
       applyingclass,
 
+      // NEW: MENTOR TYPE
+      mentor,
+
       hasOldRegistration,
       oldRegistrationNumber,
 
@@ -43,9 +52,9 @@ export async function POST(request) {
       profilePictureUrl,
     } = body;
 
-    // ------------------------------------
-    // Normalize fields
-    // ------------------------------------
+    /* ========================================
+       2. NORMALIZE FIELDS
+    ======================================== */
 
     const finalStudentName =
       studentName || fullName || null;
@@ -61,9 +70,19 @@ export async function POST(request) {
       profilePictureUrl ||
       null;
 
-    // ------------------------------------
-    // 1. Validation
-    // ------------------------------------
+    /* ========================================
+       NORMALIZE MENTOR
+    ======================================== */
+
+    const finalMentor = String(
+      mentor || ""
+    )
+      .trim()
+      .toLowerCase();
+
+    /* ========================================
+       3. VALIDATION
+    ======================================== */
 
     if (!finalStudentName) {
       return NextResponse.json(
@@ -105,17 +124,45 @@ export async function POST(request) {
       );
     }
 
+    /* ========================================
+       VALIDATE MENTOR TYPE
+    ======================================== */
+
+    const allowedMentors = [
+      "ustad",
+      "teacher",
+    ];
+
+    if (
+      !allowedMentors.includes(
+        finalMentor
+      )
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Please select Ustad or Teacher.",
+        },
+        { status: 400 }
+      );
+    }
+
+    /* ========================================
+       4. FIREBASE DATABASE
+    ======================================== */
+
     const db = getAdminDb();
 
-
-
-    // ------------------------------------
-    // 2. Optional duplicate check
-    // ------------------------------------
+    /* ========================================
+       5. OPTIONAL DUPLICATE CHECK
+    ======================================== */
 
     if (uid) {
       const existingSnap = await db
-        .collection("digitalClassStudentRegistrations")
+        .collection(
+          "digitalClassStudentRegistrations"
+        )
         .where("uid", "==", uid)
         .where("status", "==", "pending")
         .limit(1)
@@ -133,40 +180,36 @@ export async function POST(request) {
       }
     }
 
-    // ------------------------------------
-    // 3. Generate Digital Admission Number
-    // ------------------------------------
-const testRef = db
-  .collection("systemCounters")
-  .doc("digitalClassStudent");
-
-const testSnap = await testRef.get();
-
+    /* ========================================
+       6. GENERATE DIGITAL ADMISSION NUMBER
+    ======================================== */
 
     const digitalAdmissionNumber =
       await generateDigitalAdmissionNumber();
 
-   
-
-    // ------------------------------------
-    // 4. Prepare registration
-    // ------------------------------------
+    /* ========================================
+       7. PREPARE REGISTRATION DATA
+    ======================================== */
 
     const now = new Date();
 
     const registrationData = {
-      studentId: studentId || null,
+      studentId:
+        studentId || null,
 
-      uid: uid || null,
+      uid:
+        uid || null,
 
       admissionNumber:
         admissionNumber || null,
 
       digitalAdmissionNumber,
 
-      studentName: finalStudentName,
+      studentName:
+        finalStudentName,
 
-      fullName: finalStudentName,
+      fullName:
+        finalStudentName,
 
       dateOfBirth:
         dateOfBirth || null,
@@ -185,6 +228,17 @@ const testSnap = await testRef.get();
 
       applyingclass:
         finalApplyingClass,
+
+      /* ====================================
+         SAVE SELECTED MENTOR TO FIREBASE
+      ==================================== */
+
+      mentor:
+        finalMentor,
+
+      /* ====================================
+         PREVIOUS REGISTRATION
+      ==================================== */
 
       hasOldRegistration:
         hasOldRegistration || "no",
@@ -206,18 +260,30 @@ const testSnap = await testRef.get();
       profilePicture:
         finalProfilePicture,
 
+      /* ====================================
+         ACCOUNT STATUS
+      ==================================== */
+
       status: "pending",
 
       digitalClassAccess: false,
 
       passwordCreated: false,
 
+      /* ====================================
+         CENTRAL ADMIN APPROVAL
+      ==================================== */
+
       approval: {
         centralAdmin: {
           status: "pending",
+
           approvedBy: null,
+
           approvedAt: null,
+
           rejectedAt: null,
+
           rejectionReason: null,
         },
       },
@@ -226,9 +292,9 @@ const testSnap = await testRef.get();
       updatedAt: now,
     };
 
-    // ------------------------------------
-    // 5. Save
-    // ------------------------------------
+    /* ========================================
+       8. SAVE REGISTRATION TO FIREBASE
+    ======================================== */
 
     const docRef = await db
       .collection(
@@ -236,11 +302,18 @@ const testSnap = await testRef.get();
       )
       .add(registrationData);
 
-    
+    console.log(
+      "DIGITAL STUDENT REGISTRATION SAVED:",
+      {
+        registrationId: docRef.id,
+        digitalAdmissionNumber,
+        mentor: finalMentor,
+      }
+    );
 
-    // ------------------------------------
-    // 6. Response
-    // ------------------------------------
+    /* ========================================
+       9. SUCCESS RESPONSE
+    ======================================== */
 
     return NextResponse.json(
       {
@@ -253,6 +326,9 @@ const testSnap = await testRef.get();
           docRef.id,
 
         digitalAdmissionNumber,
+
+        mentor:
+          finalMentor,
 
         status: "pending",
       },

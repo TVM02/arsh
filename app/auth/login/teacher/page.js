@@ -175,8 +175,6 @@ export default function TeacherLogin() {
         password: formData.password,
       });
       
-      
-
       await startOtpLogin({
         user: login.user,
         userData: login.userData,

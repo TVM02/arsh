@@ -3571,6 +3571,14 @@ const handleInactiveStudent =
                     </div>
                     <div>
                       <label className="text-sm font-medium text-gray-500">
+                       preferred mentor
+                      </label>
+                      <p className="text-sm">
+                        {selectedStudent.mentor || "N/A"}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-500">
                         Status
                       </label>
                       <Badge className={getStatusColor(selectedStudent.accountStatus)}>

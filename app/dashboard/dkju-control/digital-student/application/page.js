@@ -285,6 +285,14 @@ function ApplicationDetails({ application }) {
                 {application.applyingclass || "Not specified"}
               </p>
             </div>
+            <div className="space-y-1">
+              <Label className="text-xs md:text-sm font-medium text-muted-foreground">
+                Preferred Mentor
+              </Label>
+              <p className="text-sm md:text-base font-medium">
+                {application.mentor || "Not specified"}
+              </p>
+            </div>
 
             <div className="space-y-1">
               <Label className="text-xs md:text-sm font-medium text-muted-foreground">

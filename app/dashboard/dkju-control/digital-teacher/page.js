@@ -69,6 +69,7 @@ CheckCircle2,
 LockKeyhole,
 
 
+
 } from "lucide-react";
 import {
 
@@ -85,6 +86,9 @@ import {
 unassignDigitalStudent,
 } from "@/lib/digitalClassTeacherService";
 import {
+  getDigitalSyllabusSettings,
+} from "@/lib/digitalClassSyllabusService";
+import {
   getGoogleMeetConnectionStatus,
   startGoogleMeetOAuth,
 } from "@/lib/googleMeetOAuthService";
@@ -99,7 +103,6 @@ import {
 } from "@/lib/firebase";
 
 const DIGITAL_CLASS_OPTIONS = [
-  "LKG",
   "UKG",
   "Class 1",
   "Class 2",
@@ -260,6 +263,50 @@ const [
     suspended: 0,
   });
   const [statsLoading, setStatsLoading] = useState(true);
+
+
+  /* ============================================
+   QUALIFICATION CERTIFICATE
+============================================ */
+
+const rawCertificateUrl =
+  selectedTeacher?.qualification?.certificateUrl ||
+  selectedTeacher?.certificateUrl ||
+  "";
+
+const certificateUrl = (() => {
+  if (typeof rawCertificateUrl !== "string") {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(rawCertificateUrl);
+
+    return parsed.protocol === "https:"
+      ? parsed.href
+      : "";
+  } catch {
+    return "";
+  }
+})();
+
+const certificatePath = (() => {
+  try {
+    return decodeURIComponent(
+      new URL(certificateUrl).pathname
+    ).toLowerCase();
+  } catch {
+    return "";
+  }
+})();
+
+const isPdfCertificate =
+  certificatePath.endsWith(".pdf");
+
+const isImageCertificate =
+  /\.(jpg|jpeg|png|webp|gif)$/.test(
+    certificatePath
+  );
 
   // Refs to track pending fetches and avoid redundant lookups
   const pendingProfilePictureFixes = useRef(new Set());
@@ -1315,64 +1362,155 @@ const handleSaveMeetRoom =
 };
 
   // Save edited teacher info
-  const handleEditTeacherSubmit = async (e, bypassInactivateCheck = false) => {
-    if (e) e.preventDefault();
-    if (!editForm?.id) {
-      toast.error("Digital teacher ID not found");
-      return;
-    }
 
-    if (
-      !bypassInactivateCheck &&
+
+const handleEditTeacherSubmit = async (
+  e,
+  bypassInactivateCheck = false
+) => {
+  if (e) e.preventDefault();
+
+  if (!editForm?.id) {
+    toast.error("Digital teacher ID not found");
+    return;
+  }
+
+  if (editSubmitting) return;
+
+  /* ============================================
+     INACTIVATION VALIDATION
+  ============================================ */
+
+  if (
+    !bypassInactivateCheck &&
+    editForm.accountStatus === "inactive" &&
+    originalTeacherStatus !== "inactive" &&
+    !inactivationReason.trim()
+  ) {
+    setInactivateDialogOpen(true);
+    return;
+  }
+
+  setEditSubmitting(true);
+
+  try {
+    /* ============================================
+       PREPARE EDIT DATA
+    ============================================ */
+
+    const { id, ...data } = editForm;
+
+    const cleanData = Object.fromEntries(
+      Object.entries(data).filter(
+        ([_, value]) => value !== undefined
+      )
+    );
+
+    /* ============================================
+       RESOLVE CLASSES FROM EXISTING EDIT FORM
+    ============================================ */
+
+    const assignedClasses =
+      Array.isArray(
+        editForm.teachingAssignment?.classes
+      )
+        ? editForm.teachingAssignment.classes
+        : Array.isArray(editForm.assignedClasses)
+          ? editForm.assignedClasses
+          : Array.isArray(
+              editForm.digitalTeachingAssignment?.classes
+            )
+            ? editForm.digitalTeachingAssignment.classes
+            : Array.isArray(editForm.classes)
+              ? editForm.classes
+              : undefined;
+
+    /* ============================================
+       INACTIVATION STATUS
+    ============================================ */
+
+    const becomingInactive =
       editForm.accountStatus === "inactive" &&
-      originalTeacherStatus !== "inactive" &&
-      !inactivationReason.trim()
-    ) {
-      setInactivateDialogOpen(true);
-      return;
-    }
+      originalTeacherStatus !== "inactive";
 
-    setEditSubmitting(true);
+    /* ============================================
+       BUILD UPDATE PAYLOAD
+    ============================================ */
 
-    try {
-      const { id, ...data } = editForm;
+    const updatePayload = {
+      ...cleanData,
 
-      const cleanData = Object.fromEntries(
-        Object.entries(data).filter(([_, value]) => value !== undefined),
-      );
+      // Send assigned classes only when
+      // available in the existing edit form.
+      ...(assignedClasses !== undefined
+        ? {
+            assignedClasses,
+          }
+        : {}),
 
-      const becomingInactive =
-        editForm.accountStatus === "inactive" &&
-        originalTeacherStatus !== "inactive";
+      updatedAt: new Date().toISOString(),
 
-      const updatePayload = {
-        ...cleanData,
-        updatedAt: new Date().toISOString(),
-        ...(becomingInactive
-          ? {
-              inactiveReason: inactivationReason.trim(),
-              inactivatedAt: new Date().toISOString(),
-              inactivatedBy: user?.uid || userData?.uid || null,
-              digitalClassAccess: false,
-            }
-          : {}),
-      };
+      ...(becomingInactive
+        ? {
+            inactiveReason:
+              inactivationReason.trim(),
 
-      await updateDigitalTeacher(id, updatePayload);
+            inactivatedAt:
+              new Date().toISOString(),
 
-      toast.success("Digital teacher updated");
-      setIsEditDialogOpen(false);
-      setInactivationReason("");
+            inactivatedBy:
+              user?.uid ||
+              userData?.uid ||
+              null,
 
-      await fetchTeachers();
-      await fetchStatsCounts();
-    } catch (error) {
-      console.error("Error updating digital teacher:", error);
-      toast.error(error?.message || "Failed to update digital teacher");
-    } finally {
-      setEditSubmitting(false);
-    }
-  };
+            digitalClassAccess: false,
+          }
+        : {}),
+    };
+
+    /* ============================================
+       FIREBASE UPDATE
+
+       Backend automatically resolves subjects
+       from digitalClassSyllabusSettings.
+    ============================================ */
+
+    const result = await updateDigitalTeacher(
+      id,
+      updatePayload
+    );
+
+    console.log(
+      "DIGITAL TEACHER UPDATED:",
+      result
+    );
+
+    toast.success(
+      "Digital teacher updated successfully"
+    );
+
+    setIsEditDialogOpen(false);
+    setInactivationReason("");
+
+    await fetchTeachers();
+    await fetchStatsCounts();
+
+  } catch (error) {
+    console.error(
+      "ERROR UPDATING DIGITAL TEACHER:",
+      error
+    );
+
+    toast.error(
+      error?.message ||
+      "Failed to update digital teacher"
+    );
+  } finally {
+    setEditSubmitting(false);
+  }
+};
+
+
 const handleViewAssignStudent = (student) => {
   setSelectedAssignStudent(student);
   setStudentViewOpen(true);
@@ -3467,104 +3605,7 @@ const handleInactiveTeacher =
   </div>
 
 
-  {/* =====================================
-      SUBJECTS
-  ===================================== */}
-
-  <div>
-
-    <div className="mb-4 flex items-start gap-3">
-
-      <div
-        className="
-          flex
-          h-10
-          w-10
-          shrink-0
-          items-center
-          justify-center
-          rounded-xl
-          bg-teal-50
-          text-teal-600
-        "
-      >
-        <BookOpen className="h-5 w-5" />
-      </div>
-
-      <div>
-
-        <h3 className="font-bold text-slate-900">
-          Subjects
-        </h3>
-
-        <p className="mt-1 text-sm text-slate-500">
-          Select subjects for this Digital Teacher.
-        </p>
-
-      </div>
-
-    </div>
-
-
-    <div className="flex flex-wrap gap-3">
-
-      {DIGITAL_SUBJECT_OPTIONS.map(
-        (subject) => {
-
-          const selected =
-            editForm
-              ?.teachingAssignment
-              ?.subjects
-              ?.includes(
-                subject,
-              );
-
-          return (
-            <button
-              key={subject}
-              type="button"
-              onClick={() =>
-                toggleTeachingAssignmentValue(
-                  "subjects",
-                  subject,
-                )
-              }
-              className={`
-                rounded-xl
-                border
-                px-4
-                py-2.5
-                text-sm
-                font-semibold
-                transition-all
-                ${
-                  selected
-                    ? `
-                      border-indigo-500
-                      bg-indigo-500
-                      text-white
-                      shadow-sm
-                    `
-                    : `
-                      border-slate-200
-                      bg-white
-                      text-slate-600
-                      hover:border-indigo-300
-                      hover:bg-indigo-50
-                      hover:text-indigo-700
-                    `
-                }
-              `}
-            >
-              {subject}
-            </button>
-          );
-        },
-      )}
-
-    </div>
-
-  </div>
+ 
 
 
   {/* =====================================
@@ -3719,6 +3760,13 @@ const handleInactiveTeacher =
                              selectedTeacher.phone
                            }
                          />
+                         <InfoField
+                           icon={Building2}
+                           label="Address"
+                           value={
+                             selectedTeacher.address
+                           }
+                         />
        
                          <InfoField
                            icon={Mail}
@@ -3827,6 +3875,17 @@ const handleInactiveTeacher =
                                ?.courseName
                            }
                          />
+                           <InfoField
+                                             icon={Building2}
+                                             label="Institution"
+                                             value={
+                                               selectedTeacher
+                                                 ?.qualification
+                                                 ?.islamicEducation
+                                                 ?.institution
+                                             }
+                                           />
+                         
        
                          <InfoField
                            icon={ShieldCheck}
@@ -3838,6 +3897,16 @@ const handleInactiveTeacher =
                                ?.quranQualification
                            }
                          />
+                         <InfoField
+                                             icon={GraduationCap}
+                                             label="Year of Passing"
+                                             value={
+                                               selectedTeacher
+                                                 ?.qualification
+                                                 ?.islamicEducation
+                                                 ?.yearOfPassing
+                                             }
+                                           />
        
                          <InfoField
                            icon={GraduationCap}
@@ -3851,6 +3920,69 @@ const handleInactiveTeacher =
                          />
        
                        </InfoSection>
+
+                       
+{/* ===================================
+    QUALIFICATION CERTIFICATE
+=================================== */}
+
+<InfoSection title="Qualification Certificate">
+
+  {certificateUrl ? (
+    <div className="space-y-4">
+
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+
+        {isPdfCertificate ? (
+          <iframe
+            src={certificateUrl}
+            title="Teacher Qualification Certificate"
+            className="h-[400px] w-full bg-white sm:h-[500px]"
+            loading="lazy"
+          />
+        ) : isImageCertificate ? (
+          <img
+            src={certificateUrl}
+            alt="Teacher Qualification Certificate"
+            className="max-h-[500px] w-full object-contain"
+          />
+        ) : (
+          <div className="p-8 text-center">
+            <BookOpen className="mx-auto h-9 w-9 text-teal-700" />
+
+            <p className="mt-3 text-sm font-medium text-slate-600">
+              Certificate available for viewing.
+            </p>
+          </div>
+        )}
+
+      </div>
+
+      <a
+        href={certificateUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-teal-700 px-5 text-sm font-semibold text-white transition hover:bg-teal-800"
+      >
+        <Eye className="h-4 w-4" />
+        View Full Certificate
+      </a>
+
+    </div>
+  ) : (
+    <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-5 py-8 text-center">
+
+      <BookOpen className="mx-auto h-8 w-8 text-slate-300" />
+
+      <p className="mt-3 text-sm font-medium text-slate-500">
+        No qualification certificate uploaded.
+      </p>
+
+    </div>
+  )}
+
+</InfoSection>
+
        {/* =========================================
     TEACHING ASSIGNMENT
 ========================================= */}
@@ -3949,61 +4081,101 @@ const handleInactiveTeacher =
     </div>
 
 
-    {/* Assigned Subjects */}
     <div
-      className="
-        rounded-2xl
-        border
-        border-slate-200
-        bg-slate-50/70
-        p-5
-      "
-    >
-      <p className="mb-4 text-sm font-bold text-slate-900">
-        Assigned Subjects
-      </p>
+            className="
+              rounded-xl
+              border
+              border-slate-200
+              bg-slate-50
+              p-4
+            "
+          >
 
-      <div className="flex flex-wrap gap-2">
+            <p
+              className="
+                mb-3
+                text-sm
+                font-bold
+                text-slate-800
+              "
+            >
+              Assigned Subjects
+            </p>
 
-        {selectedTeacher
-          ?.teachingAssignment
-          ?.subjects
-          ?.length > 0 ? (
 
-          selectedTeacher
-            .teachingAssignment
-            .subjects
-            .map((subject, index) => (
+            <div
+              className="
+                flex
+                flex-wrap
+                gap-2
+              "
+            >
 
-              <span
-                key={`${subject}-${index}`}
-                className="
-                  rounded-full
-                  border
-                  border-indigo-300
-                  bg-indigo-50
-                  px-3
-                  py-1.5
-                  text-xs
-                  font-semibold
-                  text-indigo-700
-                "
-              >
-                {subject}
-              </span>
+              {(selectedTeacher
+                ?.digitalTeachingAssignment
+                ?.subjects ||
 
-            ))
+                selectedTeacher
+                  ?.teachingAssignment
+                  ?.subjects ||
 
-        ) : (
+                []
+              ).length >
+              0 ? (
 
-          <span className="text-sm text-slate-400">
-            No subjects assigned
-          </span>
+                (
+                  selectedTeacher
+                    ?.digitalTeachingAssignment
+                    ?.subjects ||
 
-        )}
+                  selectedTeacher
+                    ?.teachingAssignment
+                    ?.subjects ||
 
-      </div>
-    </div>
+                  []
+                ).map(
+                  (
+                    subject,
+                    index,
+                  ) => (
+
+                    <span
+                      key={`${subject}-${index}`}
+                      className="
+                        rounded-full
+                        border
+                        border-indigo-200
+                        bg-indigo-50
+                        px-3
+                        py-1
+                        text-xs
+                        font-semibold
+                        text-indigo-700
+                      "
+                    >
+                      {subject}
+                    </span>
+
+                  ),
+                )
+
+              ) : (
+
+                <span
+                  className="
+                    text-sm
+                    text-slate-400
+                  "
+                >
+                  No subjects assigned
+                </span>
+
+              )}
+
+            </div>
+
+          </div>
+
 
 
     {/* Teaching Medium */}
@@ -4120,6 +4292,15 @@ const handleInactiveTeacher =
                                ?.upiId
                            }
                          />
+                         <InfoField
+                                             icon={Landmark}
+                                             label="Branch Name"
+                                             value={
+                                               selectedTeacher
+                                                 ?.bankDetails
+                                                 ?.branchName
+                                             }
+                                           />
        
                        </InfoSection>
        
@@ -4691,103 +4872,8 @@ const handleInactiveTeacher =
           </div>
 
 
-          {/* SUBJECTS */}
 
-          <div
-            className="
-              rounded-xl
-              border
-              border-slate-200
-              bg-slate-50
-              p-4
-            "
-          >
-
-            <p
-              className="
-                mb-3
-                text-sm
-                font-bold
-                text-slate-800
-              "
-            >
-              Assigned Subjects
-            </p>
-
-
-            <div
-              className="
-                flex
-                flex-wrap
-                gap-2
-              "
-            >
-
-              {(assignTeacher
-                ?.digitalTeachingAssignment
-                ?.subjects ||
-
-                assignTeacher
-                  ?.teachingAssignment
-                  ?.subjects ||
-
-                []
-              ).length >
-              0 ? (
-
-                (
-                  assignTeacher
-                    ?.digitalTeachingAssignment
-                    ?.subjects ||
-
-                  assignTeacher
-                    ?.teachingAssignment
-                    ?.subjects ||
-
-                  []
-                ).map(
-                  (
-                    subject,
-                    index,
-                  ) => (
-
-                    <span
-                      key={`${subject}-${index}`}
-                      className="
-                        rounded-full
-                        border
-                        border-indigo-200
-                        bg-indigo-50
-                        px-3
-                        py-1
-                        text-xs
-                        font-semibold
-                        text-indigo-700
-                      "
-                    >
-                      {subject}
-                    </span>
-
-                  ),
-                )
-
-              ) : (
-
-                <span
-                  className="
-                    text-sm
-                    text-slate-400
-                  "
-                >
-                  No subjects assigned
-                </span>
-
-              )}
-
-            </div>
-
-          </div>
-
+          
 
           {/* MEDIUM */}
 

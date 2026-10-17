@@ -62,9 +62,11 @@ import {
 
 import { MaterialRow, FolderRow, RecentUpload, SummaryCard} from "@/components/digitalclassroom/tecaherstudent"
 import useAuthStore from "@/lib/authStore";
-/* =========================================================
-   DEMO DATA
-========================================================= */
+import {
+  getDigitalTeacherClassSubjects,
+} from "@/lib/digitalClassTeacherService";
+
+
 
 
 function formatFileSize(
@@ -152,6 +154,15 @@ const [
   materialToDelete,
   setMaterialToDelete,
 ] = useState(null);
+
+const [classSubjects, setClassSubjects] =
+  useState([]);
+
+const [classSubjectsLoading, setClassSubjectsLoading] =
+  useState(false);
+
+const [classSubjectsError, setClassSubjectsError] =
+  useState("");
 
   const ustadName =
     userData?.fullName ||
@@ -580,8 +591,14 @@ const youtubeCount =
       material.type === "youtube",
   ).length;
 
+
+/* ============================================
+   DIGITAL TEACHER ASSIGNED CLASSES
+============================================ */
+
 const assignedClasses = useMemo(() => {
   const classes =
+    userData?.digitalTeachingAssignment?.classes ??
     userData?.teachingAssignment?.classes;
 
   if (!Array.isArray(classes)) {
@@ -591,38 +608,109 @@ const assignedClasses = useMemo(() => {
   return [...new Set(classes)]
     .filter(Boolean)
     .sort((a, b) => {
-      const classA = Number(
-        String(a).replace(/\D/g, ""),
+      const numberA = Number(
+        String(a).replace(/\D/g, "")
       );
 
-      const classB = Number(
-        String(b).replace(/\D/g, ""),
+      const numberB = Number(
+        String(b).replace(/\D/g, "")
       );
 
-      return classA - classB;
+      return numberA - numberB;
     });
 }, [userData]);
 
 
-const assignedSubjects = useMemo(() => {
-  const subjects =
-    userData?.teachingAssignment?.subjects;
 
-  if (!Array.isArray(subjects)) {
-    return [];
-  }
 
-  return [...new Set(subjects)]
-    .filter(Boolean)
-    .sort((a, b) =>
-      String(a).localeCompare(
-        String(b),
-      ),
-    );
-}, [userData]);
-  /* =====================================================
-     TYPE COUNTS
-  ===================================================== */
+
+
+useEffect(() => {
+  let cancelled = false;
+
+  const loadClassSubjects = async () => {
+    setClassSubjects([]);
+    setClassSubjectsError("");
+
+    if (
+      !isUploadOpen ||
+      !user?.uid ||
+      !className
+    ) {
+      setClassSubjectsLoading(false);
+      return;
+    }
+
+    if (!assignedClasses.includes(className)) {
+      setClassSubjectsError(
+        "This class is not assigned to you."
+      );
+
+      setClassSubjectsLoading(false);
+      return;
+    }
+
+    try {
+      setClassSubjectsLoading(true);
+
+      const subjects =
+        await getDigitalTeacherClassSubjects(
+          className
+        );
+
+      if (cancelled) return;
+
+      const cleanSubjects = [
+        ...new Set(
+          (Array.isArray(subjects)
+            ? subjects
+            : []
+          )
+            .filter(
+              (subject) =>
+                typeof subject === "string"
+            )
+            .map((subject) =>
+              subject.trim()
+            )
+            .filter(Boolean)
+        ),
+      ].sort((a, b) =>
+        a.localeCompare(b)
+      );
+
+      setClassSubjects(cleanSubjects);
+    } catch (error) {
+      if (cancelled) return;
+
+      console.error(
+        "LOAD MATERIAL CLASS SUBJECTS ERROR:",
+        error
+      );
+
+      setClassSubjectsError(
+        error?.message ||
+        "Unable to load class subjects."
+      );
+    } finally {
+      if (!cancelled) {
+        setClassSubjectsLoading(false);
+      }
+    }
+  };
+
+  loadClassSubjects();
+
+  return () => {
+    cancelled = true;
+  };
+}, [
+  className,
+  assignedClasses,
+  isUploadOpen,
+  user?.uid,
+]);
+
 
  
 
@@ -1855,71 +1943,6 @@ const storageRef =
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
 
-                {/* SUBJECT */}
-
-                <div>
-                  <label className="mb-1.5 block text-xs font-semibold text-slate-700">
-                    Subject Name
-                    <span className="ml-1 text-red-500">*</span>
-                  </label>
-
-                  <select
-  required
-  value={subjectName}
-  onChange={(event) =>
-    setSubjectName(
-      event.target.value,
-    )
-  }
-  disabled={
-    assignedSubjects.length === 0
-  }
-  className="
-    h-11
-    w-full
-    rounded-xl
-    border
-    border-slate-200
-    bg-white
-    px-3
-    text-sm
-    text-slate-700
-    outline-none
-    transition
-    focus:border-teal-400
-    focus:ring-2
-    focus:ring-teal-100
-    disabled:cursor-not-allowed
-    disabled:bg-slate-100
-    disabled:text-slate-400
-  "
->
-  <option value="">
-    {assignedSubjects.length > 0
-      ? "Select Assigned Subject"
-      : "No Subject Assigned"}
-  </option>
-
-  {assignedSubjects.map(
-    (subject) => (
-      <option
-        key={subject}
-        value={subject}
-      >
-        {subject}
-      </option>
-    ),
-  )}
-</select>
-{assignedSubjects.length === 0 && (
-  <p className="mt-1.5 text-[11px] font-medium text-red-500">
-    No subjects are assigned to your Digital Teacher account.
-  </p>
-)}
-                </div>
-
-
-                {/* CLASS */}
 
                 <div>
                   <label className="mb-1.5 block text-xs font-semibold text-slate-700">
@@ -1930,11 +1953,18 @@ const storageRef =
                   <select
   required
   value={className}
-  onChange={(event) =>
-    setClassName(
-      event.target.value,
-    )
-  }
+  onChange={(event) => {
+  const newClass = event.target.value;
+
+  setClassName(newClass);
+
+  // Clear previous class subject
+  setSubjectName("");
+
+  // Clear old subject options
+  setClassSubjects([]);
+  setClassSubjectsError("");
+}}
   disabled={
     assignedClasses.length === 0
   }
@@ -1981,6 +2011,89 @@ const storageRef =
   </p>
 )}
                 </div>
+
+                
+{/* =====================================
+    CLASS-WISE SUBJECT SELECTION
+===================================== */}
+
+<div className="order-2">
+  <label className="mb-1.5 block text-xs font-semibold text-slate-700">
+    Subject Name
+    <span className="ml-1 text-red-500">*</span>
+  </label>
+
+  <select
+    required
+    value={subjectName}
+    onChange={(event) =>
+      setSubjectName(event.target.value)
+    }
+    disabled={
+      !className ||
+      classSubjectsLoading ||
+      Boolean(classSubjectsError) ||
+      classSubjects.length === 0 ||
+      uploadingMaterial
+    }
+    className="
+      h-11
+      w-full
+      rounded-xl
+      border
+      border-slate-200
+      bg-white
+      px-3
+      text-sm
+      text-slate-700
+      outline-none
+      transition
+      focus:border-teal-400
+      focus:ring-2
+      focus:ring-teal-100
+      disabled:cursor-not-allowed
+      disabled:bg-slate-100
+      disabled:text-slate-400
+    "
+  >
+    <option value="">
+      {!className
+        ? "Select Class First"
+        : classSubjectsLoading
+          ? "Loading Subjects..."
+          : classSubjectsError
+            ? "Unable to Load Subjects"
+            : classSubjects.length === 0
+              ? "No Subjects Available"
+              : "Select Class Subject"}
+    </option>
+
+    {classSubjects.map((subject) => (
+      <option
+        key={subject}
+        value={subject}
+      >
+        {subject}
+      </option>
+    ))}
+  </select>
+
+  {classSubjectsError && (
+    <p className="mt-1.5 text-xs font-medium text-red-600">
+      {classSubjectsError}
+    </p>
+  )}
+
+  {className &&
+    !classSubjectsLoading &&
+    !classSubjectsError &&
+    classSubjects.length === 0 && (
+      <p className="mt-1.5 text-xs font-medium text-amber-700">
+        No subjects available for {className}.
+      </p>
+    )}
+</div>
+
 
               </div>
 
@@ -2350,10 +2463,16 @@ const storageRef =
 <button
   type="submit"
   disabled={
-    uploadingMaterial ||
-    assignedClasses.length === 0 ||
-    assignedSubjects.length === 0
-  }
+  uploadingMaterial ||
+  assignedClasses.length === 0 ||
+  !className ||
+  !subjectName ||
+  classSubjectsLoading ||
+  Boolean(classSubjectsError) ||
+  classSubjects.length === 0 ||
+  !classSubjects.includes(subjectName) ||
+  !assignedClasses.includes(className)
+}
   className="
     inline-flex
     h-11

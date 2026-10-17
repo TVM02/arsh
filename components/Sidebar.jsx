@@ -214,7 +214,8 @@ const Sidebar = ({ isOpen, onClose }) => {
           centralPath.includes("/dashboard/dkju-control/digital-student") ||
           centralPath.includes("/dashboard/dkju-control/digital-student/application") ||
           centralPath.includes("/dashboard/dkju-control/digital-teacher") ||
-          centralPath.includes("/dashboard/dkju-control/digital-teacher/application")
+          centralPath.includes("/dashboard/dkju-control/digital-teacher/application") ||
+          centralPath.includes("/dashboard/dkju-control/digital-settings")
         ) {
           return "digital";
         }        
@@ -778,6 +779,12 @@ const Sidebar = ({ isOpen, onClose }) => {
             name: "Teacher Application",
             href: "/dashboard/dkju-control/digital-teacher/application",
             icon: ClipboardList,
+            group: "digital",
+          },
+          {
+            name: "Digital Settings",
+            href: "/dashboard/dkju-control/digital-settings",
+            icon: Settings,
             group: "digital",
           },
 

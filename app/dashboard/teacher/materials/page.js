@@ -23,7 +23,8 @@ import html2canvas from 'html2canvas';
 import {
   ref,
   uploadBytes,
-  getDownloadURL
+  getDownloadURL,
+  deleteObject
 } from "firebase/storage";
 
 import { storage } from "@/lib/firebase";
@@ -484,25 +485,78 @@ const uploadMultipleToFirebase = async (files) => {
     }
   };
 
-  const handleDelete = async (assignment) => {
-    if (assignment.createdBy !== user?.uid) {
-      toast.error('You can only delete assignments you created');
-      return;
+ 
+const handleDelete = async (assignment) => {
+  if (assignment.createdBy !== user?.uid) {
+    toast.error("You can only delete assignments you created");
+    return;
+  }
+
+  if (!confirm(`Are you sure you want to delete "${assignment.title}"?`)) {
+    return;
+  }
+
+  try {
+    // Get all assignment image URLs
+    const imageUrls = [
+      ...new Set([
+        ...(assignment.imageUrls || []),
+        ...(assignment.imageUrl ? [assignment.imageUrl] : []),
+      ]),
+    ];
+
+    // Delete Firebase Storage images
+    for (const imageUrl of imageUrls) {
+      if (!imageUrl) continue;
+
+      // Old Cloudinary images are not stored in Firebase
+      if (
+        !imageUrl.startsWith(
+          "https://firebasestorage.googleapis.com/"
+        )
+      ) {
+        continue;
+      }
+
+      const imageRef = ref(storage, imageUrl);
+
+      // Only delete images from this assignment's owner path
+      const expectedPrefix =
+        `assignments/${assignment.madarsaId}/${user.uid}/`;
+
+      if (!imageRef.fullPath.startsWith(expectedPrefix)) {
+        throw new Error(
+          "Image Storage path does not match assignment owner"
+        );
+      }
+
+      try {
+        await deleteObject(imageRef);
+        console.log("Deleted Storage image:", imageRef.fullPath);
+      } catch (error) {
+        if (error.code === "storage/object-not-found") {
+          continue;
+        }
+        throw error;
+      }
     }
 
-    if (!confirm(`Are you sure you want to delete "${assignment.title}"?`)) {
-      return;
-    }
+    // Delete Firestore document after Storage deletion
+    await deleteDoc(doc(db, "assignments", assignment.id));
 
-    try {
-      await deleteDoc(doc(db, 'assignments', assignment.id));
-      toast.success('Assignment deleted successfully');
-      fetchAssignments();
-    } catch (error) {
-      console.error('Error deleting assignment:', error);
-      toast.error('Failed to delete assignment');
-    }
-  };
+    toast.success("Assignment and images deleted successfully!");
+
+    await fetchAssignments();
+
+  } catch (error) {
+    console.error("Assignment deletion failed:", error);
+
+    toast.error(
+      error?.message || "Failed to delete assignment"
+    );
+  }
+};
+
 
   const filteredAssignments = assignments.filter(assignment =>
     assignment.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -710,7 +764,7 @@ const uploadMultipleToFirebase = async (files) => {
             {/* Footer */}
             <div className="mt-8 pt-6 border-t text-center text-gray-500">
               <p className="text-sm">Generated on {new Date().toLocaleDateString()} • DKJU Assignment System</p>
-              <p className="text-xs mt-1">© Made by DKIMVB - All Rights Reserved</p>
+              <p className="text-xs mt-1">© Made by DKLMVB - All Rights Reserved</p>
             </div>
           </div>
         </DialogContent>

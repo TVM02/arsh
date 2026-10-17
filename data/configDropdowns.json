@@ -28,5 +28,9 @@
     { "value": "approved", "label": "Approved", "color": "green" },
     { "value": "rejected", "label": "Rejected", "color": "red" },
     { "value": "under_review", "label": "Under Review", "color": "blue" }
-  ]
+  ],
+  "mentors": [
+    { "value": "ustad", "label": "Ustad" },
+    { "value": "teacher", "label": "Teacher" }
+    ]
 }
