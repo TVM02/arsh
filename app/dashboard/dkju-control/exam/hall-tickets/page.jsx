@@ -1,5 +1,5 @@
 "use client";
-
+import { QRCodeCanvas } from "qrcode.react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Layout from "@/components/Layout";
 import { toast } from "sonner";
@@ -12,14 +12,163 @@ import {
   FileText, Search, RotateCcw, X, Loader2,
 } from "lucide-react";
 import "./hall-ticket.css";
+import { collection, getDocs } from "firebase/firestore";
+import { db } from "@/lib/firebase";
+import { madrasaMatchesMekhala } from "@/lib/madrasaHierarchy";
 
-const CLASSES = ["Class 4", "Class 5", "Class 9", "Class 10"];
-const EMPTY_TICKET = {name:"",gender:"",examCenter:"",className:"Class 4",hallTicketNumber:"",mekhala:""};
+const CLASSES = ["Class 5", "Class 7", "Class 10", "Class 12"];
+const EMPTY_TICKET = {
+  name: "",
+  gender: "",
+  examCenter: "",
+  className: "Class 5",
+  hallTicketNumber: "",
+  madarsaId: "",
+  madarsaName: "",
+  mekhalaId: "",
+  mekhala: "",
+};
 const DEFAULT_SETTINGS = {
   boardName: "ദക്ഷിണ കേരള ഇസ്ലാം മത വിദ്യാഭ്യാസ ബോർഡ്",
   examName: "മോഡൽ പരീക്ഷ", academicYear: "2027",
   timetables: Object.fromEntries(CLASSES.map(c=>[c,[]])),
 };
+
+
+/* ============================================
+   TIME CONVERSION AND AUTO DURATION
+============================================ */
+
+// Converts 9:30 AM or 14:30 to HH:mm
+function normalizeTime(value) {
+  const match = String(value || "")
+    .trim()
+    .match(/^(\d{1,2}):([0-5]\d)\s*(AM|PM)?$/i);
+
+  if (!match) return "";
+
+  let hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  const period = match[3]?.toUpperCase();
+
+  if (period) {
+    if (hours < 1 || hours > 12) return "";
+
+    hours =
+      (hours % 12) +
+      (period === "PM" ? 12 : 0);
+  } else if (hours > 23) {
+    return "";
+  }
+
+  return (
+    String(hours).padStart(2, "0") +
+    ":" +
+    String(minutes).padStart(2, "0")
+  );
+}
+
+// Convert 24-hour time to 12-hour format
+function formatTime12(value) {
+  const time = normalizeTime(value);
+
+  if (!time) return "";
+
+  const [hours, minutes] = time
+    .split(":")
+    .map(Number);
+
+  const hour12 = hours % 12 || 12;
+  const period = hours >= 12 ? "PM" : "AM";
+
+  return `${hour12}:${String(minutes).padStart(2, "0")} ${period}`;
+}
+
+// Automatically calculate time and duration
+function calculateTimeRange(startTime, endTime) {
+  const start = normalizeTime(startTime);
+  const end = normalizeTime(endTime);
+
+  if (!start || !end) return null;
+
+  const [startHour, startMinute] = start
+    .split(":")
+    .map(Number);
+
+  const [endHour, endMinute] = end
+    .split(":")
+    .map(Number);
+
+  const startTotal =
+    startHour * 60 + startMinute;
+
+  const endTotal =
+    endHour * 60 + endMinute;
+
+  const totalMinutes = endTotal - startTotal;
+
+  // Same-day exams only
+  if (totalMinutes <= 0) return null;
+
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  const duration = [
+    hours
+      ? `${hours} ${hours === 1 ? "Hour" : "Hours"}`
+      : "",
+    minutes
+      ? `${minutes} ${minutes === 1 ? "Minute" : "Minutes"}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return {
+    startTime: start,
+    endTime: end,
+    time: `${formatTime12(start)} - ${formatTime12(end)}`,
+    duration,
+  };
+}
+
+/* ============================================
+   LOAD OLD FIREBASE TIMETABLE FORMAT
+============================================ */
+
+function hydrateTimetableRow(row) {
+  const oldTime = String(row?.time || "");
+
+  const match = oldTime.match(
+    /^\s*(\d{1,2}:\d{2}(?:\s*(?:AM|PM))?)\s*[-–—]\s*(\d{1,2}:\d{2}(?:\s*(?:AM|PM))?)\s*$/i
+  );
+
+  const startTime = normalizeTime(
+    row?.startTime || match?.[1] || ""
+  );
+
+  const endTime = normalizeTime(
+    row?.endTime || match?.[2] || ""
+  );
+
+  const calculated = calculateTimeRange(
+    startTime,
+    endTime
+  );
+
+  return {
+    ...row,
+    startTime,
+    endTime,
+    ...(calculated
+      ? {
+          time: calculated.time,
+          duration: calculated.duration,
+        }
+      : {}),
+  };
+}
+
 const TERMS = [
   "ഉത്തരപ്പേപ്പറിൽ രജിസ്റ്റർ നമ്പർ മാത്രം എഴുതുക.",
   "ഹാൾ ടിക്കറ്റ് പരീക്ഷയുടെ അവസാന നിമിഷം വരെ സൂക്ഷിക്കുക.",
@@ -32,11 +181,183 @@ const TERMS = [
 const inputClass = "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100";
 const buttonClass = "inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40";
 
+const getMadrasaId = (m) =>
+  String(
+    m?.madarsaId ||
+    m?.madrasaId ||
+    m?.mid ||
+    m?.id ||
+    ""
+  ).trim();
+
+function findMadrasa(madarsas, id) {
+  const wanted = String(id ?? "").trim().toLowerCase();
+  if (!wanted) return null;
+
+  return madarsas.find((m) =>
+    [m.id, m.madarsaId, m.madrasaId, m.mid].some(
+      (v) => String(v ?? "").trim().toLowerCase() === wanted
+    )
+  ) || null;
+}
+
+function findMekhala(madrasa, mekhalas) {
+  if (!madrasa || !Array.isArray(mekhalas)) return null;
+
+  // Important DKJU hierarchy distinction:
+  // "mekhala" collection / madrasa.mekhalaId is the broader district-level scope.
+  // In the reference Students page, the local Mekhala is taken from
+  // madrasa.district / madrasa.districtName and "districts" collection.
+  // Therefore DO NOT resolve madrasa.mekhalaId against "mekhala" here.
+  const norm = (value) => String(value ?? "").trim().toLowerCase();
+
+  const localIds = [
+    madrasa.districtId,
+    madrasa.subMekhalaId,
+    madrasa.localMekhalaId,
+  ].map(norm).filter(Boolean);
+
+  const localNames = [
+    madrasa.subMekhalaName,
+    madrasa.localMekhalaName,
+    madrasa.districtName,
+    madrasa.district,
+  ].map(norm).filter(Boolean);
+
+  const byId = mekhalas.find((m) => localIds.includes(norm(m.id)));
+  if (byId) return byId;
+
+  const byName = mekhalas.find((m) =>
+    localNames.includes(norm(m.name))
+  );
+  if (byName) return byName;
+
+  // Reuse the same hierarchy-matching logic as the reference Students page.
+  const matches = mekhalas.filter((m) => {
+    try {
+      return Boolean(m.name && madrasaMatchesMekhala(madrasa, m.name));
+    } catch {
+      return false;
+    }
+  });
+
+  return matches.length === 1 ? matches[0] : null;
+}
+
+/* SEARCHABLE MADRASA DROPDOWN */
+
+function MadrasaDropdown({
+  madarsas,
+  value,
+  selectedName = "",
+  onSelect,
+  loading,
+}) {
+  const [search, setSearch] = useState("");
+  const [open, setOpen] = useState(false);
+
+  const selected = findMadrasa(madarsas, value);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+
+    return madarsas
+      .filter((m) =>
+        !q ||
+        String(m.name || "").toLowerCase().includes(q) ||
+        [m.id, m.madarsaId, m.madrasaId, m.mid].some((v) =>
+          String(v ?? "").toLowerCase().includes(q)
+        )
+      )
+      .sort((a, b) =>
+        String(a.name || "").localeCompare(String(b.name || ""))
+      )
+      .slice(0, 100);
+  }, [madarsas, search]);
+
+  const choose = (m) => {
+    onSelect(m);
+    setSearch("");
+    setOpen(false);
+  };
+
+  return (
+    <div
+      className="relative"
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget)) {
+          setOpen(false);
+        }
+      }}
+    >
+      <input
+        type="text"
+        className={inputClass}
+        placeholder={
+          loading
+            ? "Loading Madrasas..."
+            : "Search Madrasa name or MID"
+        }
+        value={
+          open
+            ? search
+            : selected?.name || selectedName || ""
+        }
+        onFocus={() => {
+          setSearch("");
+          setOpen(true);
+        }}
+        onChange={(e) => {
+          setSearch(e.target.value);
+          setOpen(true);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") setOpen(false);
+
+          if (e.key === "Enter" && open && filtered[0]) {
+            e.preventDefault();
+            choose(filtered[0]);
+          }
+        }}
+        autoComplete="off"
+        role="combobox"
+        aria-expanded={open}
+      />
+
+      {open && (
+        <div className="absolute z-50 mt-1 max-h-64 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
+          {filtered.length === 0 && (
+            <p className="p-3 text-sm text-slate-500">
+              No Madrasa found
+            </p>
+          )}
+
+          {filtered.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              onClick={() => choose(m)}
+              className="flex w-full items-center justify-between gap-3 border-b px-3 py-2 text-left text-sm hover:bg-teal-50"
+            >
+              <span>{m.name}</span>
+              <span className="text-xs text-slate-500">
+                {getMadrasaId(m)}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function HallTicketPaper({ ticket, settings, paperRef }) {
-  const grade = String(ticket.className || "Class 4").replace(/\D/g, "") || "4";
+  const grade = String(ticket.className || "Class 5").replace(/\D/g, "") || "5";
   const rows = settings.timetables?.[ticket.className] || [];
   return (
     <div ref={paperRef} className={`ticket-paper ticket-${grade}`} id="dkju-printable-hall-ticket">
+      {/* Second decorative A4 page border (requires .ticket-inner-page-border CSS) */}
+      <div className="ticket-inner-page-border" aria-hidden="true" />
       <div className="ticket-content">
        <div className="ticket-header-logo">
   <img
@@ -49,14 +370,48 @@ function HallTicketPaper({ ticket, settings, paperRef }) {
         <div className="ticket-banner">
           Hall Ticket No: <span>{ticket.hallTicketNumber || "________"}</span> &nbsp;|&nbsp; {ticket.className}
         </div>
-        <div className="ticket-student">
-          <div className="ticket-field full"><span className="k">Name:</span><span className="v">{ticket.name || "____________________________"}</span></div>
-          <div className="ticket-field"><span className="k">Gender:</span><span className="v">{ticket.gender || "________"}</span></div>
-          <div className="ticket-field"><span className="k">Class:</span><span className="v">{ticket.className || "________"}</span></div>
-          <div className="ticket-field full"><span className="k">Exam Center:</span><span className="v">{ticket.examCenter || "____________________________"}</span></div>
-          <div className="ticket-field full"><span className="k">Mekhala:</span><span className="v">{ticket.mekhala || "—"}</span></div>
+        <div className="ticket-student-layout">
+          <div className="ticket-student">
+            <div className="ticket-field full">
+              <span className="k">Name:</span>
+              <span className="v">{ticket.name || "________________"}</span>
+            </div>
+            <div className="ticket-field">
+              <span className="k">Gender:</span>
+              <span className="v">{ticket.gender || "________"}</span>
+            </div>
+            <div className="ticket-field">
+              <span className="k">Class:</span>
+              <span className="v">{ticket.className || "________"}</span>
+            </div>
+            <div className="ticket-field full">
+              <span className="k">Exam Center:</span>
+              <span className="v">{ticket.madarsaName || "—"}</span>
+            </div>
+        
+            <div className="ticket-field full">
+              <span className="k">Mekhala:</span>
+              <span className="v">{ticket.mekhala || "—"}</span>
+            </div>
+          </div>
+
+          {ticket.hallTicketNumber && (
+            <div className="ticket-qr-box">
+              <QRCodeCanvas
+                value={String(ticket.hallTicketNumber)}
+                size={180}
+                level="H"
+                bgColor="#ffffff"
+                fgColor="#000000"
+                includeMargin={true}
+              />
+              <span className="ticket-qr-label">SCAN HALL TICKET</span>
+              <strong className="ticket-qr-number">{ticket.hallTicketNumber}</strong>
+            </div>
+          )}
         </div>
         <div className="ticket-ribbon">Examination Timetable</div>
+        <div className="ticket-schedule-frame">
         <table className="ticket-schedule">
           <thead><tr>
             <th className="col-date">Date</th><th className="col-subject">Subject</th><th className="col-time">Time</th><th className="col-duration">Duration</th>
@@ -68,6 +423,7 @@ function HallTicketPaper({ ticket, settings, paperRef }) {
             {Array.from({length:Math.max(0,7-rows.length)},(_,i)=>(<tr key={`blank-${i}`}><td> </td><td> </td><td> </td><td> </td></tr>))}
           </tbody>
         </table>
+        </div>
         <div className="ticket-terms-title">നിബന്ധനകൾ</div>
         <ol className="ticket-terms">{TERMS.map((term,i)=><li key={i}>{term}</li>)}</ol>
         <div className="ticket-spacer" />
@@ -85,7 +441,7 @@ function HallTicketPaper({ ticket, settings, paperRef }) {
             <span className="sign-role">Supervisor Name &amp; Signature</span>
           </div>
         </div>
-        <div className="ticket-bottom">DKJU MODEL EXAMINATION • ADMIT CARD</div>
+        <div className="ticket-bottom">DKIMV Public Examination • ADMIT CARD</div>
       </div>
     </div>
   );
@@ -95,8 +451,11 @@ export default function ModelExamHallTicketPage() {
   const [tab, setTab] = useState("tickets");
   const [tickets, setTickets] = useState([]);
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
-  const [selectedClassSettings, setSelectedClassSettings] = useState("Class 4");
+  const [selectedClassSettings, setSelectedClassSettings] = useState("Class 5");
   const [form, setForm] = useState(EMPTY_TICKET);
+  const [madarsas, setMadarsas] = useState([]);
+const [mekhalas, setMekhalas] = useState([]);
+const [hierarchyLoading, setHierarchyLoading] = useState(true);
   const [editingId, setEditingId] = useState(null);
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -116,24 +475,110 @@ export default function ModelExamHallTicketPage() {
         ]);
         if (!mounted) return;
         setTickets(ticketData.tickets || []);
-        setSettings({...DEFAULT_SETTINGS, ...timetableData.settings,
-          timetables:{...DEFAULT_SETTINGS.timetables,...timetableData.settings?.timetables}});
+        const savedSettings = timetableData?.settings || {};
+        setSettings({
+          ...DEFAULT_SETTINGS,
+          ...savedSettings,
+          timetables: Object.fromEntries(
+            CLASSES.map((className) => [
+              className,
+              (savedSettings.timetables?.[className] || []).map(hydrateTimetableRow),
+            ])
+          ),
+        });
       } catch(error) { if (mounted) toast.error(error.message); }
       finally { if(mounted) setInitialLoading(false); }
     })();
     return ()=>{mounted=false};
   },[]);
 
+
+useEffect(() => {
+  let active = true;
+
+  const loadMadrasas = async () => {
+    try {
+      setHierarchyLoading(true);
+
+      const [madarsaSnap, localMekhalaSnap] = await Promise.all([
+        getDocs(collection(db, "madarsas")),
+        // The Students reference uses districts as the local Mekhala level.
+        getDocs(collection(db, "districts")),
+      ]);
+
+      if (!active) return;
+
+      setMadarsas(
+        madarsaSnap.docs.map((d) => ({
+          ...d.data(),
+          id: d.id,
+        }))
+      );
+
+      setMekhalas(
+        localMekhalaSnap.docs.map((d) => ({
+          ...d.data(),
+          id: d.id,
+        }))
+      );
+
+    } catch (error) {
+      console.error("Madrasa loading error:", error);
+      toast.error("Unable to load Madrasa / Mekhala data.");
+    } finally {
+      if (active) setHierarchyLoading(false);
+    }
+  };
+
+  loadMadrasas();
+
+  return () => {
+    active = false;
+  };
+}, []);
+
+
   const filteredTickets = useMemo(()=>{
     const q = search.trim().toLowerCase();
-    return tickets.filter(t=>!q || [t.name,t.hallTicketNumber,t.className,t.examCenter].some(x=>String(x||"").toLowerCase().includes(q)));
+    return tickets.filter(t=>!q || [t.name,t.hallTicketNumber,t.className,t.examCenter,t.madarsaName,t.mekhala].some(x=>String(x||"").toLowerCase().includes(q)));
   },[tickets,search]);
 
-  const resetForm = () => {setForm(EMPTY_TICKET);setEditingId(null)};
+  const resetForm = () => {
+    setForm({ ...EMPTY_TICKET });
+    setEditingId(null);
+  };
   const updateForm = (key,value) => setForm(prev=>({...prev,[key]:value}));
+const handleMadrasaSelect = (madrasa) => {
+  const mekhala = findMekhala(madrasa, mekhalas);
+
+  setForm((prev) => ({
+    ...prev,
+    madarsaId: getMadrasaId(madrasa),
+    madarsaName: madrasa.name || "",
+    mekhalaId: mekhala?.id || "",
+    mekhala: mekhala?.name || "",
+  }));
+
+  if (!mekhala) {
+    toast.warning("Local Mekhala not found for this Madrasa. Check the districts mapping.");
+  }
+};
+
   const editTicket = ticket => {
-    setForm({name:ticket.name,gender:ticket.gender,examCenter:ticket.examCenter,
-      className:ticket.className,hallTicketNumber:ticket.hallTicketNumber,mekhala:ticket.mekhala||""});
+    const linkedMadrasa = findMadrasa(madarsas, ticket.madarsaId);
+    const localMekhala = findMekhala(linkedMadrasa, mekhalas);
+    setForm({
+  name: ticket.name || "",
+  gender: ticket.gender || "",
+  examCenter: ticket.examCenter || "",
+  className: ticket.className || "Class 5",
+  hallTicketNumber: ticket.hallTicketNumber || "",
+  madarsaId: ticket.madarsaId || "",
+  madarsaName: ticket.madarsaName || "",
+  // Discard the older stored district display; resolve the actual local Mekhala.
+  mekhalaId: localMekhala?.id || "",
+  mekhala: localMekhala?.name || "",
+});
     setEditingId(ticket.id);
     setSelectedTicket(ticket);
     setTab("tickets");
@@ -143,11 +588,38 @@ export default function ModelExamHallTicketPage() {
   const saveTicket = async (event) => {
     event.preventDefault();
     if (busy) return;
+    if (!form.madarsaId) {
+  toast.error("Please select a Madrasa.");
+  return;
+}
+
+const selectedMadrasa = findMadrasa(
+  madarsas,
+  form.madarsaId
+);
+
+const selectedMekhala = findMekhala(
+  selectedMadrasa,
+  mekhalas
+);
+
+if (!selectedMadrasa || !selectedMekhala) {
+  toast.error("Please select a Madrasa with a valid Mekhala.");
+  return;
+}
+
+const payload = {
+  ...form,
+  madarsaId: getMadrasaId(selectedMadrasa),
+  madarsaName: selectedMadrasa.name,
+  mekhalaId: selectedMekhala.id,
+  mekhala: selectedMekhala.name,
+};
     setBusy(true);
     try {
       const result = editingId
-        ? await editModelExamHallTicket(editingId,form)
-        : await createModelExamHallTicket(form);
+        ? await editModelExamHallTicket(editingId, payload)
+        : await createModelExamHallTicket(payload);
       setTickets(prev=>[result.ticket,...prev.filter(t=>t.id!==editingId && t.id!==result.ticket.id)]);
       setSelectedTicket(result.ticket);
       resetForm();
@@ -176,17 +648,136 @@ export default function ModelExamHallTicketPage() {
     timetables:{...prev.timetables,
       [selectedClassSettings]:typeof updater === "function" ? updater(prev.timetables?.[selectedClassSettings] || []) : updater},
   }));
-  const editScheduleCell = (i,key,value) => setScheduleRows(rows=>rows.map((r,j)=>j===i?{...r,[key]:value}:r));
-  const saveTimetables = async () => {
-    if(savingSettings) return;
-    setSavingSettings(true);
-    try {
-      const result = await saveModelExamTimetables(settings);
-      setSettings(s=>({...s,...result.settings}));
-      toast.success("All four class timetables and exam settings saved to Firebase.");
-    } catch(error){toast.error(error.message)}
-    finally{setSavingSettings(false)}
-  };
+ 
+/* ============================================
+   UPDATE TIME AND AUTO CALCULATE DURATION
+============================================ */
+
+const editScheduleCell = (index, key, value) => {
+  setScheduleRows((rows) =>
+    rows.map((row, i) => {
+      if (i !== index) return row;
+
+      const updatedRow = {
+        ...row,
+        [key]: value,
+      };
+
+      const calculated = calculateTimeRange(
+        updatedRow.startTime,
+        updatedRow.endTime
+      );
+
+      return {
+        ...updatedRow,
+        time: calculated?.time || "",
+        duration: calculated?.duration || "",
+      };
+    })
+  );
+};
+
+
+/* ============================================
+   SAVE TIMETABLES TO FIREBASE
+============================================ */
+
+const saveTimetables = async () => {
+  if (savingSettings) return;
+
+  // Validate all four classes
+  for (const className of CLASSES) {
+    const rows =
+      settings.timetables?.[className] || [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+
+      if (
+        !row.date ||
+        !String(row.subject || "").trim() ||
+        !calculateTimeRange(
+          row.startTime,
+          row.endTime
+        )
+      ) {
+        setSelectedClassSettings(className);
+
+        toast.error(
+          `${className}, Row ${i + 1}: Please enter Date, Subject and valid Start/End Time.`
+        );
+
+        return;
+      }
+    }
+  }
+
+  setSavingSettings(true);
+
+  try {
+    // Recalculate all time ranges before saving
+    const updatedSettings = {
+      ...settings,
+
+      timetables: Object.fromEntries(
+        CLASSES.map((className) => [
+          className,
+
+          (
+            settings.timetables?.[className] || []
+          ).map((row) => ({
+            ...row,
+            ...calculateTimeRange(
+              row.startTime,
+              row.endTime
+            ),
+          })),
+        ])
+      ),
+    };
+
+    const result =
+      await saveModelExamTimetables(
+        updatedSettings
+      );
+
+    // Restore Start/End inputs after Firebase save
+    const savedSettings =
+      result?.settings || updatedSettings;
+
+    setSettings({
+      ...updatedSettings,
+      ...savedSettings,
+
+      timetables: Object.fromEntries(
+        CLASSES.map((className) => [
+          className,
+
+          (
+            savedSettings.timetables?.[className] || []
+          ).map(hydrateTimetableRow),
+        ])
+      ),
+    });
+
+    toast.success(
+      "All class timetables saved successfully."
+    );
+  } catch (error) {
+    console.error(
+      "SAVE TIMETABLE ERROR:",
+      error
+    );
+
+    toast.error(
+      error?.message ||
+      "Unable to save timetable."
+    );
+  } finally {
+    setSavingSettings(false);
+  }
+};
+
 
   const downloadPdf = async () => {
     if(!selectedTicket || !paperRef.current || exporting) return;
@@ -208,7 +799,16 @@ export default function ModelExamHallTicketPage() {
     finally{setExporting(false)}
   };
 
-  const printable = selectedTicket;
+  const printable = useMemo(() => {
+    if (!selectedTicket) return null;
+    if (!selectedTicket.madarsaId || hierarchyLoading) return selectedTicket;
+    const madrasa = findMadrasa(madarsas, selectedTicket.madarsaId);
+    const mekhala = findMekhala(madrasa, mekhalas);
+    return {
+      ...selectedTicket,
+      mekhala: mekhala?.name || "",
+    };
+  }, [selectedTicket, hierarchyLoading, madarsas, mekhalas]);
   const scheduleRows = settings.timetables?.[selectedClassSettings] || [];
   return (
     <Layout>
@@ -235,18 +835,161 @@ export default function ModelExamHallTicketPage() {
               <div className="flex flex-wrap gap-2">{CLASSES.map(c=><button key={c} type="button" className={`${buttonClass} ${c===selectedClassSettings?"bg-indigo-700 text-white":"bg-slate-100 text-slate-700"}`} onClick={()=>setSelectedClassSettings(c)}>{c}</button>)}</div>
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-lg font-bold">{selectedClassSettings} Examination Timetable</h2>
-                <button type="button" disabled={scheduleRows.length>=7} className={`${buttonClass} bg-slate-100 text-slate-700`} onClick={()=>setScheduleRows(rows=>[...rows,{date:"",subject:"",time:"",duration:""}])}><Plus size={16}/>Add Row ({scheduleRows.length}/7)</button>
+                <button type="button" disabled={scheduleRows.length>=7} className={`${buttonClass} bg-slate-100 text-slate-700`} onClick={()=>setScheduleRows(rows=>[...rows,{date: "", subject: "", startTime: "", endTime: "", time: "", duration: ""}])}><Plus size={16}/>Add Row ({scheduleRows.length}/7)</button>
               </div>
-              <div className="overflow-x-auto"><table className="w-full min-w-[650px] border-collapse text-sm">
-                <thead className="bg-slate-100 text-slate-700"><tr>{["Date","Subject","Time","Duration",""].map(x=><th key={x} className="border px-2 py-3 text-left">{x}</th>)}</tr></thead>
-                <tbody>{scheduleRows.map((row,i)=><tr key={i}>
-                  <td className="border p-2"><input className={inputClass} type="date" value={row.date} onChange={e=>editScheduleCell(i,"date",e.target.value)}/></td>
-                  <td className="border p-2"><input className={inputClass} placeholder="Fiqh / Quran" value={row.subject} onChange={e=>editScheduleCell(i,"subject",e.target.value)}/></td>
-                  <td className="border p-2"><input className={inputClass} placeholder="10:00 AM - 12:00 PM" value={row.time} onChange={e=>editScheduleCell(i,"time",e.target.value)}/></td>
-                  <td className="border p-2"><input className={inputClass} placeholder="2 Hours" value={row.duration} onChange={e=>editScheduleCell(i,"duration",e.target.value)}/></td>
-                  <td className="border p-2"><button aria-label={`Remove row ${i+1}`} type="button" className="text-rose-600" onClick={()=>setScheduleRows(rows=>rows.filter((_,j)=>j!==i))}><Trash2 size={18}/></button></td>
-                </tr>)}</tbody>
-              </table></div>
+              
+{/* ============================================
+    EXAMINATION TIMETABLE SETTINGS
+============================================ */}
+
+<div className="overflow-x-auto">
+  <table className="w-full min-w-[850px] border-collapse text-sm">
+
+    <thead className="bg-slate-100 text-slate-700">
+      <tr>
+        {[
+          "Date",
+          "Subject",
+          "Start Time",
+          "End Time",
+          "Duration (Auto)",
+          "",
+        ].map((heading) => (
+          <th
+            key={heading}
+            className="border px-3 py-3 text-left"
+          >
+            {heading}
+          </th>
+        ))}
+      </tr>
+    </thead>
+
+    <tbody>
+      {scheduleRows.map((row, i) => {
+        const calculated = calculateTimeRange(
+          row.startTime,
+          row.endTime
+        );
+
+        const invalidTime =
+          row.startTime &&
+          row.endTime &&
+          !calculated;
+
+        return (
+          <tr key={i}>
+
+            {/* DATE */}
+            <td className="border p-2">
+              <input
+                type="date"
+                className={inputClass}
+                value={row.date || ""}
+                onChange={(e) =>
+                  editScheduleCell(
+                    i,
+                    "date",
+                    e.target.value
+                  )
+                }
+              />
+            </td>
+
+            {/* SUBJECT */}
+            <td className="border p-2">
+              <input
+                type="text"
+                className={inputClass}
+                placeholder="Fiqh / Quran"
+                value={row.subject || ""}
+                onChange={(e) =>
+                  editScheduleCell(
+                    i,
+                    "subject",
+                    e.target.value
+                  )
+                }
+              />
+            </td>
+
+            {/* START TIME */}
+            <td className="border p-2">
+              <input
+                type="time"
+                step="60"
+                className={inputClass}
+                value={row.startTime || ""}
+                onChange={(e) =>
+                  editScheduleCell(
+                    i,
+                    "startTime",
+                    e.target.value
+                  )
+                }
+              />
+            </td>
+
+            {/* END TIME */}
+            <td className="border p-2">
+              <input
+                type="time"
+                step="60"
+                className={inputClass}
+                value={row.endTime || ""}
+                onChange={(e) =>
+                  editScheduleCell(
+                    i,
+                    "endTime",
+                    e.target.value
+                  )
+                }
+              />
+
+              {invalidTime && (
+                <p className="mt-1 text-xs text-red-600">
+                  End Time must be later than Start Time.
+                </p>
+              )}
+            </td>
+
+            {/* AUTO DURATION */}
+            <td className="border p-2">
+              <input
+                type="text"
+                readOnly
+                value={calculated?.duration || ""}
+                placeholder="Auto calculated"
+                className={`${inputClass} bg-slate-100 font-semibold text-teal-700`}
+              />
+            </td>
+
+            {/* REMOVE ROW */}
+            <td className="border p-2 text-center">
+              <button
+                type="button"
+                aria-label={`Remove row ${i + 1}`}
+                className="text-rose-600 hover:text-rose-800"
+                onClick={() =>
+                  setScheduleRows((rows) =>
+                    rows.filter(
+                      (_, index) => index !== i
+                    )
+                  )
+                }
+              >
+                <Trash2 size={18} />
+              </button>
+            </td>
+
+          </tr>
+        );
+      })}
+    </tbody>
+
+  </table>
+</div>
+
               <p className="text-xs text-slate-500">Save once. Every saved ticket uses the latest timetable of its class when viewed, printed or downloaded. Seven rows maximum to keep one A4 page.</p>
               <button type="button" disabled={savingSettings} className={`${buttonClass} bg-teal-700 text-white`} onClick={saveTimetables}>{savingSettings?<Loader2 size={16} className="animate-spin"/>:<Save size={16}/>}Save All Class Timetables</button>
             </section>
@@ -257,10 +1000,41 @@ export default function ModelExamHallTicketPage() {
                   <div className="flex items-center justify-between"><h2 className="text-lg font-bold">{editingId?"Edit Hall Ticket":"New Hall Ticket"}</h2><button title="Clear form" type="button" onClick={resetForm} className="text-slate-500"><RotateCcw size={17}/></button></div>
                   <label className="block space-y-1 text-sm font-semibold">Student Name *<input required maxLength={140} className={inputClass} value={form.name} onChange={e=>updateForm("name",e.target.value)} placeholder="Full name"/></label>
                   <label className="block space-y-1 text-sm font-semibold">Gender *<select required className={inputClass} value={form.gender} onChange={e=>updateForm("gender",e.target.value)}><option value="">Select Gender</option>{["Male","Female","Other"].map(g=><option key={g}>{g}</option>)}</select></label>
-                  <label className="block space-y-1 text-sm font-semibold">Exam Center *<input required maxLength={180} className={inputClass} value={form.examCenter} onChange={e=>updateForm("examCenter",e.target.value)} placeholder="Examination center name"/></label>
+                  
+                  
+{/* MADRASA SEARCH */}
+
+<div className="space-y-1">
+  <label className="text-sm font-semibold">
+    Exam Center *
+  </label>
+
+  <MadrasaDropdown
+    madarsas={madarsas}
+    value={form.madarsaId}
+    selectedName={form.madarsaName}
+    onSelect={handleMadrasaSelect}
+    loading={hierarchyLoading}
+  />
+</div>
+
+{/* AUTO MEKHALA */}
+
+<label className="block space-y-1 text-sm font-semibold">
+  Mekhala (Automatic)
+
+  <input
+    type="text"
+    readOnly
+    className={`${inputClass} bg-slate-100 font-semibold text-teal-700`}
+    value={form.mekhala || ""}
+    placeholder="Select Madrasa first"
+  />
+</label>
+
                   <label className="block space-y-1 text-sm font-semibold">Class *<select required className={inputClass} value={form.className} onChange={e=>updateForm("className",e.target.value)}>{CLASSES.map(c=><option key={c} value={c}>{c}</option>)}</select></label>
                   <label className="block space-y-1 text-sm font-semibold">Hall Ticket Number *<input required inputMode="numeric" pattern="[0-9]{1,16}" maxLength={16} className={inputClass} value={form.hallTicketNumber} onChange={e=>updateForm("hallTicketNumber",e.target.value)} placeholder="2254"/></label>
-                  <label className="block space-y-1 text-sm font-semibold">Mekhala (optional)<input className={inputClass} maxLength={160} value={form.mekhala} onChange={e=>updateForm("mekhala",e.target.value)}/></label>
+                  
                   <div className="flex gap-2"><button disabled={busy} className={`${buttonClass} flex-1 bg-teal-700 text-white`} type="submit">{busy?<Loader2 size={16} className="animate-spin"/>:<Save size={16}/>} {editingId?"Update Ticket":"Save"}</button><button type="button" className={`${buttonClass} bg-slate-100`} onClick={resetForm}><Plus size={16}/>New</button></div>
                 </form>
                 <div className="rounded-2xl border bg-white p-4 shadow-sm">

@@ -213,6 +213,9 @@
    HALL TICKET NUMBER
 ============================================ */
 
+
+/* HALL TICKET NUMBER - FIX NUMBER ALIGNMENT */
+
 .ticket-banner {
   min-width: 128mm;
   max-width: 100%;
@@ -222,15 +225,27 @@
 
   border-radius: 2mm;
   background: var(--ink);
-  color: white;
+  color: #ffffff;
 
-  font: 700 15px/1.35 Georgia, serif;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.35;
   text-align: center;
+
+  font-variant-numeric: lining-nums tabular-nums;
+  font-feature-settings: "lnum" 1, "tnum" 1;
 }
 
 .ticket-banner span {
-  font-family: Georgia, serif;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 16px;
+  font-weight: 800;
+
+  font-variant-numeric: lining-nums tabular-nums;
+  font-feature-settings: "lnum" 1, "tnum" 1;
 }
+
 
 /* ============================================
    STUDENT DETAILS
@@ -283,6 +298,7 @@
 
   margin: 0 auto 2mm;
   padding: 1.2mm 6mm;
+  margin-top: 4mm;
 
   border-top: 2px solid var(--ink);
   border-bottom: 2px solid var(--ink);
@@ -302,6 +318,7 @@
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
+  
   font-size: 10.5px;
 }
 
@@ -346,6 +363,7 @@
 .ticket-terms-title {
   margin: 2.5mm 0 1mm;
   padding: 0.9mm 4mm;
+  margin-top: 50px;
 
   border-left: 3px solid var(--ink);
   border-right: 3px solid var(--ink);
@@ -364,6 +382,7 @@
 
 .ticket-terms {
   margin: 0;
+  margin-top: 15px;
   padding-left: 9mm;
 
   list-style-type: decimal;
@@ -376,8 +395,9 @@
 
 .ticket-terms li {
   display: list-item;
-  margin-bottom: 0.35mm;
+  margin-bottom: 5px;
   padding-left: 0.8mm;
+  
 }
 
 .ticket-terms li::marker {
@@ -512,9 +532,150 @@
   text-align: center;
 }
 
+
+
+
+
+
+
 /* ============================================
-   A4 PRINT SETTINGS
+   ROUNDED TIMETABLE BORDER
 ============================================ */
+
+.ticket-schedule-frame {
+  width: 100%;
+  border: 1.5px solid #68717c;
+  border-radius: 12px;
+  overflow: hidden;
+  margin-top:30px ;
+}
+
+/* TABLE */
+
+.ticket-schedule {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: none;
+  table-layout: fixed;
+}
+
+/* TABLE CELLS */
+
+.ticket-schedule th,
+.ticket-schedule td {
+  border: none;
+  border-right: 1px solid #68717c;
+  border-bottom: 1px solid #68717c;
+}
+
+/* REMOVE LAST COLUMN BORDER */
+
+.ticket-schedule tr > *:last-child {
+  border-right: none;
+}
+
+/* REMOVE LAST ROW BORDER */
+
+.ticket-schedule tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* HEADER */
+
+.ticket-schedule th {
+  background: var(--soft);
+  color: var(--ink);
+  font-weight: 800;
+}
+
+/* ============================================
+   HALL TICKET QR CODE
+============================================ */
+
+/* Student + QR layout */
+
+.ticket-student-layout {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4mm;
+  width: 100%;
+  margin-bottom: 3mm;
+}
+
+/* Student details */
+
+.ticket-student-layout .ticket-student {
+  flex: 1;
+  min-width: 0;
+  margin: 0 0 0 3mm;
+}
+
+/* QR container */
+
+.ticket-qr-box {
+  width: 28mm;
+  flex-shrink: 0;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+
+  padding: 1mm;
+
+  border: 1px solid #d1d5db;
+  border-radius: 2mm;
+
+  background: #ffffff;
+  text-align: center;
+}
+
+/* QR code image */
+
+.ticket-qr-box canvas {
+  display: block;
+
+  width: 23mm !important;
+  height: 23mm !important;
+
+  max-width: 100%;
+}
+
+/* QR label */
+
+.ticket-qr-label {
+  margin-top: 1mm;
+
+  font-family: Arial, sans-serif;
+  font-size: 6.5px;
+  font-weight: 800;
+
+  color: #334155;
+  letter-spacing: 0.02em;
+}
+
+/* Hall Ticket number below QR */
+
+.ticket-qr-number {
+  margin-top: 0.4mm;
+
+  font-family: Arial, sans-serif;
+  font-size: 9px;
+  font-weight: 800;
+
+  color: #0f172a;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+
+/* =====================================================
+   PRINT: A4 HALL-TICKET PAGE BORDERS
+   Exactly ONE print section. The visible decorative
+   frames sit INSIDE the printable area, so printers
+   cannot cut them off at the paper edge.
+===================================================== */
 
 @page {
   size: A4 portrait;
@@ -524,36 +685,112 @@
 @media print {
   html,
   body {
-    height: auto !important;
+    width: 210mm !important;
     margin: 0 !important;
     padding: 0 !important;
+    height: auto !important;
     overflow: visible !important;
-    background: white !important;
+    background: #fff !important;
   }
 
+  /* Print only the hall ticket, not the dashboard. */
   body * {
     visibility: hidden !important;
   }
 
   .ticket-paper,
-  .ticket-paper * {
+  .ticket-paper *,
+  .ticket-paper::before,
+  .ticket-paper::after {
     visibility: visible !important;
   }
 
   .ticket-paper {
-    position: absolute !important;
-
-    top: 0 !important;
-    left: 0 !important;
-
+    position: fixed !important;
+    inset: 0 auto auto 0 !important;
+    box-sizing: border-box !important;
+    width: 210mm !important;
+    min-width: 210mm !important;
+    height: 297mm !important;
     margin: 0 !important;
+    padding: 9mm 10mm 10mm !important;
+    overflow: hidden !important;
+    border: 0 !important; /* physical page edge is often unprintable */
     border-radius: 0 !important;
     box-shadow: none !important;
     transform: none !important;
+    background: white !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
+  /* These are the visible OUTER and INNER PAGE frames. */
   .ticket-paper::before,
   .ticket-paper::after {
-    visibility: visible !important;
+    content: "" !important;
+    display: block !important;
+    position: absolute !important;
+    z-index: 0 !important;
+    pointer-events: none !important;
+    opacity: 1 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .ticket-paper::before {
+    inset: 5mm !important; /* OUTER FRAME: within paper margins */
+  }
+
+  .ticket-paper::after {
+    inset: 8mm !important; /* INNER FRAME */
+  }
+
+  /* Preserve each class's own double, dashed or gold design. */
+  .ticket-4::before {
+    border: 3px solid #087568 !important;
+    border-radius: 8mm 1mm 8mm 1mm !important;
+  }
+  .ticket-4::after {
+    border: 1.5px dashed #62b6a2 !important;
+    border-radius: 7mm 0 7mm 0 !important;
+  }
+  .ticket-5::before {
+    border: 5px double #2d54a4 !important;
+  }
+  .ticket-5::after {
+    border: 1px solid #93a9d5 !important;
+  }
+  .ticket-9::before {
+    border: 3px solid #873b65 !important;
+    border-radius: 2mm !important;
+  }
+  .ticket-9::after {
+    border: 2px dotted #d89abb !important;
+    border-radius: 2mm !important;
+  }
+  .ticket-10::before {
+    border: 3px solid #c49b3a !important;
+    box-shadow: inset 0 0 0 2px #1e3553 !important;
+  }
+  .ticket-10::after {
+    border: 1px solid #c49b3a !important;
+  }
+
+  .ticket-content {
+    position: relative !important;
+    z-index: 1 !important;
+  }
+
+  /* Prevent the hall-ticket's preview scrollers from clipping it. */
+  .overflow-x-auto,
+  .overflow-auto {
+    overflow: visible !important;
+  }
+
+  .ticket-schedule th,
+  .ticket-schedule td,
+  .ticket-schedule-frame {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 }
