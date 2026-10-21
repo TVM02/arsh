@@ -351,11 +351,29 @@ function MadrasaDropdown({
   );
 }
 
+
+
 function HallTicketPaper({ ticket, settings, paperRef }) {
   const grade = String(ticket.className || "Class 5").replace(/\D/g, "") || "5";
   const rows = settings.timetables?.[ticket.className] || [];
+  const formatDateDDMMYYYY = (dateString) => {
+  if (!dateString) return "";
+
+  const [year, month, day] = String(dateString).split("-");
+
+  if (!year || !month || !day) return dateString;
+
+  return `${day}-${month}-${year}`;
+};
   return (
     <div ref={paperRef} className={`ticket-paper ticket-${grade}`} id="dkju-printable-hall-ticket">
+<div className="ticket-corner ticket-corner-tl" aria-hidden="true" />
+  <div className="ticket-corner ticket-corner-tr" aria-hidden="true" />
+  <div className="ticket-corner ticket-corner-bl" aria-hidden="true" />
+  <div className="ticket-corner ticket-corner-br" aria-hidden="true" />
+
+  <div className="ticket-inner-page-border" aria-hidden="true" />
+
       {/* Second decorative A4 page border (requires .ticket-inner-page-border CSS) */}
       <div className="ticket-inner-page-border" aria-hidden="true" />
       <div className="ticket-content">
@@ -380,13 +398,10 @@ function HallTicketPaper({ ticket, settings, paperRef }) {
               <span className="k">Gender:</span>
               <span className="v">{ticket.gender || "________"}</span>
             </div>
-            <div className="ticket-field">
-              <span className="k">Class:</span>
-              <span className="v">{ticket.className || "________"}</span>
-            </div>
+          
             <div className="ticket-field full">
               <span className="k">Exam Center:</span>
-              <span className="v">{ticket.madarsaName || "—"}</span>
+              <span className="v">{ticket.madarsaName  || "—"} {ticket.madarsaId && `(${ticket.madarsaId})`}</span>
             </div>
         
             <div className="ticket-field full">
@@ -417,11 +432,35 @@ function HallTicketPaper({ ticket, settings, paperRef }) {
             <th className="col-date">Date</th><th className="col-subject">Subject</th><th className="col-time">Time</th><th className="col-duration">Duration</th>
           </tr></thead>
           <tbody>
-            {rows.length ? rows.map((row, idx)=>(<tr key={idx}>
-              <td>{row.date}</td><td>{row.subject}</td><td>{row.time}</td><td>{row.duration}</td>
-            </tr>)) : <tr><td colSpan={4} className="ticket-loading">Timetable is not configured for this class.</td></tr>}
-            {Array.from({length:Math.max(0,7-rows.length)},(_,i)=>(<tr key={`blank-${i}`}><td> </td><td> </td><td> </td><td> </td></tr>))}
-          </tbody>
+  {rows.length ? (
+    rows.map((row, idx) => (
+      <tr key={idx}>
+        <td>{formatDateDDMMYYYY(row.date)}</td>
+        <td>{row.subject}</td>
+        <td>{row.time}</td>
+        <td>{row.duration}</td>
+      </tr>
+    ))
+  ) : (
+    <tr>
+      <td colSpan={4} className="ticket-loading">
+        Timetable is not configured for this class.
+      </td>
+    </tr>
+  )}
+
+  {Array.from(
+    { length: Math.max(0, 4 - rows.length) },
+    (_, i) => (
+      <tr key={`blank-${i}`}>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+      </tr>
+    )
+  )}
+</tbody>
         </table>
         </div>
         <div className="ticket-terms-title">നിബന്ധനകൾ</div>
@@ -441,7 +480,7 @@ function HallTicketPaper({ ticket, settings, paperRef }) {
             <span className="sign-role">Supervisor Name &amp; Signature</span>
           </div>
         </div>
-        <div className="ticket-bottom">DKIMV Public Examination • ADMIT CARD</div>
+        <div className="ticket-bottom">DKIMV Public Examination • ADMIT CARD<br />QR Code for Authorized Examination Board Verification.</div>
       </div>
     </div>
   );

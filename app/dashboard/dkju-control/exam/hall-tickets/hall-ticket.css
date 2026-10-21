@@ -92,15 +92,20 @@
   --soft: #eaf0fc;
 
   border: 7px double #2d54a4;
+  
 }
 
 .ticket-5::before {
-  border: 5px double #2d54a4;
+  border: 5px groove #2d54a4;
+  border-start-start-radius: 30px;
+  border-end-end-radius: 30px;
 }
 
 .ticket-5::after {
   inset: 7mm;
-  border: 1px solid #93a9d5;
+  border: 1px dotted #93a9d5;
+  border-start-start-radius: 30px;
+  border-end-end-radius: 30px;
 }
 
 /* ============================================
@@ -793,4 +798,111 @@
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
+
+  .ticket-corner {
+    opacity: 0.18 !important;
+
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
 }
+
+
+/* =========================================
+   HALL TICKET CORNER IMAGE
+   LIGHT + PROFESSIONAL
+   ========================================= */
+
+.ticket-corner {
+  position: absolute;
+
+  width: 52mm;
+  height: 52mm;
+
+  background-image: url("/model-exam/hall-ticket-corner.png");
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  background-position: center;
+
+  pointer-events: none;
+
+  /*
+   * Keep the Islamic decoration very light
+   * so text remains completely readable.
+   */
+  opacity: 0.18;
+
+  z-index: 0;
+
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+
+/* =========================================
+   TOP LEFT
+   ========================================= */
+
+.ticket-corner-tl {
+  top: 3mm;
+  left: 3mm;
+}
+
+
+/* =========================================
+   TOP RIGHT
+   ========================================= */
+
+.ticket-corner-tr {
+  top: 3mm;
+  right: 3mm;
+
+  transform: scaleX(-1);
+}
+
+
+/* =========================================
+   BOTTOM LEFT
+   ========================================= */
+
+.ticket-corner-bl {
+  bottom: 3mm;
+  left: 3mm;
+
+  transform: scaleY(-1);
+}
+
+
+/* =========================================
+   BOTTOM RIGHT
+   ========================================= */
+
+.ticket-corner-br {
+  bottom: 3mm;
+  right: 3mm;
+
+  transform: scale(-1, -1);
+}
+
+
+/* =========================================
+   CONTENT MUST STAY ABOVE IMAGE
+   ========================================= */
+
+.ticket-content {
+  position: relative;
+  z-index: 1;
+}
+
+
+/* =========================================
+   INNER BORDER ABOVE CORNER
+   ========================================= */
+
+.ticket-inner-page-border {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+}
+
+
