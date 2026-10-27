@@ -961,17 +961,8 @@ export default function StudentDashboard() {
   ======================================================= */
 
   const studentClass =
-    studentData
-      ?.assignedDigitalTeacherClass ||
-    studentData
-      ?.applyingclass ||
-    studentData
-      ?.classLevel ||
-    studentData
-      ?.className ||
-    studentData
-      ?.class ||
-    "N/A";
+
+    studentData?.applyingclass
 
 
   /* =======================================================

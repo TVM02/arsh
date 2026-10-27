@@ -18,22 +18,17 @@ import {
   ShieldCheck,
   Star,
 } from "lucide-react";
-
+import { connectDigitalGoogleAccount } from "@/lib/digitalGoogleAuth";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import PortalOtpVerification from "@/components/PortalOtpVerification";
+
 import PasswordAttemptNotice from "@/components/PasswordAttemptNotice";
 
 import useAuthStore from "@/lib/authStore";
 
 import {
-  getLoginAttemptState,
-  REGISTERED_PHONE_REQUIRED_MESSAGE,
-  pickPhone,
-  recordLoginFailure,
-  requestPortalOtp,
-  prewarmRecaptcha,
-  resetLoginFailures,
-  withVerifiedOtpSession,
+  getLoginAttemptState, 
+  recordLoginFailure,  
+  resetLoginFailures,  
 } from "@/lib/portalAuthSecurity";
 
 import {
@@ -71,9 +66,11 @@ export default function StudentLoginPage() {
     getLoginAttemptState(PORTAL_KEY, "")
   );
 
-  const [otpChallenge, setOtpChallenge] = useState(null);
-  const [pendingLogin, setPendingLogin] = useState(null);
+
   const [isRedirecting, setIsRedirecting] = useState(false);
+  const [showGoogleConnect, setShowGoogleConnect] = useState(false);
+const [googleConnecting, setGoogleConnecting] = useState(false);
+const [googleConnectError, setGoogleConnectError] = useState("");
 
   const router = useRouter();
 
@@ -132,7 +129,32 @@ export default function StudentLoginPage() {
     );
   }, [formData.email]);
 
+const handleConnectGoogle = async () => {
+  if (googleConnecting) return;
 
+  setGoogleConnecting(true);
+  setGoogleConnectError("");
+
+  try {
+    await connectDigitalGoogleAccount("student");
+
+    setShowGoogleConnect(false);
+
+    router.push("/dashboard/digital-student");
+  } catch (error) {
+    console.error(
+      "DIGITAL STUDENT GOOGLE CONNECTION ERROR:",
+      error
+    );
+
+    setGoogleConnectError(
+      error?.message ||
+        "Unable to connect your Google account."
+    );
+  } finally {
+    setGoogleConnecting(false);
+  }
+};
   // ==========================================
   // PRE-WARM RECAPTCHA
   // Production only
@@ -190,146 +212,7 @@ export default function StudentLoginPage() {
   };
 
 
-  // ==========================================
-  // START OTP CHALLENGE
-  // ==========================================
-
-  const startOtpChallenge = async ({
-    user,
-    userData,
-    studentData,
-    isNewUser = false,
-    restoreCustomToken = null,
-  }) => {
-
-    const phone = pickPhone(
-      studentData?.phone,
-      studentData?.guardianPhone
-    );
-
-    if (!phone) {
-
-      setError(
-        REGISTERED_PHONE_REQUIRED_MESSAGE
-      );
-
-      return;
-    }
-
-
-    const otpPayload = {
-
-      portal: "Digital Classroom Student Portal",
-
-      role: "student",
-
-      userId: user.uid,
-
-      email: studentData?.email,
-
-      name:
-        studentData?.fullName ||
-        studentData?.name ||
-        "Student",
-
-      phone,
-
-      identifier: formData.email,
-    };
-
-
-    const challenge =
-      await requestPortalOtp(
-        otpPayload
-      );
-
-
-    resetLoginFailures(
-      PORTAL_KEY,
-      formData.email
-    );
-
-
-    setAttemptState(
-      getLoginAttemptState(
-        PORTAL_KEY,
-        formData.email
-      )
-    );
-
-
-    setPendingLogin({
-
-      user,
-
-      userData,
-
-      studentData,
-
-      isNewUser,
-
-      restoreCustomToken,
-
-      otpPayload,
-    });
-
-
-    setOtpChallenge(challenge);
-
-
-    toast.success(
-      "OTP sent to registered number."
-    );
-  };
-
-
-  // ==========================================
-  // RESEND OTP
-  // ==========================================
-
-  const handleResendOtp = async () => {
-
-    if (!pendingLogin?.otpPayload) {
-      return;
-    }
-
-
-    try {
-
-      const newChallenge =
-        await requestPortalOtp(
-          pendingLogin.otpPayload
-        );
-
-
-      setOtpChallenge(
-        newChallenge
-      );
-
-
-      toast.success(
-        "New OTP sent to registered number."
-      );
-
-    } catch (error) {
-
-      console.error(
-        "OTP resend error:",
-        error
-      );
-
-
-      setError(
-        error?.message ||
-        "Unable to resend OTP. Please try again."
-      );
-    }
-  };
-
-
-  // ==========================================
-  // COMPLETE OTP LOGIN
-  // ==========================================
+ 
 
   const completeOtpLogin = async () => {
 
@@ -362,56 +245,36 @@ export default function StudentLoginPage() {
 
 
       // Store authenticated user
-      setUser(
-        sessionUser
-      );
+     setUser(sessionUser);
 
+const verifiedUserData =
+  withVerifiedOtpSession(
+    pendingLogin.userData
+  );
 
-      // Mark OTP verified
-      setUserData(
-        withVerifiedOtpSession(
-          pendingLogin.userData
-        )
-      );
+setUserData(verifiedUserData);
 
+/*
+ * First Digital Student login:
+ * Google account must be connected.
+ *
+ * Existing Google connection:
+ * Continue directly to dashboard.
+ */
+const googleAuth =
+  verifiedUserData?.googleAuth;
 
-      // ==========================================
-      // LOGIN LOGGING
-      // ==========================================
+if (
+  !googleAuth?.connected
+) {
+  setShowGoogleConnect(true);
+  setIsRedirecting(false);
+  return;
+}
 
-      getUserLocation()
-        .then((location) => {
-
-          logLoginDetails(
-
-            sessionUser,
-
-            "student",
-
-            location,
-
-            pendingLogin.studentData?.fullName ||
-              pendingLogin.studentData?.name ||
-              "Student",
-
-            pendingLogin.isNewUser
-
-          ).catch((err) => {
-
-            console.error(
-              "Logging failed:",
-              err
-            );
-
-          });
-        });
-
-
-   
-
-      router.push(
-        "/dashboard/digital-student "
-      );
+router.push(
+  "/dashboard/digital-student"
+);
 
 
     } catch (error) {
@@ -436,173 +299,89 @@ export default function StudentLoginPage() {
   // ==========================================
   // LOGIN SUBMIT
   // ==========================================
+const handleSubmit = async (e) => {
+  e.preventDefault();
+  setLoading(true);
+  setError("");
 
-  const handleSubmit = async (e) => {
+  const email = formData.email.trim();
 
-    e.preventDefault();
+  try {
+    // Check login attempts
+    const currentAttemptState = getLoginAttemptState(
+      PORTAL_KEY,
+      email
+    );
 
-    setLoading(true);
-    setError("");
+    setAttemptState(currentAttemptState);
 
-
-    try {
-
-      // ==========================================
-      // CHECK LOGIN ATTEMPTS
-      // ==========================================
-
-      const currentAttemptState =
-        getLoginAttemptState(
-          PORTAL_KEY,
-          formData.email
-        );
-
-
-      setAttemptState(
-        currentAttemptState
+    if (currentAttemptState.locked) {
+      setError(
+        "Too many wrong password attempts. Login is temporarily blocked."
       );
-
-
-      if (
-        currentAttemptState.locked
-      ) {
-
-        setError(
-          "Too many wrong password attempts. Login is temporarily blocked."
-        );
-
-        return;
-      }
-
-
-      // ==========================================
-      // EXISTING STUDENT LOGIN
-      // ==========================================
-
-      const login =
-        await securePortalLogin({
-
-          portal: PORTAL_KEY,
-
-          identifier:
-            formData.email.trim(),
-
-          password:
-            formData.password,
-        });
-
-
-           // ==========================================
-      // PRODUCTION
-      // NORMAL OTP LOGIN
-      // ==========================================
-if (
-        process.env.NODE_ENV ===
-        "development"
-      ) {
-
-        let sessionUser =
-          login.user;
-
-
-        if (
-          login.restoreCustomToken
-        ) {
-
-          sessionUser =
-            (
-              await restorePortalFirebaseSession(
-                login.restoreCustomToken
-              )
-            ) || sessionUser;
-        }
-
-
-        setUser(
-          sessionUser
-        );
-
-
-        // IMPORTANT:
-        // Don't mark OTP as verified
-        // because localhost is bypassing OTP.
-        setUserData(
-          login.userData
-        );
-
-
-        resetLoginFailures(
-          PORTAL_KEY,
-          formData.email
-        );
-
-
-        toast.success(
-          "Development login successful"
-        );
-
-
-        router.push(
-          "/dashboard/digital-student"
-        );
-
-
-        return;
-      }
-
-      await startOtpChallenge({
-
-        user:
-          login.user,
-
-        userData:
-          login.userData,
-
-        studentData:
-          login.userData,
-
-        restoreCustomToken:
-          login.restoreCustomToken,
-      });
-
-
-    } catch (error) {
-
-      console.error(
-        "Login error:",
-        error
-      );
-
-
-      const message =
-        error?.message || "";
-
-
-      if (
-        message
-          .toLowerCase()
-          .includes("invalid")
-      ) {
-
-        failPasswordAttempt(
-          "Invalid username or password. Please try again."
-        );
-
-      } else {
-
-        setError(
-          message ||
-          "An error occurred during login. Please try again."
-        );
-      }
-
-    } finally {
-
-      setLoading(false);
-
+      return;
     }
-  };
 
+    // Authenticate using email and password
+    const login = await securePortalLogin({
+      portal: PORTAL_KEY,
+      identifier: email,
+      password: formData.password,
+    });
+
+    // Restore Firebase session
+    let sessionUser = login.user;
+
+    if (login.restoreCustomToken) {
+      sessionUser =
+        (await restorePortalFirebaseSession(
+          login.restoreCustomToken
+        )) || sessionUser;
+    }
+
+    // Save authenticated user
+    setUser(sessionUser);
+    setUserData(login.userData);
+
+    // Reset failed login attempts
+    resetLoginFailures(PORTAL_KEY, email);
+
+    setAttemptState(
+      getLoginAttemptState(PORTAL_KEY, email)
+    );
+
+    toast.success("Student login successful!");
+
+    // Check Google account connection
+    const googleAuth = login.userData?.googleAuth;
+
+    if (!googleAuth?.connected) {
+      setShowGoogleConnect(true);
+      return;
+    }
+
+    // Direct dashboard access
+    router.push("/dashboard/digital-student");
+
+  } catch (error) {
+    console.error("Login error:", error);
+
+    const message = error?.message || "";
+
+    if (message.toLowerCase().includes("invalid")) {
+      failPasswordAttempt(
+        "Invalid username or password. Please try again."
+      );
+    } else {
+      setError(
+        message ||
+        "An error occurred during login. Please try again."
+      );
+    }
+  } finally {
+    setLoading(false);
+  }
+};
 
   // ==========================================
   // REDIRECTING SCREEN
@@ -936,11 +715,9 @@ if (
           <div className="rounded-[32px] border border-slate-200/80 bg-white/90 p-6 shadow-[0_25px_80px_rgba(15,23,42,0.10)] backdrop-blur-xl sm:p-9">
 
 
-            {/* ======================================
-                IF OTP NOT STARTED
-            ====================================== */}
+     
 
-            {!otpChallenge ? (
+   
 
               <>
 
@@ -1152,9 +929,7 @@ if (
 
                         <span>
 
-                          {process.env.NODE_ENV === "development"
-                            ? "Logging in..."
-                            : "Sending OTP..."}
+                          Logging in...
 
                         </span>
 
@@ -1166,9 +941,7 @@ if (
 
                         <span>
 
-                          {process.env.NODE_ENV === "development"
-                            ? "Login"
-                            : "Send OTP"}
+                         Login
 
                         </span>
 
@@ -1242,78 +1015,7 @@ if (
 
               </>
 
-            ) : (
-
-              /* ======================================
-                  OTP VERIFICATION
-              ====================================== */
-
-              <>
-
-                <div className="mb-6 text-center">
-
-                  <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-teal-100">
-
-                    <ShieldCheck className="h-8 w-8 text-teal-600" />
-
-                  </div>
-
-
-                  <h2 className="mt-4 text-2xl font-extrabold text-slate-900">
-
-                    Verify{" "}
-
-                    <span className="text-teal-600">
-                      OTP
-                    </span>
-
-                  </h2>
-
-
-                  <p className="mt-2 text-sm text-slate-500">
-
-                    Enter the OTP sent to your registered mobile number.
-
-                  </p>
-
-                </div>
-
-
-                {error && (
-
-                  <Alert
-                    variant="destructive"
-                    className="mb-5 border-red-200 bg-red-50 text-red-800"
-                  >
-
-                    <AlertDescription className="font-medium">
-
-                      {error}
-
-                    </AlertDescription>
-
-                  </Alert>
-                )}
-
-
-                <PortalOtpVerification
-                  challenge={otpChallenge}
-                  onVerified={completeOtpLogin}
-                  onResend={handleResendOtp}
-                  onCancel={() => {
-
-                    setOtpChallenge(null);
-
-                    setPendingLogin(null);
-
-                    setError("");
-
-                  }}
-                />
-
-              </>
-
-            )}
+            
 
           </div>
 
@@ -1435,7 +1137,77 @@ if (
         </div>
 
       </div>
+{showGoogleConnect && (
+  <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm">
+    <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+      <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
+        <svg
+          viewBox="0 0 24 24"
+          className="h-7 w-7"
+          aria-hidden="true"
+        >
+          <path
+            fill="#4285F4"
+            d="M21.35 12.27c0-.68-.06-1.34-.17-1.97H12v3.73h5.23a4.47 4.47 0 0 1-1.94 2.93v2.44h3.14c1.84-1.69 2.92-4.18 2.92-7.13Z"
+          />
+          <path
+            fill="#34A853"
+            d="M12 21.75c2.63 0 4.84-.87 6.45-2.35l-3.14-2.44c-.87.58-1.98.93-3.31.93-2.54 0-4.69-1.72-5.46-4.03H3.29v2.52A9.75 9.75 0 0 0 12 21.75Z"
+          />
+          <path
+            fill="#FBBC05"
+            d="M6.54 13.86A5.86 5.86 0 0 1 6.23 12c0-.65.11-1.28.31-1.86V7.62H3.29A9.75 9.75 0 0 0 2.25 12c0 1.57.38 3.05 1.04 4.38l3.25-2.52Z"
+          />
+          <path
+            fill="#EA4335"
+            d="M12 6.11c1.43 0 2.71.49 3.72 1.45l2.79-2.79C16.83 3.23 14.63 2.25 12 2.25a9.75 9.75 0 0 0-8.71 5.37l3.25 2.52C7.31 7.83 9.46 6.11 12 6.11Z"
+          />
+        </svg>
+      </div>
 
+      <div className="text-center">
+        <h2 className="text-xl font-semibold text-slate-900">
+          Connect Your Google Account
+        </h2>
+
+        <p className="mt-2 text-sm leading-6 text-slate-500">
+          To continue using DKJU Digital Classroom,
+          connect your Google account. This is a
+          one-time verification.
+        </p>
+      </div>
+
+      {googleConnectError && (
+        <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {googleConnectError}
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={handleConnectGoogle}
+        disabled={googleConnecting}
+        className="mt-6 flex w-full items-center justify-center gap-3 rounded-xl bg-slate-900 px-4 py-3.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {googleConnecting ? (
+          <>
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+            Connecting...
+          </>
+        ) : (
+          <>
+            Continue with Google
+          </>
+        )}
+      </button>
+
+      <p className="mt-4 text-center text-xs text-slate-400">
+        Your Google account will be linked to your
+        existing DKJU account.
+      </p>
+    </div>
+  </div>
+)}
     </main>
   );
 }

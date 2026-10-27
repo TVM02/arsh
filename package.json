@@ -59,6 +59,7 @@
     "firebase": "^12.0.0",
     "firebase-admin": "^13.7.0",
     "glob": "^13.0.6",
+    "googleapis": "^188.0.0",
     "html2canvas": "^1.4.1",
     "html2pdf.js": "^0.12.1",
     "input-otp": "^1.2.4",

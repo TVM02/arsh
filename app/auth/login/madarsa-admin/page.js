@@ -23,17 +23,12 @@ import {
   restorePortalFirebaseSession,
   securePortalLogin,
 } from "@/lib/securePortalLogin";
-import PortalOtpVerification from "@/components/PortalOtpVerification";
+
 import PasswordAttemptNotice from "@/components/PasswordAttemptNotice";
 import {
   getLoginAttemptState,
-  REGISTERED_PHONE_REQUIRED_MESSAGE,
-  pickPhone,
   recordLoginFailure,
-  requestPortalOtp,
-  prewarmRecaptcha,
   resetLoginFailures,
-  withVerifiedOtpSession,
 } from "@/lib/portalAuthSecurity";
 
 const PORTAL_KEY = "madarsa-admin";
@@ -49,8 +44,7 @@ export default function MahalAdminLogin() {
   const [attemptState, setAttemptState] = useState(
     getLoginAttemptState(PORTAL_KEY, ""),
   );
-  const [otpChallenge, setOtpChallenge] = useState(null);
-  const [pendingLogin, setPendingLogin] = useState(null);
+
   const [isRedirecting, setIsRedirecting] = useState(false);
   const router = useRouter();
   const { setUser, setUserData } = useAuthStore();
@@ -60,126 +54,106 @@ export default function MahalAdminLogin() {
   }, [formData.email]);
 
   // Pre-warm the invisible reCAPTCHA silently when the page loads
-  useEffect(() => {
-    prewarmRecaptcha();
-  }, []);
+ 
 
-  const startOtpLogin = async ({
-    user,
-    userData,
-    madarsaData,
-    loginPhone,
-    isNewUser = false,
-    restoreCustomToken = null,
-  }) => {
-    const phone = pickPhone(madarsaData.adminPhone, loginPhone, madarsaData.phone);
-    if (!phone) {
-      setError(REGISTERED_PHONE_REQUIRED_MESSAGE);
+
+
+
+
+const handleSubmit = async (e) => {
+  e.preventDefault();
+  setLoading(true);
+  setError("");
+
+  const email = formData.email.trim();
+
+  try {
+    const currentAttemptState = getLoginAttemptState(
+      PORTAL_KEY,
+      email
+    );
+
+    setAttemptState(currentAttemptState);
+
+    if (currentAttemptState.locked) {
+      setError(
+        "Too many wrong password attempts. Login is temporarily blocked."
+      );
       return;
     }
 
-    const otpPayload = {
-      portal: "Sadar Admin Portal",
-      role: "madarsa_admin",
-      userId: user.uid,
-      email: madarsaData.adminEmail,
-      name: madarsaData.adminName,
-      phone,
-      identifier: formData.email,
-    };
-    const challenge = await requestPortalOtp(otpPayload);
-    resetLoginFailures(PORTAL_KEY, formData.email);
-    setAttemptState(getLoginAttemptState(PORTAL_KEY, formData.email));
-    setPendingLogin({
-      user,
-      userData,
-      adminName: madarsaData.adminName,
-      isNewUser,
-      restoreCustomToken,
-      otpPayload,
+    // Login using email and password only
+    const login = await securePortalLogin({
+      portal: PORTAL_KEY,
+      identifier: email,
+      password: formData.password,
     });
-    setOtpChallenge(challenge);
-    toast.success("OTP sent to registered number.");
-  };
 
-  const handleResendOtp = async () => {
-    if (!pendingLogin?.otpPayload) return;
-    const newChallenge = await requestPortalOtp(pendingLogin.otpPayload);
-    setOtpChallenge(newChallenge);
-    toast.success("New OTP sent to registered number.");
-  };
+    // Restore Firebase session if required
+    let sessionUser = login.user;
 
-  const completeOtpLogin = async () => {
-    if (!pendingLogin) return;
-    setIsRedirecting(true);
-    let sessionUser = pendingLogin.user;
-    if (pendingLogin.restoreCustomToken) {
+    if (login.restoreCustomToken) {
       sessionUser =
-        (await restorePortalFirebaseSession(pendingLogin.restoreCustomToken)) ||
-        sessionUser;
+        (await restorePortalFirebaseSession(
+          login.restoreCustomToken
+        )) || sessionUser;
     }
+
+    // Set authenticated user
     setUser(sessionUser);
-    setUserData(withVerifiedOtpSession(pendingLogin.userData));
+    setUserData(login.userData);
+
+    // Reset failed login attempts
+    resetLoginFailures(PORTAL_KEY, email);
+
+    setAttemptState(
+      getLoginAttemptState(PORTAL_KEY, email)
+    );
+
     toast.success("Login successful! Welcome back.");
 
+    // Log login details
     getUserLocation().then((location) => {
       logLoginDetails(
         sessionUser,
         "madarsa_admin",
         location,
-        pendingLogin.adminName,
-        pendingLogin.isNewUser,
-      ).catch((err) => console.error("Logging failed:", err));
+        login.userData.fullName ||
+          login.userData.name ||
+          login.userData.adminName,
+        false
+      ).catch((err) =>
+        console.error("Logging failed:", err)
+      );
     });
 
+    // Navigate directly to dashboard
     router.push("/dashboard/madarsa");
-  };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setError("");
-    const email = formData.email.trim();
+  } catch (error) {
+    console.error("Login error:", error);
 
-    try {
-      const currentAttemptState = getLoginAttemptState(PORTAL_KEY, email);
-      setAttemptState(currentAttemptState);
-      if (currentAttemptState.locked) {
-        setError("Too many wrong password attempts. Login is temporarily blocked.");
-        return;
-      }
+    if (error.message?.includes("Invalid")) {
+      const nextState = recordLoginFailure(
+        PORTAL_KEY,
+        email
+      );
 
-      const login = await securePortalLogin({
-        portal: PORTAL_KEY,
-        identifier: email,
-        password: formData.password,
-      });
+      setAttemptState(nextState);
 
-      await startOtpLogin({
-        user: login.user,
-        userData: login.userData,
-        loginPhone: login.phone,
-        madarsaData: {
-          ...login.userData,
-          adminEmail: login.userData.email || login.userData.adminEmail,
-          adminName: login.userData.fullName || login.userData.name || login.userData.adminName,
-          adminPhone: login.userData.adminPhone || login.phone || login.userData.phone,
-        },
-        restoreCustomToken: login.restoreCustomToken,
-      });
-    } catch (error) {
-      console.error("Login error:", error);
-      if (error.message?.includes("Invalid")) {
-        const nextState = recordLoginFailure(PORTAL_KEY, email);
-        setAttemptState(nextState);
-        setError("Invalid email or password. Please check your credentials.");
-      } else {
-        setError(error.message || "An error occurred during login. Please try again.");
-      }
-    } finally {
-      setLoading(false);
+      setError(
+        "Invalid email or password. Please check your credentials."
+      );
+    } else {
+      setError(
+        error.message ||
+        "An error occurred during login. Please try again."
+      );
     }
-  };
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleChange = (e) => {
     setFormData({
@@ -229,7 +203,7 @@ export default function MahalAdminLogin() {
           </CardHeader>
 
           <CardContent className="p-6">
-            {!otpChallenge ? (
+          
               <form onSubmit={handleSubmit} className="space-y-6">
                 <PasswordAttemptNotice attemptState={attemptState} />
 
@@ -302,24 +276,14 @@ export default function MahalAdminLogin() {
                   {loading ? (
                     <div className="flex items-center space-x-2">
                       <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      <span>Sending OTP...</span>
+                      <span>Logging in...</span>
                     </div>
                   ) : (
-                    "Send OTP"
+                    "Login"
                   )}
                 </Button>
               </form>
-            ) : (
-              <PortalOtpVerification
-                challenge={otpChallenge}
-                onVerified={completeOtpLogin}
-                onResend={handleResendOtp}
-                onCancel={() => {
-                  setOtpChallenge(null);
-                  setPendingLogin(null);
-                }}
-              />
-            )}
+            
 
             <div className="mt-8 space-y-6">
               <div className="text-center">

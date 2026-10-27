@@ -193,6 +193,8 @@ export default function CentralAdminTeachersPage() {
   const [meetEditingClass, setMeetEditingClass] = useState("");
   const [meetLink, setMeetLink] = useState("");
   const [meetSavingClass, setMeetSavingClass] = useState("");
+  const [meetAccessTestLoading, setMeetAccessTestLoading] = useState(false);
+const [meetAccessTestResult, setMeetAccessTestResult] = useState(null);
 
 
 const [
@@ -559,6 +561,69 @@ const normalizeMeetClass = (
    LOAD THIS TEACHER'S MEET ROOMS
 ========================================================= */
 
+
+const handleTestGoogleMeetAccess = async () => {
+  try {
+    setMeetAccessTestLoading(true);
+    setMeetAccessTestResult(null);
+
+    const currentUser = auth.currentUser;
+
+    if (!currentUser) {
+      throw new Error("Please login again.");
+    }
+
+    const token = await currentUser.getIdToken();
+
+    const response = await fetch(
+      "/api/digital-classroom/admin/google-meet/access",
+      {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          roomId: "ONQUumkh2GXmPzG1ARPzXKJQr1f2__1",
+        }),
+      }
+    );
+
+    const raw = await response.text();
+    let data = {};
+
+    try {
+      data = raw ? JSON.parse(raw) : {};
+    } catch {
+      throw new Error(
+        `Invalid API response. HTTP ${response.status}`
+      );
+    }
+
+    setMeetAccessTestResult({
+      httpStatus: response.status,
+      ...data,
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        data?.message ||
+          data?.error ||
+          `Access test failed. HTTP ${response.status}`
+      );
+    }
+
+    toast.success(data?.message || "Access test completed.");
+  } catch (error) {
+    console.error("GOOGLE MEET ACCESS TEST ERROR:", error);
+    toast.error(error?.message || "Google Meet access test failed.");
+  } finally {
+    setMeetAccessTestLoading(false);
+  }
+};
+
+
 const loadTeacherMeetRooms =
   async () => {
 
@@ -850,12 +915,17 @@ const handleCreateGoogleMeet =
 
 
       if (!response.ok) {
+  console.error("CREATE GOOGLE MEET ERROR:", {
+    status: response.status,
+    data,
+  });
 
-        throw new Error(
-          data?.message ||
-          "Unable to create Google Meet."
-        );
-      }
+  throw new Error(
+    data?.message ||
+    data?.error ||
+    `Unable to create Google Meet. HTTP ${response.status}`
+  );
+}
 
 
     if (
@@ -3783,6 +3853,46 @@ const handleInactiveTeacher =
                              selectedTeacher.madarsaName
                            }
                          />
+                         <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+  <div className="flex items-center justify-between gap-3 mb-1">
+    <label className="text-sm font-medium text-gray-500">
+      Google Account
+    </label>
+
+    <Badge
+      className={
+        selectedTeacher?.googleAuth?.connected === true
+          ? "bg-green-100 text-green-700 border border-green-200"
+          : "bg-gray-100 text-gray-600 border border-gray-200"
+      }
+    >
+      {selectedTeacher?.googleAuth?.connected === true
+        ? "Connected"
+        : "Not Connected"}
+    </Badge>
+  </div>
+
+  <p className="text-sm font-medium text-gray-800 break-all">
+    {selectedTeacher?.googleAuth?.email || "Not connected"}
+  </p>
+
+  {selectedTeacher?.googleAuth?.connected === true && (
+    <Button
+      type="button"
+      variant="destructive"
+      size="sm"
+      className="mt-3"
+      onClick={() => {
+        setGoogleDeleteTeacherId(
+          selectedTeacher.id
+        );
+      }}
+    >
+      <Trash2 className="h-4 w-4 mr-2" />
+      Delete Google Account
+    </Button>
+  )}
+</div>
        
                        </InfoSection>
        
@@ -5731,6 +5841,32 @@ const handleInactiveTeacher =
                   "
                 />
               </div>
+
+<Button
+  type="button"
+  variant="outline"
+  disabled={meetAccessTestLoading}
+  onClick={handleTestGoogleMeetAccess}
+  className="border-amber-300 text-amber-800 hover:bg-amber-50"
+>
+  {meetAccessTestLoading ? (
+    <>
+      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+      Testing access...
+    </>
+  ) : (
+    <>
+      <ShieldCheck className="mr-2 h-4 w-4" />
+      Test Google Meet Access
+    </>
+  )}
+</Button>
+
+{meetAccessTestResult && (
+  <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs text-slate-700">
+    {JSON.stringify(meetAccessTestResult, null, 2)}
+  </pre>
+)}
 
 
               <div>

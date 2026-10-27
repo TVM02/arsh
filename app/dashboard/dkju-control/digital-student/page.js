@@ -58,6 +58,7 @@ import {
   getDigitalStudents,
   updateDigitalStudent,
   deleteDigitalStudent,
+  deleteDigitalStudentGoogleAuth,
 } from "@/lib/digitalClassStudentService";
 import {
   getDigitalTeachers,
@@ -127,6 +128,8 @@ export default function CentralAdminStudentsPage() {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
   const [deleteStudentId, setDeleteStudentId] = useState(null);
+  const [googleAuthDeleting, setGoogleAuthDeleting] =
+  useState(false);
   /* ============================================
    DIGITAL TEACHER ASSIGNMENT
 ============================================ */
@@ -860,6 +863,16 @@ await Promise.all(
         ...cleanData,
         updatedAt: new Date(),
       };
+      // Keep assignedDigitalTeacherClass synchronized with Applying Class
+if (
+  originalStudent &&
+  data.applyingclass &&
+  data.applyingclass !== originalStudent.applyingclass &&
+  originalStudent.teacherAssigned === true
+) {
+  updatePayload.assignedDigitalTeacherClass = data.applyingclass;
+}
+
 
       if (editForm.status === "inactive" && originalStudentStatus !== "inactive") {
         updatePayload.inactiveReason = inactivationReason.trim();
@@ -947,7 +960,58 @@ const toggleStudentSelection = (
   );
 };
 
+const handleDeleteGoogleAuth = async () => {
+  const uid =
+    selectedStudent?.uid ||
+    selectedStudent?.userId;
 
+  if (!uid) {
+    toast.error(
+      "Student UID not found."
+    );
+    return;
+  }
+
+  const confirmed =
+    window.confirm(
+      "Remove this student's connected Google account?\n\nThe student account and registration will not be deleted. They can connect a different Google account later."
+    );
+
+  if (!confirmed) {
+    return;
+  }
+
+  setGoogleAuthDeleting(true);
+
+  try {
+    await deleteDigitalStudentGoogleAuth(
+      uid
+    );
+
+    toast.success(
+      "Google account disconnected successfully."
+    );
+
+    setSelectedStudent((prev) => ({
+      ...prev,
+      googleAuth: null,
+    }));
+
+    await fetchStudents();
+  } catch (error) {
+    console.error(
+      "Delete Google Auth error:",
+      error
+    );
+
+    toast.error(
+      error?.message ||
+        "Unable to disconnect Google account."
+    );
+  } finally {
+    setGoogleAuthDeleting(false);
+  }
+};
 /* ============================================
    SELECT ALL CURRENT FILTERED STUDENTS
 ============================================ */
@@ -3740,6 +3804,43 @@ const handleInactiveStudent =
                             </p>
                           </div>
                         )}
+                        <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+  <div className="flex items-center justify-between gap-3 mb-1">
+    <label className="text-sm font-medium text-gray-500">
+      Google Account
+    </label>
+
+    <Badge
+      className={
+        selectedStudent.googleAuth?.connected === true
+          ? "bg-green-100 text-green-700 border border-green-200"
+          : "bg-gray-100 text-gray-600 border border-gray-200"
+      }
+    >
+      {selectedStudent.googleAuth?.connected === true
+        ? "Connected"
+        : "Not Connected"}
+    </Badge>
+  </div>
+
+  <p className="text-sm font-medium text-gray-800 break-all">
+    {selectedStudent.googleAuth?.email || "Not connected"}
+  </p>
+  {selectedStudent?.googleAuth?.connected === true && (
+  <Button
+    type="button"
+    variant="outline"
+    disabled={googleAuthDeleting}
+    onClick={handleDeleteGoogleAuth}
+    className="mt-3 w-full text-red-600 border-red-200 hover:bg-red-50"
+  >
+    <Trash2 className="h-4 w-4 mr-2" />
+    {googleAuthDeleting
+      ? "Removing..."
+      : "Delete Google Account"}
+  </Button>
+)}
+</div>
                       </div>
                     </div>
                   )}

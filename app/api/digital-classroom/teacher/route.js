@@ -163,15 +163,44 @@ export async function GET(request) {
         .get();
 
     const teachers =
-      snapshot.docs.map(
-        (doc) => ({
+  await Promise.all(
+    snapshot.docs.map(
+      async (doc) => {
+        const teacherData =
+          doc.data();
+const teacherUid =
+  teacherData.digitalTeacherUid ||
+  teacherData.uid ||
+  teacherData.userId;
+
+        let googleAuth = null;
+
+        if (teacherUid) {
+          const userSnapshot =
+            await db
+              .collection("users")
+              .doc(teacherUid)
+              .get();
+
+          if (userSnapshot.exists) {
+            googleAuth =
+              userSnapshot.data()?.googleAuth ||
+              null;
+          }
+        }
+
+        return {
           id: doc.id,
           ...serialize(
-            doc.data(),
+            teacherData,
           ),
-        }),
-      );
-
+          googleAuth: serialize(
+            googleAuth,
+          ),
+        };
+      },
+    ),
+  );
     return NextResponse.json(
       {
         success: true,

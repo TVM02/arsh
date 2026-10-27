@@ -1436,6 +1436,24 @@ async function loginDigitalStudent({
   }
 
   // ------------------------------------
+// Read latest users/{uid} profile
+//
+// This is important because Google
+// connection is stored in users/{uid}.
+// ------------------------------------
+
+const userSnapshot =
+  await db
+    .collection("users")
+    .doc(session.user.uid)
+    .get();
+
+const currentUserData =
+  userSnapshot.exists
+    ? userSnapshot.data() || {}
+    : {};
+
+  // ------------------------------------
   // Return login payload
   // ------------------------------------
 
@@ -1445,37 +1463,44 @@ async function loginDigitalStudent({
   user: session.user,
 
   userData: {
-    ...profile,
+  ...profile,
 
-    id: profile.id,
+  /*
+   * Latest users/{uid} data.
+   *
+   * This preserves Google connection
+   * and any other user-level settings.
+   */
+  ...currentUserData,
 
-    uid: session.user.uid,
+  id: profile.id,
 
-    email: loginEmail,
+  uid: session.user.uid,
 
-    studentEmail: loginEmail,
+  email: loginEmail,
 
-    role: "student",
+  studentEmail: loginEmail,
 
-    // IMPORTANT
-    userType: "digital_student",
+  role: "student",
 
-    status: profile.status,
+  userType: "digital_student",
 
-    accountStatus:
-      profile.accountStatus ||
-      "active",
+  status: profile.status,
 
-    paymentStatus:
-      profile.paymentStatus ||
-      "pending",
+  accountStatus:
+    profile.accountStatus ||
+    "active",
 
-    digitalClassAccess: true,
+  paymentStatus:
+    profile.paymentStatus ||
+    "pending",
 
-    digitalAdmissionNumber:
-      profile.digitalAdmissionNumber ||
-      null,
-  },
+  digitalClassAccess: true,
+
+  digitalAdmissionNumber:
+    profile.digitalAdmissionNumber ||
+    null,
+},
 
   phone:
     profile.phone ||

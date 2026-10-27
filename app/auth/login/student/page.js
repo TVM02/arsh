@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useState } from "react";
@@ -14,9 +15,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { GraduationCap, Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 import useAuthStore from "@/lib/authStore";
-import Header from "@/components/Header";
 import Image from "next/image";
 import { toast } from "sonner";
 import { getUserLocation, logLoginDetails } from "@/lib/loggingUtils";
@@ -24,47 +24,46 @@ import {
   restorePortalFirebaseSession,
   securePortalLogin,
 } from "@/lib/securePortalLogin";
-import PortalOtpVerification from "@/components/PortalOtpVerification";
 import PasswordAttemptNotice from "@/components/PasswordAttemptNotice";
 import {
   getLoginAttemptState,
-  REGISTERED_PHONE_REQUIRED_MESSAGE,
-  pickPhone,
   recordLoginFailure,
-  requestPortalOtp,
-  prewarmRecaptcha,
   resetLoginFailures,
-  withVerifiedOtpSession,
 } from "@/lib/portalAuthSecurity";
 
 const PORTAL_KEY = "student";
 
 export default function StudentLogin() {
-  const [formData, setFormData] = useState({ email: "", password: "" });
+  const [formData, setFormData] = useState({
+    email: "",
+    password: "",
+  });
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [attemptState, setAttemptState] = useState(
     getLoginAttemptState(PORTAL_KEY, ""),
   );
-  const [otpChallenge, setOtpChallenge] = useState(null);
-  const [pendingLogin, setPendingLogin] = useState(null);
   const [isRedirecting, setIsRedirecting] = useState(false);
+
   const router = useRouter();
   const { setUser, setUserData } = useAuthStore();
 
   useEffect(() => {
-    setAttemptState(getLoginAttemptState(PORTAL_KEY, formData.email));
+    setAttemptState(
+      getLoginAttemptState(PORTAL_KEY, formData.email),
+    );
   }, [formData.email]);
 
-  // Pre-warm the invisible reCAPTCHA silently when the page loads
-  useEffect(() => {
-    prewarmRecaptcha();
-  }, []);
-
   const failPasswordAttempt = (message) => {
-    const nextState = recordLoginFailure(PORTAL_KEY, formData.email);
+    const nextState = recordLoginFailure(
+      PORTAL_KEY,
+      formData.email,
+    );
+
     setAttemptState(nextState);
+
     setError(
       nextState.locked
         ? "Too many wrong password attempts. Login is temporarily blocked."
@@ -72,122 +71,96 @@ export default function StudentLogin() {
     );
   };
 
-  const startOtpChallenge = async ({
-    user,
-    userData,
-    studentData,
-    isNewUser = false,
-    restoreCustomToken = null,
-  }) => {
-    const phone = pickPhone(studentData.phone, studentData.guardianPhone);
-    if (!phone) {
-      setError(REGISTERED_PHONE_REQUIRED_MESSAGE);
-      return;
-    }
-
-    const otpPayload = {
-      portal: "Student Portal",
-      role: "student",
-      userId: user.uid,
-      email: studentData.email,
-      name: studentData.fullName || studentData.name,
-      phone,
-      identifier: formData.email,
-    };
-    const challenge = await requestPortalOtp(otpPayload);
-
-    resetLoginFailures(PORTAL_KEY, formData.email);
-    setAttemptState(getLoginAttemptState(PORTAL_KEY, formData.email));
-    setPendingLogin({
-      user,
-      userData,
-      studentData,
-      isNewUser,
-      restoreCustomToken,
-      otpPayload,
-    });
-    setOtpChallenge(challenge);
-    toast.success("OTP sent to registered number.");
-  };
-
-  const handleResendOtp = async () => {
-    if (!pendingLogin?.otpPayload) return;
-    const newChallenge = await requestPortalOtp(pendingLogin.otpPayload);
-    setOtpChallenge(newChallenge);
-    toast.success("New OTP sent to registered number.");
-  };
-
-  const completeOtpLogin = async () => {
-    if (!pendingLogin) return;
-    setIsRedirecting(true);
-    let sessionUser = pendingLogin.user;
-    if (pendingLogin.restoreCustomToken) {
-      sessionUser =
-        (await restorePortalFirebaseSession(pendingLogin.restoreCustomToken)) ||
-        sessionUser;
-    }
-    setUser(sessionUser);
-    setUserData(withVerifiedOtpSession(pendingLogin.userData));
-
-    getUserLocation().then((location) => {
-      logLoginDetails(
-        sessionUser,
-        "student",
-        location,
-        pendingLogin.studentData.fullName || pendingLogin.studentData.name,
-        pendingLogin.isNewUser,
-      ).catch((err) => console.error("Logging failed:", err));
-    });
-
-    router.push("/dashboard/student");
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
+
     setLoading(true);
     setError("");
 
     try {
-      const currentAttemptState = getLoginAttemptState(PORTAL_KEY, formData.email);
+      const currentAttemptState = getLoginAttemptState(
+        PORTAL_KEY,
+        formData.email,
+      );
+
       setAttemptState(currentAttemptState);
+
       if (currentAttemptState.locked) {
-        setError("Too many wrong password attempts. Login is temporarily blocked.");
+        setError(
+          "Too many wrong password attempts. Login is temporarily blocked.",
+        );
         return;
       }
 
+      // Login using email and password only
       const login = await securePortalLogin({
         portal: PORTAL_KEY,
         identifier: formData.email,
         password: formData.password,
       });
 
-      
+      if (!login?.user) {
+        throw new Error(
+          "Login failed. Please check your credentials and try again.",
+        );
+      }
 
-// PRODUCTION - NORMAL OTP LOGIN
-await startOtpChallenge({
-  user: login.user,
-  userData: login.userData,
-  studentData: login.userData,
-  restoreCustomToken: login.restoreCustomToken,
-});
+      // Restore Firebase session if a custom token is returned
+      let sessionUser = login.user;
+
+      if (login.restoreCustomToken) {
+        sessionUser =
+          (await restorePortalFirebaseSession(
+            login.restoreCustomToken,
+          )) || sessionUser;
+      }
+
+      // Set authenticated user and student data
+      setUser(sessionUser);
+      setUserData(login.userData);
+
+      // Reset failed login attempts
+      resetLoginFailures(PORTAL_KEY, formData.email);
+
+      setAttemptState(
+        getLoginAttemptState(PORTAL_KEY, formData.email),
+      );
+
+      // Log successful login
+      getUserLocation().then((location) => {
+        logLoginDetails(
+          sessionUser,
+          "student",
+          location,
+          login.userData?.fullName ||
+            login.userData?.name ||
+            "Student",
+        ).catch((err) =>
+          console.error("Logging failed:", err),
+        );
+      });
+
+      toast.success("Login successful!");
+
+      // Redirect to student dashboard
+      setIsRedirecting(true);
+      router.push("/dashboard/student");
     } catch (error) {
       console.error("Login error:", error);
-      if (error.message?.includes("Invalid")) {
-        failPasswordAttempt("Invalid password. Please try again.");
+
+      if (error.message?.toLowerCase().includes("invalid")) {
+        failPasswordAttempt(
+          "Invalid email or password. Please try again.",
+        );
       } else {
         setError(
-          error.message || "An error occurred during login. Please try again.",
+          error.message ||
+            "An error occurred during login. Please try again.",
         );
       }
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleGoogleSignIn = async () => {
-    setError(
-      "Google sign-in is not available for this portal. Please use email and password.",
-    );
   };
 
   const handleChange = (e) => {
@@ -202,8 +175,14 @@ await startOtpChallenge({
       <div className="min-h-screen bg-gradient-to-br from-red-50 via-pink-50 to-orange-50 flex items-center justify-center p-4">
         <div className="flex flex-col items-center justify-center space-y-4 bg-white/80 p-8 rounded-2xl shadow-xl backdrop-blur-sm">
           <div className="w-12 h-12 border-4 border-teal-600 border-t-transparent rounded-full animate-spin"></div>
-          <h2 className="text-xl font-semibold text-teal-800">Redirecting to Dashboard...</h2>
-          <p className="text-sm text-teal-600 text-center max-w-xs">Please wait while we securely set up your session and load the dashboard.</p>
+
+          <h2 className="text-xl font-semibold text-teal-800">
+            Redirecting to Dashboard...
+          </h2>
+
+          <p className="text-sm text-teal-600 text-center max-w-xs">
+            Please wait while we securely set up your session and load the dashboard.
+          </p>
         </div>
       </div>
     );
@@ -211,13 +190,25 @@ await startOtpChallenge({
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-teal-50 via-green-50 to-yellow-50 flex items-center flex-col justify-center p-4 relative overflow-hidden">
-      <div className="flex w-full md:w-fit items-center bg-teal-700 p-2 rounded-lg space-x-3 mb-4 md:fixed top-5 left-5 ">
+
+      {/* Logo */}
+      <div className="flex w-full md:w-fit items-center bg-teal-700 p-2 rounded-lg space-x-3 mb-4 md:fixed top-5 left-5">
         <div className="w-12 h-12 bg-gradient-to-br from-green-200 to-white rounded-xl flex items-center justify-center shadow-lg">
-          <Image src={"/logo.png"} alt="Logo" width={48} height={48} />
+          <Image
+            src="/logo.png"
+            alt="Logo"
+            width={48}
+            height={48}
+          />
         </div>
+
         <div>
-          <span className="text-xl font-bold  text-white">DKJU</span>
-          <p className="text-xs text-teal-100">Smart Islamic Education</p>
+          <span className="text-xl font-bold text-white">
+            DKJU
+          </span>
+          <p className="text-xs text-teal-100">
+            Smart Islamic Education
+          </p>
         </div>
       </div>
 
@@ -228,19 +219,23 @@ await startOtpChallenge({
 
       <div className="w-full max-w-md relative z-10">
         <Card className="shadow-2xl border-0 bg-white/95 backdrop-blur-sm">
+
           <CardHeader className="space-y-1 pb-6 bg-gradient-to-r from-teal-600 to-teal-700 text-white rounded-t-lg">
             <CardTitle className="text-2xl font-semibold text-center">
               Student Login
             </CardTitle>
+
             <CardDescription className="text-center text-teal-100">
               Enter your credentials to continue your Islamic education journey
             </CardDescription>
           </CardHeader>
 
           <CardContent className="p-6">
-            {!otpChallenge ? (
             <form onSubmit={handleSubmit} className="space-y-6">
-              <PasswordAttemptNotice attemptState={attemptState} />
+
+              <PasswordAttemptNotice
+                attemptState={attemptState}
+              />
 
               {error && (
                 <Alert
@@ -253,6 +248,7 @@ await startOtpChallenge({
                 </Alert>
               )}
 
+              {/* Email */}
               <div className="space-y-2">
                 <Label
                   htmlFor="email"
@@ -260,6 +256,7 @@ await startOtpChallenge({
                 >
                   Email Address
                 </Label>
+
                 <Input
                   id="email"
                   name="email"
@@ -271,6 +268,8 @@ await startOtpChallenge({
                   placeholder="student@example.com"
                 />
               </div>
+
+              {/* Password */}
               <div className="space-y-2">
                 <Label
                   htmlFor="password"
@@ -278,6 +277,7 @@ await startOtpChallenge({
                 >
                   Password
                 </Label>
+
                 <div className="relative">
                   <Input
                     id="password"
@@ -289,10 +289,13 @@ await startOtpChallenge({
                     className="h-12 pr-12 border-gray-200 focus:border-teal-500 focus:ring-teal-500 bg-gray-50 focus:bg-white transition-all duration-200"
                     placeholder="Enter your password"
                   />
+
                   <button
                     type="button"
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center  transition-colors"
-                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center transition-colors"
+                    onClick={() =>
+                      setShowPassword(!showPassword)
+                    }
                   >
                     {showPassword ? (
                       <EyeOff className="h-5 w-5 text-gray-400" />
@@ -303,42 +306,29 @@ await startOtpChallenge({
                 </div>
               </div>
 
+              {/* Login Button */}
               <Button
                 type="submit"
                 className="w-full h-12 bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 text-white font-semibold text-base shadow-lg hover:shadow-xl transform hover:scale-[1.02] transition-all duration-200"
                 disabled={loading}
               >
                 {loading ? (
-  <div className="flex items-center space-x-2">
-    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-    <span>
-      {process.env.NODE_ENV === "development"
-        ? "Logging in..."
-        : "Sending OTP..."}
-    </span>
-  </div>
-) : (
-  process.env.NODE_ENV === "development"
-    ? "Login"
-    : "Send OTP"
-)}
+                  <div className="flex items-center space-x-2">
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <span>Logging in...</span>
+                  </div>
+                ) : (
+                  "Login"
+                )}
               </Button>
             </form>
-            ) : (
-              <PortalOtpVerification
-                challenge={otpChallenge}
-                onVerified={completeOtpLogin}
-                onResend={handleResendOtp}
-                onCancel={() => {
-                  setOtpChallenge(null);
-                  setPendingLogin(null);
-                }}
-              />
-            )}
 
+            {/* Google Login - Coming Soon */}
             <div className="my-6 hidden items-center">
               <div className="flex-1 border-t border-gray-200"></div>
-              <span className="px-3 text-sm text-gray-500 bg-white">or</span>
+              <span className="px-3 text-sm text-gray-500 bg-white">
+                or
+              </span>
               <div className="flex-1 border-t border-gray-200"></div>
             </div>
 
@@ -368,11 +358,13 @@ await startOtpChallenge({
               Continue with Google (Coming Soon)
             </Button>
 
+            {/* Other Portals */}
             <div className="mt-8 space-y-6">
               <div className="text-center">
                 <p className="text-sm text-gray-600 mb-4">
                   Access other portals:
                 </p>
+
                 <div className="flex flex-wrap items-center justify-center gap-3 text-sm">
                   <Link
                     href="/auth/login/teacher"
@@ -380,31 +372,35 @@ await startOtpChallenge({
                   >
                     Teacher Portal
                   </Link>
+
                   <Link
                     href="/auth/login/madarsa-admin"
                     className="inline-flex items-center px-3 py-2 rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-100 hover:text-purple-800 font-medium transition-colors"
                   >
                     Sadar Admin
                   </Link>
-
                 </div>
               </div>
             </div>
           </CardContent>
         </Card>
 
+        {/* Footer */}
         <div className="mt-6 text-center">
-          <Link href="/" className="text-sm text-gray-500 hover:text-gray-700">
+          <Link
+            href="/"
+            className="text-sm text-gray-500 hover:text-gray-700"
+          >
             ← Back to Home
           </Link>
-          <div className="flex  bottom-0 w-full items-center text-center mt-8 justify-center  py-4  bg-teal-900">
+
+          <div className="flex bottom-0 w-full items-center text-center mt-8 justify-center py-4 bg-teal-900">
             <span className="text-sm text-white">
-              {"Contact technical Support : 8891177850"}
+              Contact technical Support : 8891177850
             </span>
           </div>
         </div>
       </div>
     </div>
-    
   );
 }

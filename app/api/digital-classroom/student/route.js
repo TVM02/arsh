@@ -17,25 +17,46 @@ export async function GET() {
 
     
 
-    const students = snapshot.docs.map((doc) => {
-      const data = doc.data();
+  const students = await Promise.all(
+  snapshot.docs.map(async (doc) => {
+    const data = doc.data();
 
-      return {
-        id: doc.id,
-        ...data,
+    const uid = data.uid || data.userId || doc.id;
 
-        // convert Firestore timestamps safely
-        createdAt:
-          data.createdAt?.toDate?.()?.toISOString?.() ||
-          data.createdAt ||
-          null,
+    let googleAuth = null;
 
-        updatedAt:
-          data.updatedAt?.toDate?.()?.toISOString?.() ||
-          data.updatedAt ||
-          null,
-      };
-    });
+    if (uid) {
+      const userSnapshot = await db
+        .collection("users")
+        .doc(uid)
+        .get();
+
+      if (userSnapshot.exists) {
+        googleAuth =
+          userSnapshot.data()?.googleAuth || null;
+      }
+    }
+
+    return {
+      id: doc.id,
+      ...data,
+
+      // Google account connected by the student
+      googleAuth,
+
+      // convert Firestore timestamps safely
+      createdAt:
+        data.createdAt?.toDate?.()?.toISOString?.() ||
+        data.createdAt ||
+        null,
+
+      updatedAt:
+        data.updatedAt?.toDate?.()?.toISOString?.() ||
+        data.updatedAt ||
+        null,
+    };
+  })
+);
 
     // latest first
     students.sort((a, b) => {

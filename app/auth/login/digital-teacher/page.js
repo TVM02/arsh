@@ -20,20 +20,15 @@ import {
 } from "lucide-react";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import PortalOtpVerification from "@/components/PortalOtpVerification";
-import PasswordAttemptNotice from "@/components/PasswordAttemptNotice";
 
+import PasswordAttemptNotice from "@/components/PasswordAttemptNotice";
+import { connectDigitalGoogleAccount } from "@/lib/digitalGoogleAuth";
 import useAuthStore from "@/lib/authStore";
 
 import {
   getLoginAttemptState,
-  REGISTERED_PHONE_REQUIRED_MESSAGE,
-  pickPhone,
   recordLoginFailure,
-  requestPortalOtp,
-  prewarmRecaptcha,
   resetLoginFailures,
-  withVerifiedOtpSession,
 } from "@/lib/portalAuthSecurity";
 
 import {
@@ -66,9 +61,10 @@ export default function DigitalTeacherLoginPage() {
     getLoginAttemptState(PORTAL_KEY, "")
   );
 
-  const [otpChallenge, setOtpChallenge] = useState(null);
-  const [pendingLogin, setPendingLogin] = useState(null);
   const [isRedirecting, setIsRedirecting] = useState(false);
+  const [showGoogleConnect, setShowGoogleConnect] = useState(false);
+const [googleConnecting, setGoogleConnecting] = useState(false);
+const [googleConnectError, setGoogleConnectError] = useState("");
 
   const router = useRouter();
 
@@ -126,19 +122,45 @@ export default function DigitalTeacherLoginPage() {
     );
   }, [formData.email]);
 
+const handleConnectGoogle = async () => {
+  setGoogleConnectError("");
+  setGoogleConnecting(true);
 
-  // ==========================================
-  // PRE-WARM RECAPTCHA
-  // Production only
-  // ==========================================
+  try {
+    const result = await connectDigitalGoogleAccount("teacher");
 
-  useEffect(() => {
+    const connectedUserData = {
+      googleAuth: {
+        connected: true,
+        email: result.email,
+        provider: "google.com",
+        ...(result.googleAuth || {}),
+      },
+    };
 
-    if (process.env.NODE_ENV !== "development") {
-      prewarmRecaptcha();
-    }
+    setUserData((prev) => ({
+      ...(prev || {}),
+      ...connectedUserData,
+    }));
 
-  }, []);
+    setShowGoogleConnect(false);
+    setIsRedirecting(true);
+
+    toast.success("Google account connected successfully.");
+
+    router.push("/dashboard/digital-teacher");
+  } catch (error) {
+    console.error("Teacher Google connection error:", error);
+
+    setGoogleConnectError(
+      error?.message ||
+        "Unable to connect your Google account. Please try again."
+    );
+  } finally {
+    setGoogleConnecting(false);
+  }
+};
+  
 
 
 
@@ -180,409 +202,134 @@ export default function DigitalTeacherLoginPage() {
 
 
 
- const startOtpChallenge = async ({
-  user,
-  userData,
-  restoreCustomToken = null,
-}) => {
-  const phone = pickPhone(
-    userData?.phone,
-  );
 
-  if (!phone) {
-    setError(
-      REGISTERED_PHONE_REQUIRED_MESSAGE,
-    );
 
-    return;
-  }
-
-  const otpPayload = {
-    portal:
-      "Digital Classroom Teacher Portal",
-
-    role:
-      "teacher",
-
-    userId:
-      user.uid,
-
-    email:
-      userData?.email ||
-      user?.email,
-
-    name:
-      userData?.fullName ||
-      userData?.name ||
-      "Digital Teacher",
-
-    phone,
-
-    identifier:
-      formData.email,
-  };
-
-  const challenge =
-    await requestPortalOtp(
-      otpPayload,
-    );
-
-  resetLoginFailures(
-    PORTAL_KEY,
-    formData.email,
-  );
-
-  setAttemptState(
-    getLoginAttemptState(
-      PORTAL_KEY,
-      formData.email,
-    ),
-  );
-
-  setPendingLogin({
-    user,
-
-    userData,
-
-    restoreCustomToken,
-
-    otpPayload,
-  });
-
-  setOtpChallenge(
-    challenge,
-  );
-
-  toast.success(
-    "OTP sent to registered number.",
-  );
-};
 
 
   
-  const handleResendOtp = async () => {
 
-    if (!pendingLogin?.otpPayload) {
+ 
+const handleSubmit = async (e) => {
+  e.preventDefault();
+
+  setLoading(true);
+  setError("");
+
+  const email = formData.email.trim();
+
+  try {
+    const currentAttemptState = getLoginAttemptState(
+      PORTAL_KEY,
+      email
+    );
+
+    setAttemptState(currentAttemptState);
+
+    if (currentAttemptState.locked) {
+      setError(
+        "Too many wrong password attempts. Login is temporarily blocked."
+      );
       return;
     }
 
+    const login = await securePortalLogin({
+      portal: PORTAL_KEY,
+      identifier: email,
+      password: formData.password,
+    });
 
-    try {
+    const loginData = login?.userData || {};
 
-      const newChallenge =
-        await requestPortalOtp(
-          pendingLogin.otpPayload
-        );
+    if (loginData.role !== "teacher") {
+      throw new Error("This account is not a Teacher account.");
+    }
 
-
-      setOtpChallenge(
-        newChallenge
-      );
-
-
-      toast.success(
-        "New OTP sent to registered number."
-      );
-
-    } catch (error) {
-
-      console.error(
-        "OTP resend error:",
-        error
-      );
-
-
-      setError(
-        error?.message ||
-        "Unable to resend OTP. Please try again."
+    if (loginData.digitalTeacher !== true) {
+      throw new Error(
+        "Digital Teacher registration is not approved for this account."
       );
     }
-  };
 
-
-  const completeOtpLogin = async () => {
-  if (!pendingLogin) {
-    return;
-  }
-
-  try {
-    setIsRedirecting(true);
-
-    let sessionUser =
-      pendingLogin.user;
-
-    /* Restore Firebase Session */
+    if (loginData.digitalClassAccess !== true) {
+      throw new Error(
+        "Digital Classroom access is not enabled for this Teacher."
+      );
+    }
 
     if (
-      pendingLogin.restoreCustomToken
+      loginData.digitalTeacherStatus &&
+      loginData.digitalTeacherStatus !== "active"
     ) {
-      sessionUser =
-        (
-          await restorePortalFirebaseSession(
-            pendingLogin.restoreCustomToken,
-          )
-        ) || sessionUser;
+      throw new Error(
+        "Your Digital Teacher account is not active."
+      );
     }
 
-    /* Save user */
+    let sessionUser = login.user;
 
-    setUser(
-      sessionUser,
-    );
+    if (login.restoreCustomToken) {
+      sessionUser =
+        (await restorePortalFirebaseSession(
+          login.restoreCustomToken
+        )) || sessionUser;
+    }
 
-    /* Mark OTP verified */
+    setUser(sessionUser);
+    setUserData(loginData);
 
-    setUserData(
-      withVerifiedOtpSession(
-        pendingLogin.userData,
-      ),
-    );
-
-    /* Login logging */
+    resetLoginFailures(PORTAL_KEY, email);
+    setAttemptState(getLoginAttemptState(PORTAL_KEY, email));
 
     getUserLocation()
-      .then((location) => {
+      .then((location) =>
         logLoginDetails(
           sessionUser,
-
           "teacher",
-
           location,
-
-          pendingLogin
-            .userData
-            ?.fullName ||
-            pendingLogin
-              .userData
-              ?.name ||
-            "Digital Teacher",
-
-          false,
+          loginData.fullName || loginData.name || "Digital Teacher",
+          false
         ).catch((err) => {
-          console.error(
-            "Logging failed:",
-            err,
-          );
-        });
+          console.error("Logging failed:", err);
+        })
+      )
+      .catch((err) => {
+        console.error("Location lookup failed:", err);
       });
 
-    /* Digital Teacher Dashboard */
+    const googleConnected =
+      loginData?.googleAuth?.connected === true &&
+      !!loginData?.googleAuth?.email;
 
-    router.push(
-      "/dashboard/digital-teacher",
-    );
-    
+    if (!googleConnected) {
+      setShowGoogleConnect(true);
+      return;
+    }
+
+    toast.success("Digital Teacher login successful!");
+
+    setIsRedirecting(true);
+    router.push("/dashboard/digital-teacher");
+
   } catch (error) {
-    console.error(
-      "Complete Digital Teacher login error:",
-      error,
-    );
+    console.error("Login error:", error);
 
-    setIsRedirecting(false);
+    const message = error?.message || "";
 
-    setError(
-      error?.message ||
-        "Unable to complete login. Please try again.",
-    );
+    if (message.toLowerCase().includes("invalid")) {
+      failPasswordAttempt(
+        "Invalid username or password. Please try again."
+      );
+    } else {
+      setError(
+        message ||
+          "An error occurred during login. Please try again."
+      );
+    }
+  } finally {
+    setLoading(false);
   }
 };
 
-
-  
-
-  const handleSubmit = async (e) => {
-
-    e.preventDefault();
-
-    setLoading(true);
-    setError("");
-
-
-    try {
-
-      const currentAttemptState =
-        getLoginAttemptState(
-          PORTAL_KEY,
-          formData.email
-        );
-
-
-      setAttemptState(
-        currentAttemptState
-      );
-
-
-      if (
-        currentAttemptState.locked
-      ) {
-
-        setError(
-          "Too many wrong password attempts. Login is temporarily blocked."
-        );
-
-        return;
-      }
-
-
-      // ==========================================
-      // EXISTING STUDENT LOGIN
-      // ==========================================
-
-      const login =
-        await securePortalLogin({
-
-          portal: PORTAL_KEY,
-
-          identifier:
-            formData.email.trim(),
-
-          password:
-            formData.password,
-        });
-
-
-const loginData =
-  login?.userData || {};
-
-if (
-  loginData?.role !==
-  "teacher"
-) {
-  throw new Error(
-    "This account is not a Teacher account.",
-  );
-}
-
-if (
-  loginData?.digitalTeacher !==
-  true
-) {
-  throw new Error(
-    "Digital Teacher registration is not approved for this account.",
-  );
-}
-
-if (
-  loginData?.digitalClassAccess !==
-  true
-) {
-  throw new Error(
-    "Digital Classroom access is not enabled for this Teacher.",
-  );
-}
-
-if (
-  loginData?.digitalTeacherStatus &&
-  loginData.digitalTeacherStatus !==
-    "active"
-) {
-  throw new Error(
-    "Your Digital Teacher account is not active.",
-  );
-}
- if (
-        process.env.NODE_ENV ===
-        "development"
-      ) {
-
-        let sessionUser =
-          login.user;
-
-
-        if (
-          login.restoreCustomToken
-        ) {
-
-          sessionUser =
-            (
-              await restorePortalFirebaseSession(
-                login.restoreCustomToken
-              )
-            ) || sessionUser;
-        }
-
-
-        setUser(
-          sessionUser
-        );
-
-
-        // IMPORTANT:
-        // Don't mark OTP as verified
-        // because localhost is bypassing OTP.
-        setUserData(
-          login.userData
-        );
-
-
-        resetLoginFailures(
-          PORTAL_KEY,
-          formData.email
-        );
-
-
-        toast.success(
-          "Development login successful"
-        );
-
-
-        router.push(
-          "/dashboard/digital-teacher"
-        );
-
-
-        return;
-      }
-
-
-     await startOtpChallenge({
-  user:
-    login.user,
-
-  userData:
-    login.userData,
-
-  restoreCustomToken:
-    login.restoreCustomToken,
-});
-
-
-    } catch (error) {
-
-      console.error(
-        "Login error:",
-        error
-      );
-
-
-      const message =
-        error?.message || "";
-
-
-      if (
-        message
-          .toLowerCase()
-          .includes("invalid")
-      ) {
-
-        failPasswordAttempt(
-          "Invalid username or password. Please try again."
-        );
-
-      } else {
-
-        setError(
-          message ||
-          "An error occurred during login. Please try again."
-        );
-      }
-
-    } finally {
-
-      setLoading(false);
-
-    }
-  };
 
 
   // ==========================================
@@ -920,7 +667,7 @@ continue to your Digital Classroom teaching portal.
                 IF OTP NOT STARTED
             ====================================== */}
 
-            {!otpChallenge ? (
+       
 
               <>
 
@@ -1129,9 +876,8 @@ continue to your Digital Classroom teaching portal.
 
                         <span>
 
-                          {process.env.NODE_ENV === "development"
-                            ? "Logging in..."
-                            : "Sending OTP..."}
+                        Logging in...
+                      
 
                         </span>
 
@@ -1143,9 +889,7 @@ continue to your Digital Classroom teaching portal.
 
                         <span>
 
-                          {process.env.NODE_ENV === "development"
-                            ? "Login"
-                            : "Send OTP"}
+                          Login
 
                         </span>
 
@@ -1219,79 +963,7 @@ continue to your Digital Classroom teaching portal.
 
               </>
 
-            ) : (
-
-              /* ======================================
-                  OTP VERIFICATION
-              ====================================== */
-
-              <>
-
-                <div className="mb-6 text-center">
-
-                  <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-teal-100">
-
-                    <ShieldCheck className="h-8 w-8 text-teal-600" />
-
-                  </div>
-
-
-                  <h2 className="mt-4 text-2xl font-extrabold text-slate-900">
-
-                    Verify{" "}
-
-                    <span className="text-teal-600">
-                      OTP
-                    </span>
-
-                  </h2>
-
-
-                  <p className="mt-2 text-sm text-slate-500">
-
-                    Enter the OTP sent to your registered mobile number.
-
-                  </p>
-
-                </div>
-
-
-                {error && (
-
-                  <Alert
-                    variant="destructive"
-                    className="mb-5 border-red-200 bg-red-50 text-red-800"
-                  >
-
-                    <AlertDescription className="font-medium">
-
-                      {error}
-
-                    </AlertDescription>
-
-                  </Alert>
-                )}
-
-
-                <PortalOtpVerification
-                  challenge={otpChallenge}
-                  onVerified={completeOtpLogin}
-                  onResend={handleResendOtp}
-                  onCancel={() => {
-
-                    setOtpChallenge(null);
-
-                    setPendingLogin(null);
-
-                    setError("");
-
-                  }}
-                />
-
-              </>
-
-            )}
-
+           
           </div>
 
         </div>
@@ -1412,7 +1084,67 @@ continue to your Digital Classroom teaching portal.
         </div>
 
       </div>
+{showGoogleConnect && (
+  <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm">
+    <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl sm:p-8">
 
+      <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <span className="text-2xl font-extrabold text-blue-600">
+          G
+        </span>
+      </div>
+
+      <div className="mt-5 text-center">
+        <h2 className="text-2xl font-extrabold text-slate-900">
+          Connect Your Google Account
+        </h2>
+
+        <p className="mt-3 text-sm leading-6 text-slate-500">
+          Connect your Google account to access DKJU Digital
+          Classroom Live Classes securely.
+        </p>
+      </div>
+
+      {googleConnectError && (
+        <div className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+          {googleConnectError}
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={handleConnectGoogle}
+        disabled={googleConnecting}
+        className="mt-6 flex w-full items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white px-5 py-3.5 text-sm font-bold text-slate-800 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {googleConnecting ? (
+          <>
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-400 border-t-transparent" />
+            Connecting Google Account...
+          </>
+        ) : (
+          <>
+            <span className="text-lg font-extrabold text-blue-600">
+              G
+            </span>
+            Continue with Google
+          </>
+        )}
+      </button>
+
+      <div className="mt-5 flex items-start gap-2 rounded-xl bg-slate-50 px-4 py-3">
+        <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+
+        <p className="text-xs leading-5 text-slate-500">
+          You only need to connect your Google account once.
+          Future Digital Teacher logins will use the saved
+          connection automatically.
+        </p>
+      </div>
+
+    </div>
+  </div>
+)}
     </main>
   );
 }

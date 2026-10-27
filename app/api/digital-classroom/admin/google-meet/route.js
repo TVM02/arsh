@@ -610,26 +610,23 @@ export async function GET(
                * must never return this.
                */
               meetUri:
-                data
-                  ?.meetUri ||
-                "",
+  data?.meetUri ||
+  data?.meetUrl ||
+  "",
 
+meetCode:
+  data?.meetCode ||
+  getGoogleMeetCode(
+    data?.meetUri ||
+    data?.meetUrl
+  ) ||
+  "",
 
-              meetCode:
-                data
-                  ?.meetCode ||
-                getGoogleMeetCode(
-                  data?.meetUri
-                ) ||
-                "",
-
-
-              configured:
-                Boolean(
-                  data
-                    ?.meetUri
-                ),
-
+configured:
+  Boolean(
+    data?.meetUri ||
+    data?.meetUrl
+  ),
 
               provider:
                 data

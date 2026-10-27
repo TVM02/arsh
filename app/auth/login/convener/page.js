@@ -23,17 +23,12 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { getUserLocation, logLoginDetails } from "@/lib/loggingUtils";
-import PortalOtpVerification from "@/components/PortalOtpVerification";
+
 import PasswordAttemptNotice from "@/components/PasswordAttemptNotice";
 import {
   getLoginAttemptState,
-  REGISTERED_PHONE_REQUIRED_MESSAGE,
-  pickPhone,
   recordLoginFailure,
-  requestPortalOtp,
-  prewarmRecaptcha,
-  resetLoginFailures,
-  withVerifiedOtpSession,
+  resetLoginFailures,  
 } from "@/lib/portalAuthSecurity";
 
 const PORTAL_KEY = "convener";
@@ -49,8 +44,7 @@ export default function ConvenerLogin() {
   const [attemptState, setAttemptState] = useState(
     getLoginAttemptState(PORTAL_KEY, ""),
   );
-  const [otpChallenge, setOtpChallenge] = useState(null);
-  const [pendingLogin, setPendingLogin] = useState(null);
+
   const [isRedirecting, setIsRedirecting] = useState(false);
 
   const router = useRouter();
@@ -76,108 +70,98 @@ export default function ConvenerLogin() {
     );
   };
 
-  const handleResendOtp = async () => {
-    if (!pendingLogin?.otpPayload) return;
-    const newChallenge = await requestPortalOtp(pendingLogin.otpPayload);
-    setOtpChallenge(newChallenge);
-    toast.success("New OTP sent to registered number.");
-  };
+ 
 
-  const completeOtpLogin = async () => {
-    if (!pendingLogin) return;
-    setIsRedirecting(true);
-    let sessionUser = pendingLogin.user;
-    if (pendingLogin.restoreCustomToken) {
-      sessionUser =
-        (await restorePortalFirebaseSession(pendingLogin.restoreCustomToken)) ||
-        sessionUser;
+
+const handleSubmit = async (e) => {
+  e.preventDefault();
+  setError("");
+
+  if (!formData.loginCredential.trim() || !formData.password.trim()) {
+    setError("Please enter both login credential and password");
+    return;
+  }
+
+  setLoading(true);
+
+  try {
+    const identifier = formData.loginCredential.trim();
+
+    const currentAttemptState = getLoginAttemptState(
+      PORTAL_KEY,
+      identifier
+    );
+
+    setAttemptState(currentAttemptState);
+
+    if (currentAttemptState.locked) {
+      setError(
+        "Too many wrong password attempts. Login is temporarily blocked."
+      );
+      return;
     }
+
+    // Authenticate using email/username and password
+    const login = await securePortalLogin({
+      portal: PORTAL_KEY,
+      identifier,
+      password: formData.password,
+    });
+
+    // Restore Firebase session if required
+    let sessionUser = login.user;
+
+    if (login.restoreCustomToken) {
+      sessionUser =
+        (await restorePortalFirebaseSession(
+          login.restoreCustomToken
+        )) || sessionUser;
+    }
+
+    // Save authenticated user
     setUser(sessionUser);
-    setUserData(withVerifiedOtpSession(pendingLogin.userData));
+    setUserData(login.userData);
+
+    // Reset failed login attempts
+    resetLoginFailures(PORTAL_KEY, identifier);
+
+    setAttemptState(
+      getLoginAttemptState(PORTAL_KEY, identifier)
+    );
+
     toast.success("Login successful! Welcome back.");
 
+    // Log login details
     getUserLocation().then((location) => {
       logLoginDetails(
         sessionUser,
         "convener_admin",
         location,
-        pendingLogin.userData.name,
-      ).catch((err) => console.error("Logging failed:", err));
+        login.userData.name || login.userData.fullName,
+        false
+      ).catch((err) =>
+        console.error("Logging failed:", err)
+      );
     });
 
+    // Navigate directly to dashboard
     router.push("/dashboard/convener");
-  };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError("");
+  } catch (error) {
+    console.error("Login error:", error);
 
-    if (!formData.loginCredential.trim() || !formData.password.trim()) {
-      setError("Please enter both login credential and password");
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      const currentAttemptState = getLoginAttemptState(
-        PORTAL_KEY,
-        formData.loginCredential,
+    if (error.message?.includes("Invalid login")) {
+      failPasswordAttempt("Invalid login credentials or password");
+    } else {
+      setError(
+        error.message ||
+        "An error occurred during login. Please try again."
       );
-      setAttemptState(currentAttemptState);
-      if (currentAttemptState.locked) {
-        setError("Too many wrong password attempts. Login is temporarily blocked.");
-        return;
-      }
-
-      const login = await securePortalLogin({
-        portal: PORTAL_KEY,
-        identifier: formData.loginCredential.trim(),
-        password: formData.password.trim(),
-      });
-
-      const userData = login.userData;
-      const phone = pickPhone(login.phone, userData.adminPhone, userData.phone);
-      if (!phone) {
-        toast.error(REGISTERED_PHONE_REQUIRED_MESSAGE);
-        setError(REGISTERED_PHONE_REQUIRED_MESSAGE);
-        return;
-      }
-
-      const otpPayload = {
-        portal: "Convener Portal",
-        role: "convener_admin",
-        userId: userData.uid,
-        email: userData.email,
-        name: userData.name,
-        phone,
-        identifier: formData.loginCredential,
-      };
-      const challenge = await requestPortalOtp(otpPayload);
-      resetLoginFailures(PORTAL_KEY, formData.loginCredential);
-      setAttemptState(
-        getLoginAttemptState(PORTAL_KEY, formData.loginCredential),
-      );
-      setPendingLogin({
-        user: login.user,
-        userData,
-        restoreCustomToken: login.restoreCustomToken,
-        otpPayload,
-      });
-      setOtpChallenge(challenge);
-      toast.success("OTP sent to registered number.");
-    } catch (error) {
-      console.error("Login error:", error);
-      if (error.message?.includes("Invalid login")) {
-        failPasswordAttempt("Invalid login credentials or password");
-      } else {
-        setError(error.message || "An error occurred during login. Please try again.");
-      }
-    } finally {
-      setLoading(false);
     }
-  };
-
+  } finally {
+    setLoading(false);
+  }
+};
   const handleChange = (e) => {
     setFormData({
       ...formData,
@@ -226,7 +210,7 @@ export default function ConvenerLogin() {
           </CardHeader>
 
           <CardContent className="p-6">
-            {!otpChallenge ? (
+          
             <form onSubmit={handleSubmit} className="space-y-6">
               <PasswordAttemptNotice attemptState={attemptState} />
 
@@ -299,25 +283,15 @@ export default function ConvenerLogin() {
                 {loading ? (
                   <div className="flex items-center space-x-2">
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    <span>Sending OTP...</span>
+                    <span>Logging in...</span>
                   </div>
                 ) : (
-                  "Send OTP"
+                  "Login"
                 )}
               </Button>
             </form>
 
-            ) : (
-              <PortalOtpVerification
-                challenge={otpChallenge}
-                onVerified={completeOtpLogin}
-                onResend={handleResendOtp}
-                onCancel={() => {
-                  setOtpChallenge(null);
-                  setPendingLogin(null);
-                }}
-              />
-            )}
+           
 
             <div className="mt-8 space-y-6">
               <div className="text-center">

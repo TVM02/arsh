@@ -208,10 +208,11 @@ export async function POST(
 
         state,
 
-        scope:
-          [
-            "https://www.googleapis.com/auth/meetings.space.created",
-          ].join(" "),
+      scope:
+  [
+    "https://www.googleapis.com/auth/meetings.space.created",
+    "https://www.googleapis.com/auth/meetings.space.settings",
+  ].join(" "),
 
       });
 

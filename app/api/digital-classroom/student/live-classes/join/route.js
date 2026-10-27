@@ -1,3 +1,4 @@
+
 import { NextResponse } from "next/server";
 
 import {
@@ -5,17 +6,14 @@ import {
   getAdminDb,
 } from "@/lib/firebase-admin";
 
-
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
 
 const LIVE_CLASS_COLLECTION =
   "digitalClassLiveClasses";
 
 const MEET_ROOM_COLLECTION =
   "digitalMeetRooms";
-
 
 /* =========================================================
    HELPERS
@@ -26,7 +24,6 @@ function cleanText(value) {
     value ?? ""
   ).trim();
 }
-
 
 function normalizeClass(value) {
   return cleanText(value)
@@ -45,15 +42,12 @@ function normalizeClass(value) {
     );
 }
 
-
 function isGoogleMeetLink(value) {
   try {
-
     const url =
       new URL(
         cleanText(value)
       );
-
 
     return (
       url.protocol ===
@@ -62,13 +56,10 @@ function isGoogleMeetLink(value) {
         "meet.google.com" &&
       url.pathname.length > 1
     );
-
   } catch {
-
     return false;
   }
 }
-
 
 /* =========================================================
    VERIFY DIGITAL STUDENT
@@ -79,12 +70,10 @@ async function verifyDigitalStudent(
   auth,
   db
 ) {
-
   const authorization =
     request.headers.get(
       "authorization"
     ) || "";
-
 
   if (
     !authorization.startsWith(
@@ -94,30 +83,24 @@ async function verifyDigitalStudent(
     return null;
   }
 
-
   const token =
     authorization
       .slice(7)
       .trim();
 
-
   if (!token) {
     return null;
   }
 
-
   try {
-
     const decoded =
       await auth.verifyIdToken(
         token
       );
 
-
     if (!decoded?.uid) {
       return null;
     }
-
 
     const studentSnapshot =
       await db
@@ -125,18 +108,15 @@ async function verifyDigitalStudent(
         .doc(decoded.uid)
         .get();
 
-
     if (
       !studentSnapshot.exists
     ) {
       return null;
     }
 
-
     const studentData =
       studentSnapshot.data() ||
       {};
-
 
     if (
       studentData?.role !==
@@ -147,26 +127,21 @@ async function verifyDigitalStudent(
       return null;
     }
 
-
     return {
       uid:
         decoded.uid,
 
       studentData,
     };
-
   } catch (error) {
-
     console.error(
       "VERIFY DIGITAL STUDENT JOIN ERROR:",
       error
     );
 
-
     return null;
   }
 }
-
 
 /* =========================================================
    POST
@@ -181,16 +156,12 @@ async function verifyDigitalStudent(
 export async function POST(
   request
 ) {
-
   try {
-
     const auth =
       getAdminAuth();
 
-
     const db =
       getAdminDb();
-
 
     /* =====================================================
        VERIFY STUDENT
@@ -203,9 +174,7 @@ export async function POST(
         db
       );
 
-
     if (!student?.uid) {
-
       return NextResponse.json(
         {
           success: false,
@@ -219,11 +188,58 @@ export async function POST(
       );
     }
 
+    /* =====================================================
+       VERIFY CONNECTED GOOGLE ACCOUNT
+
+       Firestore googleAuth is the source of truth.
+
+       We intentionally do NOT use Firebase Auth
+       providerData here because Central Admin can
+       disconnect googleAuth from the users document.
+    ===================================================== */
 
     const studentData =
       student.studentData ||
       {};
 
+    const googleAuth =
+      studentData?.googleAuth ||
+      {};
+
+    if (
+      googleAuth?.connected !== true
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+
+          message:
+            "Please connect your Google account before joining a Live Class.",
+        },
+        {
+          status: 403,
+        }
+      );
+    }
+
+    const connectedGoogleEmail =
+      cleanText(
+        googleAuth?.email
+      ).toLowerCase();
+
+    if (!connectedGoogleEmail) {
+      return NextResponse.json(
+        {
+          success: false,
+
+          message:
+            "Your connected Google account could not be verified.",
+        },
+        {
+          status: 403,
+        }
+      );
+    }
 
     /* =====================================================
        CHECK TEACHER ASSIGNMENT
@@ -234,7 +250,6 @@ export async function POST(
         ?.teacherAssigned !==
         true
     ) {
-
       return NextResponse.json(
         {
           success: false,
@@ -248,13 +263,11 @@ export async function POST(
       );
     }
 
-
     const assignedTeacherUid =
       cleanText(
         studentData
           ?.assignedDigitalTeacherUid
       );
-
 
     const assignedClass =
       cleanText(
@@ -262,18 +275,15 @@ export async function POST(
           ?.assignedDigitalTeacherClass
       );
 
-
     const assignedClassKey =
       normalizeClass(
         assignedClass
       );
 
-
     if (
       !assignedTeacherUid ||
       !assignedClassKey
     ) {
-
       return NextResponse.json(
         {
           success: false,
@@ -287,33 +297,25 @@ export async function POST(
       );
     }
 
-
     /* =====================================================
        BODY
     ===================================================== */
 
     let body = {};
 
-
     try {
-
       body =
         await request.json();
-
     } catch {
-
       body = {};
     }
-
 
     const classId =
       cleanText(
         body?.classId
       );
 
-
     if (!classId) {
-
       return NextResponse.json(
         {
           success: false,
@@ -326,7 +328,6 @@ export async function POST(
         }
       );
     }
-
 
     /* =====================================================
        LOAD LIVE CLASS
@@ -342,11 +343,9 @@ export async function POST(
         )
         .get();
 
-
     if (
       !liveClassSnapshot.exists
     ) {
-
       return NextResponse.json(
         {
           success: false,
@@ -360,11 +359,9 @@ export async function POST(
       );
     }
 
-
     const liveClass =
       liveClassSnapshot.data() ||
       {};
-
 
     /* =====================================================
        VERIFY ASSIGNED TEACHER
@@ -376,7 +373,6 @@ export async function POST(
       ) !==
       assignedTeacherUid
     ) {
-
       return NextResponse.json(
         {
           success: false,
@@ -390,7 +386,6 @@ export async function POST(
       );
     }
 
-
     /* =====================================================
        VERIFY ASSIGNED CLASS
     ===================================================== */
@@ -400,13 +395,11 @@ export async function POST(
         liveClass?.className
       );
 
-
     if (
       !liveClassKey ||
       liveClassKey !==
         assignedClassKey
     ) {
-
       return NextResponse.json(
         {
           success: false,
@@ -419,7 +412,6 @@ export async function POST(
         }
       );
     }
-
 
     /* =====================================================
        JOIN TIME
@@ -434,25 +426,21 @@ export async function POST(
         liveClass?.date
       );
 
-
     const startTime =
       cleanText(
         liveClass?.startTime
       );
-
 
     const endTime =
       cleanText(
         liveClass?.endTime
       );
 
-
     if (
       !date ||
       !startTime ||
       !endTime
     ) {
-
       return NextResponse.json(
         {
           success: false,
@@ -466,18 +454,15 @@ export async function POST(
       );
     }
 
-
     const startDate =
       new Date(
         `${date}T${startTime}:00+05:30`
       );
 
-
     const endDate =
       new Date(
         `${date}T${endTime}:00+05:30`
       );
-
 
     if (
       Number.isNaN(
@@ -487,7 +472,6 @@ export async function POST(
         endDate.getTime()
       )
     ) {
-
       return NextResponse.json(
         {
           success: false,
@@ -501,23 +485,19 @@ export async function POST(
       );
     }
 
-
     const joinOpenTime =
       new Date(
         startDate.getTime() -
         5 * 60 * 1000
       );
 
-
     const now =
       new Date();
-
 
     if (
       now <
       joinOpenTime
     ) {
-
       return NextResponse.json(
         {
           success: false,
@@ -531,12 +511,10 @@ export async function POST(
       );
     }
 
-
     if (
       now >
       endDate
     ) {
-
       return NextResponse.json(
         {
           success: false,
@@ -550,7 +528,6 @@ export async function POST(
       );
     }
 
-
     /* =====================================================
        RESOLVE PRIVATE ROOM
     ===================================================== */
@@ -560,7 +537,6 @@ export async function POST(
         liveClass?.meetRoomId
       ) ||
       `${assignedTeacherUid}__${liveClassKey}`;
-
 
     const roomSnapshot =
       await db
@@ -572,11 +548,9 @@ export async function POST(
         )
         .get();
 
-
     if (
       !roomSnapshot.exists
     ) {
-
       return NextResponse.json(
         {
           success: false,
@@ -590,11 +564,9 @@ export async function POST(
       );
     }
 
-
     const room =
       roomSnapshot.data() ||
       {};
-
 
     /* =====================================================
        VERIFY ROOM TEACHER
@@ -606,7 +578,6 @@ export async function POST(
       ) !==
       assignedTeacherUid
     ) {
-
       return NextResponse.json(
         {
           success: false,
@@ -620,7 +591,6 @@ export async function POST(
       );
     }
 
-
     /* =====================================================
        VERIFY ROOM CLASS
     ===================================================== */
@@ -631,7 +601,6 @@ export async function POST(
       ) !==
       assignedClassKey
     ) {
-
       return NextResponse.json(
         {
           success: false,
@@ -645,7 +614,6 @@ export async function POST(
       );
     }
 
-
     /* =====================================================
        ROOM MUST BE ACTIVE
     ===================================================== */
@@ -656,7 +624,6 @@ export async function POST(
       ).toLowerCase() !==
       "active"
     ) {
-
       return NextResponse.json(
         {
           success: false,
@@ -670,6 +637,58 @@ export async function POST(
       );
     }
 
+    /* =====================================================
+       VERIFY STUDENT GOOGLE ACCOUNT IS AN AUTHORIZED
+       MEMBER OF THIS GOOGLE MEET ROOM
+
+       The student must have been added to this specific
+       Meet room during room creation.
+
+       This prevents another/unassigned Google account
+       from obtaining the Meet URL through DKJU.
+    ===================================================== */
+
+    const studentMemberResults =
+      Array.isArray(
+        room?.studentMemberResults
+      )
+        ? room.studentMemberResults
+        : [];
+
+    const normalizedStudentEmail =
+      connectedGoogleEmail
+        .toLowerCase();
+
+    const authorizedStudent =
+      studentMemberResults.find(
+        (member) => {
+
+          const memberEmail =
+            cleanText(
+              member?.email
+            ).toLowerCase();
+
+          return (
+            memberEmail ===
+              normalizedStudentEmail &&
+            member?.success === true
+          );
+        }
+      );
+
+    if (!authorizedStudent) {
+      return NextResponse.json(
+        {
+          success: false,
+
+          message:
+            "Your Google account is not authorized to join this Live Class.",
+        },
+        {
+          status: 403,
+        }
+      );
+    }
 
     /* =====================================================
        PRIVATE MEET URL
@@ -680,14 +699,12 @@ export async function POST(
         room?.meetUri
       );
 
-
     if (
       !meetUri ||
       !isGoogleMeetLink(
         meetUri
       )
     ) {
-
       return NextResponse.json(
         {
           success: false,
@@ -701,12 +718,11 @@ export async function POST(
       );
     }
 
-
     /* =====================================================
        SUCCESS
 
-       Meet URL is only returned after
-       every student authorization check.
+       Meet URL is returned only after every
+       authorization check passes.
     ===================================================== */
 
     return NextResponse.json(
@@ -727,12 +743,10 @@ export async function POST(
     );
 
   } catch (error) {
-
     console.error(
       "DIGITAL STUDENT JOIN LIVE CLASS ERROR:",
       error
     );
-
 
     return NextResponse.json(
       {

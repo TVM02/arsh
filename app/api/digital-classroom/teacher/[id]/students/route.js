@@ -4,7 +4,7 @@ import {
   getAdminAuth,
   getAdminDb,
 } from "@/lib/firebase-admin";
-
+import { addGoogleMeetMember, getGoogleMeetAccessToken } from "@/lib/googleMeetMembers";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -1001,12 +1001,273 @@ const assignedStudentUids =
     );
   }
 }
-
-
 /* ============================================
-   ASSIGN DIGITAL STUDENT
-   SAVE DIRECTLY IN users/{studentUid}
+   AUTO SYNC STUDENT TO EXISTING GOOGLE MEET
 ============================================ */
+
+async function syncStudentToExistingMeet({
+  db,
+  studentUid,
+  teacherUid,
+  studentClass,
+}) {
+  try {
+    if (
+      !studentUid ||
+      !teacherUid ||
+      !studentClass
+    ) {
+      return {
+        success: false,
+        skipped: true,
+        reason:
+          "Student UID, teacher UID, or class is missing.",
+      };
+    }
+
+    const normalizedClass =
+      normalizeClass(studentClass);
+
+    if (!normalizedClass) {
+      return {
+        success: false,
+        skipped: true,
+        reason:
+          "Student class is missing.",
+      };
+    }
+
+    /* ----------------------------------------
+       LOAD CURRENT STUDENT
+    ---------------------------------------- */
+
+    const studentSnapshot =
+      await db
+        .collection("users")
+        .doc(studentUid)
+        .get();
+
+    if (!studentSnapshot.exists) {
+      return {
+        success: false,
+        skipped: true,
+        reason:
+          "Student account not found.",
+      };
+    }
+
+    const student =
+      studentSnapshot.data() || {};
+
+    /* ----------------------------------------
+       GOOGLE ACCOUNT
+    ---------------------------------------- */
+
+    const googleAuth =
+      student?.googleAuth || {};
+
+    if (
+      googleAuth?.connected !== true
+    ) {
+      return {
+        success: false,
+        skipped: true,
+        reason:
+          "Student has not connected a Google account yet.",
+      };
+    }
+
+    const googleEmail =
+      cleanText(
+        googleAuth?.email,
+      ).toLowerCase();
+
+    if (!googleEmail) {
+      return {
+        success: false,
+        skipped: true,
+        reason:
+          "Student Google email is missing.",
+      };
+    }
+
+    /* ----------------------------------------
+       FIND EXISTING MEET ROOM
+    ---------------------------------------- */
+
+    const roomId =
+      `${teacherUid}__${normalizedClass}`;
+
+    const roomRef =
+      db
+        .collection("digitalMeetRooms")
+        .doc(roomId);
+
+    const roomSnapshot =
+      await roomRef.get();
+
+    if (!roomSnapshot.exists) {
+      return {
+        success: false,
+        skipped: true,
+        reason:
+          "No existing Google Meet was found for this teacher and class.",
+      };
+    }
+
+    const room =
+      roomSnapshot.data() || {};
+
+    const googleSpaceName =
+      cleanText(
+        room?.meetSpaceName ||
+        room?.spaceName ||
+        room?.googleSpaceName,
+      );
+
+    if (!googleSpaceName) {
+      return {
+        success: false,
+        skipped: true,
+        reason:
+          "Google Meet space name is missing.",
+      };
+    }
+
+    /* ----------------------------------------
+       CHECK EXISTING MEMBER RESULT
+    ---------------------------------------- */
+
+    const existingResults =
+      Array.isArray(
+        room?.studentMemberResults,
+      )
+        ? room.studentMemberResults
+        : [];
+
+    const existingMemberIndex =
+      existingResults.findIndex(
+        (member) =>
+          cleanText(
+            member?.email,
+          ).toLowerCase() ===
+          googleEmail,
+      );
+
+    if (
+      existingMemberIndex >= 0 &&
+      existingResults[
+        existingMemberIndex
+      ]?.success === true
+    ) {
+      return {
+        success: true,
+        alreadyAdded: true,
+        email: googleEmail,
+        roomId,
+        message:
+          "Student is already added to the Google Meet.",
+      };
+    }
+
+    /* ----------------------------------------
+       GET CENTRAL ADMIN GOOGLE ACCESS TOKEN
+    ---------------------------------------- */
+
+    const accessToken =
+      await getGoogleMeetAccessToken(
+        db,
+      );
+
+    /* ----------------------------------------
+       ADD STUDENT TO GOOGLE MEET
+    ---------------------------------------- */
+
+    const memberResult =
+      await addGoogleMeetMember({
+        accessToken,
+        googleSpaceName,
+        email: googleEmail,
+        role: "ROLE_UNSPECIFIED",
+        db,
+      });
+
+    /* ----------------------------------------
+       SAVE MEMBER RESULT
+    ---------------------------------------- */
+
+    const updatedResults =
+      [...existingResults];
+
+    const resultToSave = {
+      uid: studentUid,
+      email: googleEmail,
+      success:
+        memberResult?.success === true,
+      role: "ROLE_UNSPECIFIED",
+      status:
+        memberResult?.status || null,
+      errorStatus:
+        memberResult?.errorStatus || null,
+      message:
+        memberResult?.message ||
+        null,
+      addedAt:
+        new Date().toISOString(),
+    };
+
+    if (
+      existingMemberIndex >= 0
+    ) {
+      updatedResults[
+        existingMemberIndex
+      ] = resultToSave;
+    } else {
+      updatedResults.push(
+        resultToSave,
+      );
+    }
+
+    await roomRef.set(
+      {
+        studentMemberResults:
+          updatedResults,
+        updatedAt:
+          new Date(),
+      },
+      {
+        merge: true,
+      },
+    );
+
+    return {
+      success:
+        memberResult?.success === true,
+      alreadyAdded: false,
+      email: googleEmail,
+      roomId,
+      memberResult,
+    };
+  } catch (error) {
+    console.error(
+      "AUTO SYNC STUDENT TO GOOGLE MEET ERROR:",
+      {
+        studentUid,
+        teacherUid,
+        studentClass,
+        error,
+      },
+    );
+
+    return {
+      success: false,
+      skipped: false,
+      reason:
+        error?.message ||
+        "Unable to synchronize student with Google Meet.",
+    };
+  }
+}
 
 export async function POST(
   request,
@@ -1389,60 +1650,97 @@ export async function POST(
       ======================================== */
 
       await studentRef.set(
-        {
-          teacherAssigned:
-            true,
+  {
+    teacherAssigned:
+      true,
 
-          assignedDigitalTeacherApplicationId:
-            id,
+    assignedDigitalTeacherApplicationId:
+      id,
 
-          assignedDigitalTeacherUid:
-            digitalTeacherUid,
+    assignedDigitalTeacherUid:
+      digitalTeacherUid,
 
-          assignedDigitalTeacherName:
-            teacherName ||
-            null,
+    assignedDigitalTeacherName:
+      teacherName ||
+      null,
 
-          assignedDigitalTeacherEmail:
-            teacherEmail ||
-            null,
+    assignedDigitalTeacherEmail:
+      teacherEmail ||
+      null,
 
-          assignedDigitalTeacherMhrId:
-            teacherMhrId ||
-            null,
+    assignedDigitalTeacherMhrId:
+      teacherMhrId ||
+      null,
 
-          assignedDigitalTeacherClass:
-            studentClass ||
-            null,
+    assignedDigitalTeacherClass:
+      studentClass ||
+      null,
 
-          teacherAssignedAt:
-            new Date(),
+    teacherAssignedAt:
+      new Date(),
 
-          teacherAssignedBy:
-            admin.uid,
+    teacherAssignedBy:
+      admin.uid,
 
-          teacherUnassignedAt:
-            null,
+    teacherUnassignedAt:
+      null,
 
-          teacherUnassignedBy:
-            null,
+    teacherUnassignedBy:
+      null,
 
-          updatedAt:
-            new Date(),
-        },
-        {
-          merge: true,
-        },
-      );
+    updatedAt:
+      new Date(),
+  },
+  {
+    merge: true,
+  },
+);
 
 
-      assigned.push({
-        studentUid,
+/* ========================================
+   AUTO ADD STUDENT TO EXISTING GOOGLE MEET
 
-        className:
-          studentClass ||
-          null,
-      });
+   Assignment must NOT fail if Meet sync
+   fails or Meet does not exist yet.
+======================================== */
+
+const meetSync =
+  await syncStudentToExistingMeet({
+    db,
+    studentUid,
+    teacherUid:
+      digitalTeacherUid,
+    studentClass,
+  });
+
+
+assigned.push({
+  studentUid,
+
+  className:
+    studentClass ||
+    null,
+
+  googleMeetSync:
+    {
+      success:
+        meetSync?.success === true,
+
+      alreadyAdded:
+        meetSync?.alreadyAdded === true,
+
+      skipped:
+        meetSync?.skipped === true,
+
+      email:
+        meetSync?.email ||
+        null,
+
+      reason:
+        meetSync?.reason ||
+        null,
+    },
+});
     }
 
 
