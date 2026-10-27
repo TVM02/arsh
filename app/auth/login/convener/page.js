@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useState } from "react";
@@ -28,7 +29,7 @@ import PasswordAttemptNotice from "@/components/PasswordAttemptNotice";
 import {
   getLoginAttemptState,
   recordLoginFailure,
-  resetLoginFailures,  
+  resetLoginFailures,
 } from "@/lib/portalAuthSecurity";
 
 const PORTAL_KEY = "convener";
@@ -38,13 +39,13 @@ export default function ConvenerLogin() {
     loginCredential: "",
     password: "",
   });
+
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [attemptState, setAttemptState] = useState(
     getLoginAttemptState(PORTAL_KEY, ""),
   );
-
   const [isRedirecting, setIsRedirecting] = useState(false);
 
   const router = useRouter();
@@ -55,14 +56,15 @@ export default function ConvenerLogin() {
       getLoginAttemptState(PORTAL_KEY, formData.loginCredential),
     );
   }, [formData.loginCredential]);
-  // Pre-warm the invisible reCAPTCHA silently when the page loads
-  useEffect(() => {
-    prewarmRecaptcha();
-  }, []);
 
   const failPasswordAttempt = (message) => {
-    const nextState = recordLoginFailure(PORTAL_KEY, formData.loginCredential);
+    const nextState = recordLoginFailure(
+      PORTAL_KEY,
+      formData.loginCredential,
+    );
+
     setAttemptState(nextState);
+
     setError(
       nextState.locked
         ? "Too many wrong password attempts. Login is temporarily blocked."
@@ -70,103 +72,111 @@ export default function ConvenerLogin() {
     );
   };
 
- 
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
 
-
-const handleSubmit = async (e) => {
-  e.preventDefault();
-  setError("");
-
-  if (!formData.loginCredential.trim() || !formData.password.trim()) {
-    setError("Please enter both login credential and password");
-    return;
-  }
-
-  setLoading(true);
-
-  try {
     const identifier = formData.loginCredential.trim();
+
+    if (!identifier || !formData.password.trim()) {
+      setError("Please enter both login credential and password.");
+      return;
+    }
 
     const currentAttemptState = getLoginAttemptState(
       PORTAL_KEY,
-      identifier
+      identifier,
     );
 
     setAttemptState(currentAttemptState);
 
     if (currentAttemptState.locked) {
       setError(
-        "Too many wrong password attempts. Login is temporarily blocked."
+        "Too many wrong password attempts. Login is temporarily blocked.",
       );
       return;
     }
 
-    // Authenticate using email/username and password
-    const login = await securePortalLogin({
-      portal: PORTAL_KEY,
-      identifier,
-      password: formData.password,
-    });
+    setLoading(true);
 
-    // Restore Firebase session if required
-    let sessionUser = login.user;
+    try {
+      // Authenticate using login ID/email and password only.
+      const login = await securePortalLogin({
+        portal: PORTAL_KEY,
+        identifier,
+        password: formData.password,
+      });
 
-    if (login.restoreCustomToken) {
-      sessionUser =
-        (await restorePortalFirebaseSession(
-          login.restoreCustomToken
-        )) || sessionUser;
-    }
+      if (!login?.user) {
+        throw new Error("Login failed. Please try again.");
+      }
 
-    // Save authenticated user
-    setUser(sessionUser);
-    setUserData(login.userData);
+      // Restore Firebase session if a custom token is returned.
+      let sessionUser = login.user;
 
-    // Reset failed login attempts
-    resetLoginFailures(PORTAL_KEY, identifier);
+      if (login.restoreCustomToken) {
+        sessionUser =
+          (await restorePortalFirebaseSession(
+            login.restoreCustomToken,
+          )) || sessionUser;
+      }
 
-    setAttemptState(
-      getLoginAttemptState(PORTAL_KEY, identifier)
-    );
+      // Save authenticated user and user data.
+      setUser(sessionUser);
+      setUserData(login.userData);
 
-    toast.success("Login successful! Welcome back.");
+      // Reset failed login attempts.
+      resetLoginFailures(PORTAL_KEY, identifier);
 
-    // Log login details
-    getUserLocation().then((location) => {
-      logLoginDetails(
-        sessionUser,
-        "convener_admin",
-        location,
-        login.userData.name || login.userData.fullName,
-        false
-      ).catch((err) =>
-        console.error("Logging failed:", err)
+      setAttemptState(
+        getLoginAttemptState(PORTAL_KEY, identifier),
       );
-    });
 
-    // Navigate directly to dashboard
-    router.push("/dashboard/convener");
+      toast.success("Login successful! Welcome back.");
 
-  } catch (error) {
-    console.error("Login error:", error);
+      // Log login details without blocking navigation.
+      getUserLocation()
+        .then((location) =>
+          logLoginDetails(
+            sessionUser,
+            "convener_admin",
+            location,
+            login.userData?.name ||
+              login.userData?.fullName ||
+              "Convener",
+            false,
+          ),
+        )
+        .catch((err) =>
+          console.error("Logging failed:", err),
+        );
 
-    if (error.message?.includes("Invalid login")) {
-      failPasswordAttempt("Invalid login credentials or password");
-    } else {
-      setError(
-        error.message ||
-        "An error occurred during login. Please try again."
-      );
+      // Show redirect screen and navigate to dashboard.
+      setIsRedirecting(true);
+      router.push("/dashboard/convener");
+    } catch (error) {
+      console.error("Login error:", error);
+
+      if (error.message?.includes("Invalid login")) {
+        failPasswordAttempt(
+          "Invalid login credentials or password.",
+        );
+      } else {
+        setError(
+          error.message ||
+            "An error occurred during login. Please try again.",
+        );
+      }
+    } finally {
+      setLoading(false);
     }
-  } finally {
-    setLoading(false);
-  }
-};
+  };
+
   const handleChange = (e) => {
-    setFormData({
-      ...formData,
+    setFormData((previous) => ({
+      ...previous,
       [e.target.name]: e.target.value,
-    });
+    }));
   };
 
   if (isRedirecting) {
@@ -174,8 +184,15 @@ const handleSubmit = async (e) => {
       <div className="min-h-screen bg-gradient-to-br from-red-50 via-pink-50 to-orange-50 flex items-center justify-center p-4">
         <div className="flex flex-col items-center justify-center space-y-4 bg-white/80 p-8 rounded-2xl shadow-xl backdrop-blur-sm">
           <div className="w-12 h-12 border-4 border-teal-600 border-t-transparent rounded-full animate-spin"></div>
-          <h2 className="text-xl font-semibold text-teal-800">Redirecting to Dashboard...</h2>
-          <p className="text-sm text-teal-600 text-center max-w-xs">Please wait while we securely set up your session and load the dashboard.</p>
+
+          <h2 className="text-xl font-semibold text-teal-800">
+            Redirecting to Dashboard...
+          </h2>
+
+          <p className="text-sm text-teal-600 text-center max-w-xs">
+            Please wait while we securely set up your session and
+            load the dashboard.
+          </p>
         </div>
       </div>
     );
@@ -185,11 +202,19 @@ const handleSubmit = async (e) => {
     <div className="min-h-screen bg-gradient-to-br from-teal-50 via-teal-50 to-teal-100 flex items-center flex-col justify-center p-4 relative overflow-hidden">
       <div className="flex w-full md:w-fit items-center bg-teal-700 p-2 rounded-lg space-x-3 mb-4 md:fixed top-5 left-5">
         <div className="w-12 h-12 bg-gradient-to-br from-teal-200 to-white rounded-xl flex items-center justify-center shadow-lg">
-          <Image src={"/logo.png"} alt="Logo" width={48} height={48} />
+          <Image
+            src="/logo.png"
+            alt="Logo"
+            width={48}
+            height={48}
+          />
         </div>
+
         <div>
           <span className="text-xl font-bold text-white">DKJU</span>
-          <p className="text-xs text-teal-100">Smart Islamic Education</p>
+          <p className="text-xs text-teal-100">
+            Smart Islamic Education
+          </p>
         </div>
       </div>
 
@@ -204,13 +229,13 @@ const handleSubmit = async (e) => {
             <CardTitle className="text-2xl font-semibold text-center">
               Convener Portal Login
             </CardTitle>
+
             <CardDescription className="text-center text-teal-100">
               Enter your convener credentials to access the dashboard
             </CardDescription>
           </CardHeader>
 
           <CardContent className="p-6">
-          
             <form onSubmit={handleSubmit} className="space-y-6">
               <PasswordAttemptNotice attemptState={attemptState} />
 
@@ -232,6 +257,7 @@ const handleSubmit = async (e) => {
                 >
                   Login ID or Email
                 </Label>
+
                 <Input
                   id="loginCredential"
                   name="loginCredential"
@@ -243,6 +269,7 @@ const handleSubmit = async (e) => {
                   placeholder="Enter your login ID or email"
                 />
               </div>
+
               <div className="space-y-2">
                 <Label
                   htmlFor="password"
@@ -250,6 +277,7 @@ const handleSubmit = async (e) => {
                 >
                   Password
                 </Label>
+
                 <div className="relative">
                   <Input
                     id="password"
@@ -261,10 +289,16 @@ const handleSubmit = async (e) => {
                     className="h-12 pr-12 border-gray-200 focus:border-teal-500 focus:ring-teal-500 bg-gray-50 focus:bg-white transition-all duration-200"
                     placeholder="Enter your password"
                   />
+
                   <button
                     type="button"
                     className="absolute inset-y-0 right-0 pr-3 flex items-center transition-colors"
-                    onClick={() => setShowPassword(!showPassword)}
+                    onClick={() =>
+                      setShowPassword((previous) => !previous)
+                    }
+                    aria-label={
+                      showPassword ? "Hide password" : "Show password"
+                    }
                   >
                     {showPassword ? (
                       <EyeOff className="h-5 w-5 text-gray-400" />
@@ -291,21 +325,20 @@ const handleSubmit = async (e) => {
               </Button>
             </form>
 
-           
-
             <div className="mt-8 space-y-6">
               <div className="text-center">
                 <p className="text-sm text-gray-600 mb-4">
                   Access other portals:
                 </p>
-                <div className="flex flex-wrap items-center justify-center gap-3 text-sm">
 
+                <div className="flex flex-wrap items-center justify-center gap-3 text-sm">
                   <Link
                     href="/auth/login/district"
                     className="inline-flex items-center px-3 py-2 rounded-lg bg-yellow-50 text-yellow-700 hover:bg-yellow-100 hover:text-yellow-800 font-medium transition-colors"
                   >
                     Mekhala Portal
                   </Link>
+
                   <Link
                     href="/auth/login/madarsa-admin"
                     className="inline-flex items-center px-3 py-2 rounded-lg bg-orange-50 text-orange-700 hover:bg-orange-100 hover:text-orange-800 font-medium transition-colors"
@@ -319,12 +352,16 @@ const handleSubmit = async (e) => {
         </Card>
 
         <div className="mt-6 text-center">
-          <Link href="/" className="text-sm text-gray-500 hover:text-gray-700">
+          <Link
+            href="/"
+            className="text-sm text-gray-500 hover:text-gray-700"
+          >
             ← Back to Home
           </Link>
+
           <div className="flex bottom-0 w-full items-center text-center mt-8 justify-center py-4 bg-teal-900">
             <span className="text-sm text-white">
-              {"Contact technical Support : 8891177850"}
+              Contact technical Support : 8891177850
             </span>
           </div>
         </div>

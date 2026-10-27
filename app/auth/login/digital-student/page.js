@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useState } from "react";
@@ -18,17 +19,16 @@ import {
   ShieldCheck,
   Star,
 } from "lucide-react";
+
 import { connectDigitalGoogleAccount } from "@/lib/digitalGoogleAuth";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-
 import PasswordAttemptNotice from "@/components/PasswordAttemptNotice";
-
 import useAuthStore from "@/lib/authStore";
 
 import {
-  getLoginAttemptState, 
-  recordLoginFailure,  
-  resetLoginFailures,  
+  getLoginAttemptState,
+  recordLoginFailure,
+  resetLoginFailures,
 } from "@/lib/portalAuthSecurity";
 
 import {
@@ -36,9 +36,7 @@ import {
   securePortalLogin,
 } from "@/lib/securePortalLogin";
 
-import { getUserLocation, logLoginDetails } from "@/lib/loggingUtils";
 import { toast } from "sonner";
-
 
 // ==========================================
 // PORTAL KEY
@@ -46,9 +44,7 @@ import { toast } from "sonner";
 
 const PORTAL_KEY = "digital_student";
 
-
 export default function StudentLoginPage() {
-
   // ==========================================
   // FORM STATE
   // ==========================================
@@ -66,19 +62,14 @@ export default function StudentLoginPage() {
     getLoginAttemptState(PORTAL_KEY, "")
   );
 
-
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [showGoogleConnect, setShowGoogleConnect] = useState(false);
-const [googleConnecting, setGoogleConnecting] = useState(false);
-const [googleConnectError, setGoogleConnectError] = useState("");
+  const [googleConnecting, setGoogleConnecting] = useState(false);
+  const [googleConnectError, setGoogleConnectError] = useState("");
 
   const router = useRouter();
 
-  const {
-    setUser,
-    setUserData,
-  } = useAuthStore();
-
+  const { setUser, setUserData } = useAuthStore();
 
   // ==========================================
   // FEATURES
@@ -115,70 +106,54 @@ const [googleConnectError, setGoogleConnectError] = useState("");
     },
   ];
 
-
   // ==========================================
   // LOGIN ATTEMPT STATE
   // ==========================================
 
   useEffect(() => {
     setAttemptState(
-      getLoginAttemptState(
-        PORTAL_KEY,
-        formData.email
-      )
+      getLoginAttemptState(PORTAL_KEY, formData.email)
     );
   }, [formData.email]);
 
-const handleConnectGoogle = async () => {
-  if (googleConnecting) return;
-
-  setGoogleConnecting(true);
-  setGoogleConnectError("");
-
-  try {
-    await connectDigitalGoogleAccount("student");
-
-    setShowGoogleConnect(false);
-
-    router.push("/dashboard/digital-student");
-  } catch (error) {
-    console.error(
-      "DIGITAL STUDENT GOOGLE CONNECTION ERROR:",
-      error
-    );
-
-    setGoogleConnectError(
-      error?.message ||
-        "Unable to connect your Google account."
-    );
-  } finally {
-    setGoogleConnecting(false);
-  }
-};
   // ==========================================
-  // PRE-WARM RECAPTCHA
-  // Production only
+  // GOOGLE ACCOUNT CONNECTION
   // ==========================================
 
-  useEffect(() => {
+  const handleConnectGoogle = async () => {
+    if (googleConnecting) return;
 
-    if (process.env.NODE_ENV !== "development") {
-      prewarmRecaptcha();
+    setGoogleConnecting(true);
+    setGoogleConnectError("");
+
+    try {
+      await connectDigitalGoogleAccount("student");
+
+      setShowGoogleConnect(false);
+      setIsRedirecting(true);
+
+      router.push("/dashboard/digital-student");
+    } catch (error) {
+      console.error(
+        "DIGITAL STUDENT GOOGLE CONNECTION ERROR:",
+        error
+      );
+
+      setGoogleConnectError(
+        error?.message ||
+          "Unable to connect your Google account."
+      );
+    } finally {
+      setGoogleConnecting(false);
     }
-
-  }, []);
-
+  };
 
   // ==========================================
   // HANDLE FORM CHANGE
   // ==========================================
 
   const handleChange = (e) => {
-
-    const {
-      name,
-      value,
-    } = e.target;
+    const { name, value } = e.target;
 
     setFormData((prev) => ({
       ...prev,
@@ -190,16 +165,14 @@ const handleConnectGoogle = async () => {
     }
   };
 
-
   // ==========================================
   // PASSWORD FAILURE
   // ==========================================
 
-  const failPasswordAttempt = (message) => {
-
+  const failPasswordAttempt = (message, identifier) => {
     const nextState = recordLoginFailure(
       PORTAL_KEY,
-      formData.email
+      identifier
     );
 
     setAttemptState(nextState);
@@ -211,188 +184,113 @@ const handleConnectGoogle = async () => {
     );
   };
 
+  // ==========================================
+  // LOGIN SUBMIT - PASSWORD ONLY
+  // ==========================================
 
- 
+  const handleSubmit = async (e) => {
+    e.preventDefault();
 
-  const completeOtpLogin = async () => {
+    if (loading) return;
 
-    if (!pendingLogin) {
-      return;
-    }
+    setLoading(true);
+    setError("");
 
+    const email = formData.email.trim();
 
     try {
+      // Check login attempts
+      const currentAttemptState = getLoginAttemptState(
+        PORTAL_KEY,
+        email
+      );
 
-      setIsRedirecting(true);
+      setAttemptState(currentAttemptState);
 
-
-      let sessionUser =
-        pendingLogin.user;
-
-
-      // Restore Firebase Session
-      if (
-        pendingLogin.restoreCustomToken
-      ) {
-
-        sessionUser =
-          (
-            await restorePortalFirebaseSession(
-              pendingLogin.restoreCustomToken
-            )
-          ) || sessionUser;
+      if (currentAttemptState.locked) {
+        setError(
+          "Too many wrong password attempts. Login is temporarily blocked."
+        );
+        return;
       }
 
+      // Authenticate using email/username and password
+      const login = await securePortalLogin({
+        portal: PORTAL_KEY,
+        identifier: email,
+        password: formData.password,
+      });
 
-      // Store authenticated user
-     setUser(sessionUser);
+      if (!login?.user || !login?.userData) {
+        throw new Error(
+          "Login failed. Student account information was not returned."
+        );
+      }
 
-const verifiedUserData =
-  withVerifiedOtpSession(
-    pendingLogin.userData
-  );
+      // Restore Firebase session
+      let sessionUser = login.user;
 
-setUserData(verifiedUserData);
+      if (login.restoreCustomToken) {
+        sessionUser =
+          (await restorePortalFirebaseSession(
+            login.restoreCustomToken
+          )) || sessionUser;
+      }
 
-/*
- * First Digital Student login:
- * Google account must be connected.
- *
- * Existing Google connection:
- * Continue directly to dashboard.
- */
-const googleAuth =
-  verifiedUserData?.googleAuth;
+      // Save authenticated user
+      setUser(sessionUser);
+      setUserData(login.userData);
 
-if (
-  !googleAuth?.connected
-) {
-  setShowGoogleConnect(true);
-  setIsRedirecting(false);
-  return;
-}
+      // Reset failed login attempts
+      resetLoginFailures(PORTAL_KEY, email);
 
-router.push(
-  "/dashboard/digital-student"
-);
+      setAttemptState(
+        getLoginAttemptState(PORTAL_KEY, email)
+      );
 
+      toast.success("Student login successful!");
+
+      // Check Google account connection
+      const googleAuth = login.userData?.googleAuth;
+
+      if (!googleAuth?.connected) {
+        setShowGoogleConnect(true);
+        return;
+      }
+
+      // Google already connected - go to dashboard
+      setIsRedirecting(true);
+
+      router.push("/dashboard/digital-student");
 
     } catch (error) {
+      console.error("Login error:", error);
 
-      console.error(
-        "Complete login error:",
-        error
-      );
+      const message = error?.message || "";
 
-
-      setIsRedirecting(false);
-
-
-      setError(
-        error?.message ||
-        "Unable to complete login. Please try again."
-      );
+      if (message.toLowerCase().includes("invalid")) {
+        failPasswordAttempt(
+          "Invalid username or password. Please try again.",
+          email
+        );
+      } else {
+        setError(
+          message ||
+            "An error occurred during login. Please try again."
+        );
+      }
+    } finally {
+      setLoading(false);
     }
   };
-
-
-  // ==========================================
-  // LOGIN SUBMIT
-  // ==========================================
-const handleSubmit = async (e) => {
-  e.preventDefault();
-  setLoading(true);
-  setError("");
-
-  const email = formData.email.trim();
-
-  try {
-    // Check login attempts
-    const currentAttemptState = getLoginAttemptState(
-      PORTAL_KEY,
-      email
-    );
-
-    setAttemptState(currentAttemptState);
-
-    if (currentAttemptState.locked) {
-      setError(
-        "Too many wrong password attempts. Login is temporarily blocked."
-      );
-      return;
-    }
-
-    // Authenticate using email and password
-    const login = await securePortalLogin({
-      portal: PORTAL_KEY,
-      identifier: email,
-      password: formData.password,
-    });
-
-    // Restore Firebase session
-    let sessionUser = login.user;
-
-    if (login.restoreCustomToken) {
-      sessionUser =
-        (await restorePortalFirebaseSession(
-          login.restoreCustomToken
-        )) || sessionUser;
-    }
-
-    // Save authenticated user
-    setUser(sessionUser);
-    setUserData(login.userData);
-
-    // Reset failed login attempts
-    resetLoginFailures(PORTAL_KEY, email);
-
-    setAttemptState(
-      getLoginAttemptState(PORTAL_KEY, email)
-    );
-
-    toast.success("Student login successful!");
-
-    // Check Google account connection
-    const googleAuth = login.userData?.googleAuth;
-
-    if (!googleAuth?.connected) {
-      setShowGoogleConnect(true);
-      return;
-    }
-
-    // Direct dashboard access
-    router.push("/dashboard/digital-student");
-
-  } catch (error) {
-    console.error("Login error:", error);
-
-    const message = error?.message || "";
-
-    if (message.toLowerCase().includes("invalid")) {
-      failPasswordAttempt(
-        "Invalid username or password. Please try again."
-      );
-    } else {
-      setError(
-        message ||
-        "An error occurred during login. Please try again."
-      );
-    }
-  } finally {
-    setLoading(false);
-  }
-};
 
   // ==========================================
   // REDIRECTING SCREEN
   // ==========================================
 
   if (isRedirecting) {
-
     return (
-
       <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 via-white to-teal-50 p-4">
-
         <div className="flex flex-col items-center justify-center space-y-4 rounded-3xl border border-teal-100 bg-white/90 p-9 shadow-2xl backdrop-blur-xl">
 
           <div className="h-12 w-12 animate-spin rounded-full border-4 border-teal-600 border-t-transparent" />
@@ -406,63 +304,45 @@ const handleSubmit = async (e) => {
           </p>
 
         </div>
-
       </div>
     );
   }
-
 
   // ==========================================
   // PAGE
   // ==========================================
 
   return (
-
     <main className="relative min-h-screen overflow-hidden bg-gradient-to-br from-slate-50 via-white to-teal-50">
 
-
-      {/* ======================================
-          BACKGROUND GLOW
-      ====================================== */}
+      {/* BACKGROUND GLOW */}
 
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
-
         <div className="absolute -left-40 -top-40 h-[550px] w-[550px] rounded-full bg-blue-100/60 blur-[120px]" />
-
         <div className="absolute -right-44 top-20 h-[650px] w-[650px] rounded-full bg-teal-100/60 blur-[140px]" />
-
         <div className="absolute bottom-10 left-1/2 h-[400px] w-[650px] -translate-x-1/2 rounded-full bg-emerald-50/70 blur-[120px]" />
-
       </div>
 
-
-      {/* ======================================
-          ISLAMIC PATTERN LEFT
-      ====================================== */}
+      {/* ISLAMIC PATTERN LEFT */}
 
       <div className="pointer-events-none absolute -left-20 top-40 h-[450px] w-[450px] opacity-[0.04]">
-
         <svg
           viewBox="0 0 500 500"
           className="h-full w-full text-blue-700"
         >
-
           <defs>
-
             <pattern
               id="loginPatternLeft"
               width="90"
               height="90"
               patternUnits="userSpaceOnUse"
             >
-
               <path
                 d="M45 0 L55 35 L90 45 L55 55 L45 90 L35 55 L0 45 L35 35 Z"
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="2"
               />
-
               <circle
                 cx="45"
                 cy="45"
@@ -471,9 +351,7 @@ const handleSubmit = async (e) => {
                 stroke="currentColor"
                 strokeWidth="1.5"
               />
-
             </pattern>
-
           </defs>
 
           <rect
@@ -481,39 +359,29 @@ const handleSubmit = async (e) => {
             height="500"
             fill="url(#loginPatternLeft)"
           />
-
         </svg>
-
       </div>
 
-
-      {/* ======================================
-          ISLAMIC PATTERN RIGHT
-      ====================================== */}
+      {/* ISLAMIC PATTERN RIGHT */}
 
       <div className="pointer-events-none absolute -right-24 top-20 h-[520px] w-[520px] opacity-[0.04]">
-
         <svg
           viewBox="0 0 500 500"
           className="h-full w-full text-teal-700"
         >
-
           <defs>
-
             <pattern
               id="loginPatternRight"
               width="90"
               height="90"
               patternUnits="userSpaceOnUse"
             >
-
               <path
                 d="M45 0 L55 35 L90 45 L55 55 L45 90 L35 55 L0 45 L35 35 Z"
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="2"
               />
-
               <circle
                 cx="45"
                 cy="45"
@@ -522,67 +390,44 @@ const handleSubmit = async (e) => {
                 stroke="currentColor"
                 strokeWidth="1.5"
               />
-
             </pattern>
-
           </defs>
-
 
           <rect
             width="500"
             height="500"
             fill="url(#loginPatternRight)"
           />
-
         </svg>
-
       </div>
 
-
-      {/* ======================================
-          HEADER
-      ====================================== */}
+      {/* HEADER */}
 
       <header className="relative z-20 mx-auto flex w-full max-w-7xl items-center justify-between px-5 py-6 sm:px-8 lg:px-10">
 
         <div className="flex items-center gap-3">
-
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-500 to-emerald-600 shadow-lg shadow-teal-100">
-
             <BookOpen className="h-6 w-6 text-white" />
-
           </div>
 
-
           <div>
-
             <h2 className="text-lg font-bold leading-tight text-slate-900 sm:text-xl">
-
               Digital{" "}
-
               <span className="text-teal-600">
                 Class Room
               </span>
-
             </h2>
 
-
             <p className="mt-0.5 text-[9px] font-semibold uppercase tracking-[0.28em] text-slate-400">
-
               Learn • Practice • Grow
-
             </p>
-
           </div>
-
         </div>
-
 
         <Link
           href="/digital-class"
           className="flex items-center gap-2 rounded-full border border-teal-200 bg-teal-50 px-4 py-2 text-xs font-semibold text-teal-700 transition hover:bg-teal-100 sm:px-5 sm:py-2.5 sm:text-sm"
         >
-
           <ArrowLeft className="h-4 w-4" />
 
           <span className="hidden sm:inline">
@@ -592,444 +437,277 @@ const handleSubmit = async (e) => {
           <span className="sm:hidden">
             Back
           </span>
-
         </Link>
 
       </header>
 
-
-      {/* ======================================
-          MAIN CONTENT
-      ====================================== */}
+      {/* MAIN CONTENT */}
 
       <section className="relative z-10 mx-auto grid w-full max-w-7xl grid-cols-1 items-center gap-12 px-5 pb-44 pt-6 sm:px-8 lg:grid-cols-2 lg:gap-16 lg:px-10 lg:pt-10">
 
-
-        {/* ======================================
-            LEFT SIDE
-        ====================================== */}
+        {/* LEFT SIDE */}
 
         <div className="relative">
 
           <p className="mb-4 text-xs font-bold uppercase tracking-[0.35em] text-blue-500 sm:text-sm">
-
             Student Portal
-
           </p>
 
-
           <h1 className="text-4xl font-extrabold leading-tight tracking-tight text-slate-900 sm:text-5xl lg:text-6xl">
-
             Welcome{" "}
-
             <span className="text-teal-600">
               Back!
             </span>
-
           </h1>
 
-
           <p className="mt-5 max-w-lg text-base leading-7 text-slate-500 sm:text-lg">
-
             Login to your account and continue your
             Digital Classroom learning journey.
-
           </p>
-
 
           {/* FEATURES */}
 
           <div className="mt-10 grid max-w-xl grid-cols-1 gap-6 sm:grid-cols-2">
-
             {features.map((feature) => {
-
-              const Icon =
-                feature.icon;
-
+              const Icon = feature.icon;
 
               return (
-
                 <div
                   key={feature.title}
                   className="flex items-center gap-4"
                 >
-
                   <div
                     className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full ${feature.bg}`}
                   >
-
                     <Icon
                       className={`h-6 w-6 ${feature.color}`}
                     />
-
                   </div>
-
 
                   <div>
-
                     <h3 className="text-sm font-bold text-slate-900 sm:text-base">
-
                       {feature.title}
-
                     </h3>
 
-
                     <p className="mt-1 text-xs text-slate-500 sm:text-sm">
-
                       {feature.description}
-
                     </p>
-
                   </div>
-
                 </div>
               );
             })}
-
           </div>
-
 
           {/* MOTIVATION */}
 
           <div className="mt-10 hidden max-w-xs rotate-[-4deg] text-center text-2xl font-medium italic leading-relaxed text-blue-300 lg:block">
-
             Knowledge
             <br />
-
             Builds
             <br />
-
             a Better Tomorrow
-
           </div>
 
         </div>
 
-
-        {/* ======================================
-            LOGIN CARD
-        ====================================== */}
+        {/* LOGIN CARD */}
 
         <div className="mx-auto w-full max-w-lg">
 
           <div className="rounded-[32px] border border-slate-200/80 bg-white/90 p-6 shadow-[0_25px_80px_rgba(15,23,42,0.10)] backdrop-blur-xl sm:p-9">
 
+            {/* ICON */}
 
-     
+            <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-blue-100">
+              <GraduationCap className="h-10 w-10 text-blue-600" />
+            </div>
 
-   
+            {/* TITLE */}
 
-              <>
+            <div className="mt-5 text-center">
+              <h2 className="text-2xl font-extrabold text-slate-900 sm:text-3xl">
+                Student{" "}
+                <span className="text-teal-600">
+                  Login
+                </span>
+              </h2>
 
-                {/* ICON */}
+              <p className="mt-2 text-sm text-slate-500">
+                Enter your existing student credentials
+                to access Digital Classroom
+              </p>
+            </div>
 
-                <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-blue-100">
+            {/* FORM */}
 
-                  <GraduationCap className="h-10 w-10 text-blue-600" />
+            <form
+              onSubmit={handleSubmit}
+              className="mt-8 space-y-5"
+            >
 
-                </div>
+              <PasswordAttemptNotice
+                attemptState={attemptState}
+              />
 
+              {/* ERROR ALERT */}
 
-                {/* TITLE */}
-
-                <div className="mt-5 text-center">
-
-                  <h2 className="text-2xl font-extrabold text-slate-900 sm:text-3xl">
-
-                    Student{" "}
-
-                    <span className="text-teal-600">
-                      Login
+              {error && (
+                <Alert
+                  variant="destructive"
+                  className="border-red-200 bg-red-50 text-red-800"
+                >
+                  <AlertDescription className="flex items-start gap-2 text-sm font-medium">
+                    <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-red-100 text-xs font-bold text-red-600">
+                      !
                     </span>
 
-                  </h2>
+                    <span>{error}</span>
+                  </AlertDescription>
+                </Alert>
+              )}
 
+              {/* EMAIL / USERNAME */}
 
-                  <p className="mt-2 text-sm text-slate-500">
-
-                    Enter your existing student
-                    credentials to access Digital Classroom
-
-                  </p>
-
-                </div>
-
-
-                {/* FORM */}
-
-                <form
-                  onSubmit={handleSubmit}
-                  className="mt-8 space-y-5"
+              <div>
+                <label
+                  htmlFor="email"
+                  className="mb-2 block text-sm font-semibold text-slate-800"
                 >
+                  Email / Username
+                </label>
 
+                <div className="relative">
+                  <Mail className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
 
-                  {/* ======================================
-                      PASSWORD ATTEMPT NOTICE
-                  ====================================== */}
+                  <input
+                    id="email"
+                    name="email"
+                    type="text"
+                    value={formData.email}
+                    onChange={handleChange}
+                    placeholder="Enter your email or username"
+                    autoComplete="username"
+                    className="w-full rounded-xl border border-slate-200 bg-white py-3.5 pl-12 pr-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-teal-400 focus:ring-4 focus:ring-teal-100"
+                    required
+                  />
+                </div>
+              </div>
 
-                  <PasswordAttemptNotice
-                    attemptState={attemptState}
+              {/* PASSWORD */}
+
+              <div>
+                <label
+                  htmlFor="password"
+                  className="mb-2 block text-sm font-semibold text-slate-800"
+                >
+                  Password
+                </label>
+
+                <div className="relative">
+                  <Lock className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+
+                  <input
+                    id="password"
+                    name="password"
+                    type={
+                      showPassword ? "text" : "password"
+                    }
+                    value={formData.password}
+                    onChange={handleChange}
+                    placeholder="Enter your password"
+                    autoComplete="current-password"
+                    className="w-full rounded-xl border border-slate-200 bg-white py-3.5 pl-12 pr-12 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-teal-400 focus:ring-4 focus:ring-teal-100"
+                    required
                   />
 
-
-                  {/* ======================================
-                      ERROR ALERT
-                  ====================================== */}
-
-                  {error && (
-
-                    <Alert
-                      variant="destructive"
-                      className="border-red-200 bg-red-50 text-red-800"
-                    >
-
-                      <AlertDescription className="flex items-start gap-2 text-sm font-medium">
-
-                        <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-red-100 text-xs font-bold text-red-600">
-
-                          !
-
-                        </span>
-
-
-                        <span>
-                          {error}
-                        </span>
-
-                      </AlertDescription>
-
-                    </Alert>
-                  )}
-
-
-                  {/* ======================================
-                      EMAIL / USERNAME
-                  ====================================== */}
-
-                  <div>
-
-                    <label
-                      htmlFor="email"
-                      className="mb-2 block text-sm font-semibold text-slate-800"
-                    >
-
-                      Email / Username
-
-                    </label>
-
-
-                    <div className="relative">
-
-                      <Mail className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-
-
-                      <input
-                        id="email"
-                        name="email"
-                        type="text"
-                        value={formData.email}
-                        onChange={handleChange}
-                        placeholder="Enter your email or username"
-                        autoComplete="username"
-                        className="w-full rounded-xl border border-slate-200 bg-white py-3.5 pl-12 pr-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-teal-400 focus:ring-4 focus:ring-teal-100"
-                        required
-                      />
-
-                    </div>
-
-                  </div>
-
-
-                  {/* ======================================
-                      PASSWORD
-                  ====================================== */}
-
-                  <div>
-
-                    <label
-                      htmlFor="password"
-                      className="mb-2 block text-sm font-semibold text-slate-800"
-                    >
-
-                      Password
-
-                    </label>
-
-
-                    <div className="relative">
-
-                      <Lock className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-
-
-                      <input
-                        id="password"
-                        name="password"
-                        type={
-                          showPassword
-                            ? "text"
-                            : "password"
-                        }
-                        value={formData.password}
-                        onChange={handleChange}
-                        placeholder="Enter your password"
-                        autoComplete="current-password"
-                        className="w-full rounded-xl border border-slate-200 bg-white py-3.5 pl-12 pr-12 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-teal-400 focus:ring-4 focus:ring-teal-100"
-                        required
-                      />
-
-
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setShowPassword(
-                            (prev) => !prev
-                          )
-                        }
-                        className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 transition hover:text-slate-700"
-                        aria-label={
-                          showPassword
-                            ? "Hide password"
-                            : "Show password"
-                        }
-                      >
-
-                        {showPassword ? (
-
-                          <EyeOff className="h-5 w-5" />
-
-                        ) : (
-
-                          <Eye className="h-5 w-5" />
-
-                        )}
-
-                      </button>
-
-                    </div>
-
-                  </div>
-
-
-                  {/* ======================================
-                      LOGIN BUTTON
-                  ====================================== */}
-
                   <button
-                    type="submit"
-                    disabled={loading}
-                    className="group flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-teal-500 to-teal-600 px-5 py-3.5 text-sm font-bold text-white shadow-lg shadow-teal-200 transition-all duration-300 hover:from-teal-600 hover:to-emerald-600 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
+                    type="button"
+                    onClick={() =>
+                      setShowPassword((prev) => !prev)
+                    }
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 transition hover:text-slate-700"
+                    aria-label={
+                      showPassword
+                        ? "Hide password"
+                        : "Show password"
+                    }
                   >
-
-                    {loading ? (
-
-                      <>
-
-                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-
-
-                        <span>
-
-                          Logging in...
-
-                        </span>
-
-                      </>
-
+                    {showPassword ? (
+                      <EyeOff className="h-5 w-5" />
                     ) : (
-
-                      <>
-
-                        <span>
-
-                         Login
-
-                        </span>
-
-
-                        <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
-
-                      </>
-
+                      <Eye className="h-5 w-5" />
                     )}
-
                   </button>
-
-                </form>
-
-
-                {/* ======================================
-                    DIVIDER
-                ====================================== */}
-
-                <div className="my-7 flex items-center gap-4">
-
-                  <div className="h-px flex-1 bg-slate-200" />
-
-                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-
-                    Support
-
-                  </span>
-
-                  <div className="h-px flex-1 bg-slate-200" />
-
                 </div>
+              </div>
 
+              {/* LOGIN BUTTON */}
 
-                {/* ======================================
-                    TECHNICAL SUPPORT
-                ====================================== */}
+              <button
+                type="submit"
+                disabled={loading}
+                className="group flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-teal-500 to-teal-600 px-5 py-3.5 text-sm font-bold text-white shadow-lg shadow-teal-200 transition-all duration-300 hover:from-teal-600 hover:to-emerald-600 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {loading ? (
+                  <>
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
 
-                <div className="rounded-2xl border border-slate-100 bg-slate-50 px-5 py-5 text-center">
+                    <span>Logging in...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Login</span>
 
-                  <p className="text-sm text-slate-500">
+                    <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
+                  </>
+                )}
+              </button>
 
-                    Need Technical Assistance?
+            </form>
 
-                  </p>
+            {/* DIVIDER */}
 
+            <div className="my-7 flex items-center gap-4">
+              <div className="h-px flex-1 bg-slate-200" />
 
-                  <a
-                    href="tel:8891177850"
-                    className="mt-2 inline-flex items-center gap-2 text-sm font-bold text-teal-600 transition hover:text-teal-700 hover:underline"
-                  >
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                Support
+              </span>
 
-                    <Phone className="h-4 w-4" />
+              <div className="h-px flex-1 bg-slate-200" />
+            </div>
 
-                    8891177850
+            {/* TECHNICAL SUPPORT */}
 
-                  </a>
+            <div className="rounded-2xl border border-slate-100 bg-slate-50 px-5 py-5 text-center">
+              <p className="text-sm text-slate-500">
+                Need Technical Assistance?
+              </p>
 
-                </div>
+              <a
+                href="tel:8891177850"
+                className="mt-2 inline-flex items-center gap-2 text-sm font-bold text-teal-600 transition hover:text-teal-700 hover:underline"
+              >
+                <Phone className="h-4 w-4" />
+                8891177850
+              </a>
+            </div>
 
+            {/* SECURITY */}
 
-                {/* SECURITY */}
-
-                <div className="mt-5 flex items-center justify-center gap-2 text-xs text-slate-400">
-
-                  <ShieldCheck className="h-4 w-4 text-emerald-500" />
-
-                  Secure Digital Classroom Student Portal
-
-                </div>
-
-              </>
-
-            
+            <div className="mt-5 flex items-center justify-center gap-2 text-xs text-slate-400">
+              <ShieldCheck className="h-4 w-4 text-emerald-500" />
+              Secure Digital Classroom Student Portal
+            </div>
 
           </div>
-
         </div>
 
       </section>
 
-
-      {/* ======================================
-          MOSQUE SILHOUETTE
-      ====================================== */}
+      {/* MOSQUE SILHOUETTE */}
 
       <div className="pointer-events-none absolute bottom-[70px] left-0 hidden opacity-[0.07] lg:block">
-
         <svg
           width="700"
           height="330"
@@ -1037,66 +715,21 @@ const handleSubmit = async (e) => {
           fill="currentColor"
           className="text-blue-700"
         >
-
-          <rect
-            x="210"
-            y="210"
-            width="260"
-            height="120"
-          />
-
+          <rect x="210" y="210" width="260" height="120" />
           <path d="M220 210 Q340 70 460 210 Z" />
-
-          <circle
-            cx="340"
-            cy="105"
-            r="7"
-          />
-
-          <rect
-            x="80"
-            y="140"
-            width="32"
-            height="190"
-          />
-
+          <circle cx="340" cy="105" r="7" />
+          <rect x="80" y="140" width="32" height="190" />
           <path d="M73 140 Q96 95 119 140 Z" />
-
-          <rect
-            x="530"
-            y="150"
-            width="32"
-            height="180"
-          />
-
+          <rect x="530" y="150" width="32" height="180" />
           <path d="M523 150 Q546 105 569 150 Z" />
-
-          <rect
-            x="145"
-            y="245"
-            width="70"
-            height="85"
-          />
-
+          <rect x="145" y="245" width="70" height="85" />
           <path d="M145 245 Q180 195 215 245 Z" />
-
-          <rect
-            x="465"
-            y="245"
-            width="70"
-            height="85"
-          />
-
+          <rect x="465" y="245" width="70" height="85" />
           <path d="M465 245 Q500 195 535 245 Z" />
-
         </svg>
-
       </div>
 
-
-      {/* ======================================
-          BOTTOM WAVES
-      ====================================== */}
+      {/* BOTTOM WAVES */}
 
       <div className="pointer-events-none absolute bottom-0 left-0 right-0">
 
@@ -1105,7 +738,6 @@ const handleSubmit = async (e) => {
           className="block h-[150px] w-full sm:h-[180px]"
           preserveAspectRatio="none"
         >
-
           <path
             d="M0,90 C220,180 480,150 700,150 C930,150 1130,20 1440,45 L1440,190 L0,190 Z"
             fill="#ccfbf1"
@@ -1120,94 +752,94 @@ const handleSubmit = async (e) => {
             d="M0,135 C270,200 510,190 760,180 C1020,170 1190,80 1440,95 L1440,190 L0,190 Z"
             fill="#0d9488"
           />
-
         </svg>
-
 
         {/* ORGANIZATION */}
 
         <div className="absolute bottom-4 left-1/2 hidden -translate-x-1/2 sm:block">
-
           <p className="whitespace-nowrap text-[9px] font-semibold uppercase tracking-[0.3em] text-white/90 md:text-[10px]">
-
             Dakshina Kerala Islam Matha Vidyabhyasa Board
-
           </p>
-
         </div>
-
-      </div>
-{showGoogleConnect && (
-  <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm">
-    <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
-      <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
-        <svg
-          viewBox="0 0 24 24"
-          className="h-7 w-7"
-          aria-hidden="true"
-        >
-          <path
-            fill="#4285F4"
-            d="M21.35 12.27c0-.68-.06-1.34-.17-1.97H12v3.73h5.23a4.47 4.47 0 0 1-1.94 2.93v2.44h3.14c1.84-1.69 2.92-4.18 2.92-7.13Z"
-          />
-          <path
-            fill="#34A853"
-            d="M12 21.75c2.63 0 4.84-.87 6.45-2.35l-3.14-2.44c-.87.58-1.98.93-3.31.93-2.54 0-4.69-1.72-5.46-4.03H3.29v2.52A9.75 9.75 0 0 0 12 21.75Z"
-          />
-          <path
-            fill="#FBBC05"
-            d="M6.54 13.86A5.86 5.86 0 0 1 6.23 12c0-.65.11-1.28.31-1.86V7.62H3.29A9.75 9.75 0 0 0 2.25 12c0 1.57.38 3.05 1.04 4.38l3.25-2.52Z"
-          />
-          <path
-            fill="#EA4335"
-            d="M12 6.11c1.43 0 2.71.49 3.72 1.45l2.79-2.79C16.83 3.23 14.63 2.25 12 2.25a9.75 9.75 0 0 0-8.71 5.37l3.25 2.52C7.31 7.83 9.46 6.11 12 6.11Z"
-          />
-        </svg>
       </div>
 
-      <div className="text-center">
-        <h2 className="text-xl font-semibold text-slate-900">
-          Connect Your Google Account
-        </h2>
+      {/* ======================================
+          GOOGLE ACCOUNT CONNECTION MODAL
+      ====================================== */}
 
-        <p className="mt-2 text-sm leading-6 text-slate-500">
-          To continue using DKJU Digital Classroom,
-          connect your Google account. This is a
-          one-time verification.
-        </p>
-      </div>
+      {showGoogleConnect && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm">
 
-      {googleConnectError && (
-        <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {googleConnectError}
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+
+            <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
+              <svg
+                viewBox="0 0 24 24"
+                className="h-7 w-7"
+                aria-hidden="true"
+              >
+                <path
+                  fill="#4285F4"
+                  d="M21.35 12.27c0-.68-.06-1.34-.17-1.97H12v3.73h5.23a4.47 4.47 0 0 1-1.94 2.93v2.44h3.14c1.84-1.69 2.92-4.18 2.92-7.13Z"
+                />
+                <path
+                  fill="#34A853"
+                  d="M12 21.75c2.63 0 4.84-.87 6.45-2.35l-3.14-2.44c-.87.58-1.98.93-3.31.93-2.54 0-4.69-1.72-5.46-4.03H3.29v2.52A9.75 9.75 0 0 0 12 21.75Z"
+                />
+                <path
+                  fill="#FBBC05"
+                  d="M6.54 13.86A5.86 5.86 0 0 1 6.23 12c0-.65.11-1.28.31-1.86V7.62H3.29A9.75 9.75 0 0 0 2.25 12c0 1.57.38 3.05 1.04 4.38l3.25-2.52Z"
+                />
+                <path
+                  fill="#EA4335"
+                  d="M12 6.11c1.43 0 2.71.49 3.72 1.45l2.79-2.79C16.83 3.23 14.63 2.25 12 2.25a9.75 9.75 0 0 0-8.71 5.37l3.25 2.52C7.31 7.83 9.46 6.11 12 6.11Z"
+                />
+              </svg>
+            </div>
+
+            <div className="text-center">
+              <h2 className="text-xl font-semibold text-slate-900">
+                Connect Your Google Account
+              </h2>
+
+              <p className="mt-2 text-sm leading-6 text-slate-500">
+                To continue using DKJU Digital Classroom,
+                connect your Google account. This is a
+                one-time verification.
+              </p>
+            </div>
+
+            {googleConnectError && (
+              <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {googleConnectError}
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={handleConnectGoogle}
+              disabled={googleConnecting}
+              className="mt-6 flex w-full items-center justify-center gap-3 rounded-xl bg-slate-900 px-4 py-3.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {googleConnecting ? (
+                <>
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                  Connecting...
+                </>
+              ) : (
+                <>Continue with Google</>
+              )}
+            </button>
+
+            <p className="mt-4 text-center text-xs text-slate-400">
+              Your Google account will be linked to your
+              existing DKJU account.
+            </p>
+
+          </div>
         </div>
       )}
 
-      <button
-        type="button"
-        onClick={handleConnectGoogle}
-        disabled={googleConnecting}
-        className="mt-6 flex w-full items-center justify-center gap-3 rounded-xl bg-slate-900 px-4 py-3.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-      >
-        {googleConnecting ? (
-          <>
-            <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-            Connecting...
-          </>
-        ) : (
-          <>
-            Continue with Google
-          </>
-        )}
-      </button>
-
-      <p className="mt-4 text-center text-xs text-slate-400">
-        Your Google account will be linked to your
-        existing DKJU account.
-      </p>
-    </div>
-  </div>
-)}
     </main>
   );
 }
